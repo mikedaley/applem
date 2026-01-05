@@ -1,0 +1,17 @@
+# Build outputs
+build/
+public/a2e.js
+public/a2e.wasm
+
+# Node modules
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
