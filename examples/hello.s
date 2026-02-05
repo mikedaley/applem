@@ -39,11 +39,11 @@ DONE     RTS              ;Return to caller
 WAIT     EQU  $60         ;Delay multiplier (~100ms)
 
 DELAY    LDY  #WAIT       ;Outer loop counter
-:OUTER   LDX  #$FF        ;Inner loop counter
-:INNER   DEX              ;Decrement inner
-         BNE  :INNER      ;Loop until X=0
+DLY1     LDX  #$FF        ;Inner loop counter
+DLY2     DEX              ;Decrement inner
+         BNE  DLY2        ;Loop until X=0
          DEY              ;Decrement outer
-         BNE  :OUTER      ;Loop until Y=0
+         BNE  DLY1        ;Loop until Y=0
          RTS
 
 **********************************
