@@ -7,41 +7,46 @@
 
 * Apple IIe ROM routines
 COUT     EQU  $FDED       ;Character output routine
-CROUT    EQU  $FD8E       ;Carriage return
-
-* Zero page locations for pointer
-PTR      EQU  $06         ;String pointer (2 bytes)
 
          ORG  $0800       ;Standard BASIC program area
 
 **********************************
 * Main program entry point
 **********************************
-START    LDA  #<MESSAGE   ;Load low byte of message address
-         STA  PTR         ;Store in zero page pointer
-         LDA  #>MESSAGE   ;Load high byte of message address
-         STA  PTR+1       ;Store in zero page pointer+1
-
-         LDY  #$00        ;Initialize index to 0
+START    LDX  #$00        ;Initialize index to 0
 
 **********************************
 * Print loop - one char at a time
 **********************************
-LOOP     LDA  (PTR),Y     ;Load character at pointer+Y
+LOOP     LDA  MESSAGE,X   ;Load character at MESSAGE+X
          BEQ  DONE        ;If zero (end of string), we're done
-         ORA  #$80        ;Set high bit for Apple II display
          JSR  COUT        ;Print the character
-         INY              ;Increment index
-         BNE  LOOP        ;Continue if Y hasn't wrapped (max 256 chars)
+         INX              ;Increment index
+         BNE  LOOP        ;Continue if X hasn't wrapped
 
 **********************************
 * End of program
 **********************************
-DONE     JSR  CROUT       ;Print carriage return
-         RTS              ;Return to caller
+DONE     RTS              ;Return to caller
 
 **********************************
-* Message data (null-terminated)
+* Message data - high bit set for Apple II
 **********************************
-MESSAGE  ASC  "HELLO, APPLE IIE!"
+MESSAGE  DFB  $C8         ;H
+         DFB  $C5         ;E
+         DFB  $CC         ;L
+         DFB  $CC         ;L
+         DFB  $CF         ;O
+         DFB  $A0         ;(space)
+         DFB  $C1         ;A
+         DFB  $D0         ;P
+         DFB  $D0         ;P
+         DFB  $CC         ;L
+         DFB  $C5         ;E
+         DFB  $A0         ;(space)
+         DFB  $C9         ;I
+         DFB  $C9         ;I
+         DFB  $C5         ;E
+         DFB  $A1         ;!
+         DFB  $8D         ;Carriage return
          DFB  $00         ;Null terminator
