@@ -1,0 +1,26 @@
+[
+  {
+    "id": "prodos-243",
+    "name": "ProDOS 2.4.3",
+    "file": "ProDOS 2.4.3.po",
+    "type": "floppy",
+    "size": "140 KB",
+    "description": "ProDOS 2.4.3 system disk with BASIC.SYSTEM"
+  },
+  {
+    "id": "dos33-master",
+    "name": "DOS 3.3 System Master",
+    "file": "Apple DOS 3.3 January 1983.dsk",
+    "type": "floppy",
+    "size": "140 KB",
+    "description": "Apple DOS 3.3 system master with Applesoft BASIC"
+  },
+  {
+    "id": "prodos-243-hd",
+    "name": "ProDOS 2.4.3 HD",
+    "file": "h32mb.2mg",
+    "type": "hard-drive",
+    "size": "32 MB",
+    "description": "ProDOS 2.4.3 hard drive volume + games"
+  }
+]
