@@ -27,3 +27,5 @@ Thumbs.db
 *.log
 npm-debug.log*
 mcp/a2e-agent/logs/
+t
+
