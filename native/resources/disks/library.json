@@ -16,6 +16,14 @@
     "description": "Apple DOS 3.3 system master with Applesoft BASIC"
   },
   {
+    "id": "cpm31-softcard",
+    "name": "MS CP/M Softcard Disk 1",
+    "file": "Microsoft SoftCard - CPM Disk 1 (1).po",
+    "type": "floppy",
+    "size": "140 KB",
+    "description": "Microsoft SoftCard CP/M 3.1 Disk 1"
+  },
+  {
     "id": "prodos-243-hd",
     "name": "ProDOS 2.4.3 HD + Games",
     "file": "h32mb.2mg",
