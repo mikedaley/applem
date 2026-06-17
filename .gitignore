@@ -35,3 +35,11 @@ mcp/a2e-agent/logs/
 t
 
 video-outline.md
+/.agents/skills/skill-creator/
+/.agents/skills/mcp-client/
+/.agents/skills/capture/
+/.agents/skills/summarize/
+
+# Local tool state
+.codex/
+.lean-ctx/
