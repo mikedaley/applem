@@ -652,18 +652,22 @@ void App::drawStatusBar() {
       const float lineHeight = ImGui::GetTextLineHeight();
 
       // A light: green while reading, red while writing, a dim ring empty.
+      // It is centred on its label as the label is actually placed: in a
+      // bar ImGui pushes text down by the frame padding, so the top of the
+      // line is not where the text is.
       auto light = [&](const char *label, bool present, bool busy, bool writing) {
-        const ImVec2 at = ImGui::GetCursorScreenPos();
-        const ImVec2 centre(at.x + 5, at.y + lineHeight * 0.5f);
+        const float x = ImGui::GetCursorScreenPos().x;
+        ImGui::Dummy(ImVec2(12, lineHeight));
+        ImGui::SameLine(0, 4);
+        ImGui::TextColored(present ? ImGui::GetStyleColorVec4(ImGuiCol_Text) : secondary, "%s", label);
+        const float y = (ImGui::GetItemRectMin().y + ImGui::GetItemRectMax().y) * 0.5f;
+        const ImVec2 centre(x + 5, y);
         const ImU32 colour = !present ? IM_COL32(128, 128, 128, 70)
                              : !busy ? IM_COL32(128, 128, 128, 140)
                              : writing ? IM_COL32(224, 58, 62, 255)
                                        : IM_COL32(97, 187, 70, 255);
         if (present) draw->AddCircleFilled(centre, 4.0f, colour);
         else draw->AddCircle(centre, 3.5f, colour, 0, 1.2f);
-        ImGui::Dummy(ImVec2(12, lineHeight));
-        ImGui::SameLine(0, 4);
-        ImGui::TextColored(present ? ImGui::GetStyleColorVec4(ImGuiCol_Text) : secondary, "%s", label);
         ImGui::SameLine(0, 14);
       };
       light("Disk 1", drives_->hasDisk(0), drives_->isActive(0), drives_->isWriting(0));
