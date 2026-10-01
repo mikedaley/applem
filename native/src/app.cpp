@@ -347,6 +347,17 @@ bool App::commandKeysToWindow() const {
   return textInputActive_ || (screenHadKeyboard_ && commandIsOpenApple());
 }
 
+// A choice from the menu bar or the toolbar. ImGui sees every mouse event
+// the app gets, the press that opened a toolbar pull-down included, but the
+// menu's own tracking takes the release, so ImGui would go on thinking the
+// button held and spend the next click letting go of it: a dialog the choice
+// opened then needed clicking twice. The button is let go here instead.
+void App::menuChosen(const std::string &action) {
+  pendingActions_.push_back(action);
+  ImGuiIO &io = ImGui::GetIO();
+  for (int button = 0; button < ImGuiMouseButton_COUNT; button++) io.AddMouseButtonEvent(button, false);
+}
+
 void App::runMenuActions() {
   std::vector<std::string> actions;
   actions.swap(pendingActions_);

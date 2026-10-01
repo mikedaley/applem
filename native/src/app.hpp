@@ -100,7 +100,7 @@ public:
   // action runs at the start of the next frame, where ImGui may be used.
   const MenuBar &menuBar() const { return menuBar_; }
   const ToolbarState &toolbarState() const { return toolbar_; }
-  void menuChosen(const std::string &action) { pendingActions_.push_back(action); }
+  void menuChosen(const std::string &action);
 
   // Whether a key with Command held should skip the menu bar and go to the
   // window: the machine takes Command as Open Apple and has the keyboard,
