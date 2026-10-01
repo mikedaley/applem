@@ -1,6 +1,7 @@
 # Build outputs
 build/
 build-native/
+build-macos/
 dist/
 Testing/
 public/a2e.js
