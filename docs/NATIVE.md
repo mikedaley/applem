@@ -18,6 +18,14 @@ build-macos/native/test_native_input
 `native:build` configures the top-level CMake with `-DA2E_BUILD_NATIVE=ON`.
 The ROMs are embedded exactly as for the browser build.
 
+**The app runs on macOS 26 and later.** The top-level `CMakeLists.txt` sets
+`CMAKE_OSX_DEPLOYMENT_TARGET` to 26.0 before `project()`, so the core is
+built for the same macOS as the app; without it the compiler targets the
+macOS doing the building, and an app built on 27 would not start on 26.
+`Info.plist`'s `LSMinimumSystemVersion` is that same value. Using an API
+newer than 26 is a compiler warning (`-Wunguarded-availability-new`); guard
+it with `@available` rather than raising the target.
+
 **A release** is `npm run native:release` (`scripts/build-native-mac.sh`):
 a Release build in its own `build-macos-release/`, stamped with the version
 in `src/js/config/version.js`, signed with the Developer ID certificate
