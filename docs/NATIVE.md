@@ -238,10 +238,16 @@ block's cell green or red, cooling over about two seconds. A write marks the
 volume's figures for reading again, at most once a second. The callback is
 set once per card, since a refit or a machine switch builds a new one.
 
-View > Expansion Slots (`expansion_slots.*`, `slot_layout.*`) is the
-browser's window: each slot's offers from its `SLOT_UI` table, each card
-fitted once, fixed slots locked, Apply & Reset, the No-Slot Clock, and on a
-IIgs the built-in-or-card switch each slot has, which takes effect at once.
+View > Expansion Slots (`expansion_slots.*`, `slot_layout.*`) has the
+browser's rules drawn as the machine's logic board: each slot a connector
+with its number in silkscreen, the card in it a small board in the card's
+colour with its name, chips and gold fingers, and beside it the slot's use
+and its I/O and ROM addresses. A click on a slot offers its cards from its
+`SLOT_UI` table, each card fitted once; a fixed slot's card is grey and
+padlocked; an empty slot is a dashed outline; a slot changed and not yet
+fitted is marked ON RESET until Apply & Reset. The No-Slot Clock is a
+DS1215 on the board with its switch, and on a IIgs each slot has its
+built-in-or-card switch, which takes effect at once.
 Layouts are kept per machine under `[ApplEmSlots][<machine key>]`.
 
 **The host applies the slot layout, and before the power comes on.** The

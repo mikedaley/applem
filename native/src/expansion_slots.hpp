@@ -59,6 +59,7 @@ private:
   const MachineProfile *machine_ = nullptr;
   std::map<std::string, SlotLayout> saved_; // by machine key
   SlotLayout working_;
+  SlotLayout applied_; // what the machine has, to mark what will change
   bool dirty_ = false;
   bool wasOpen_ = false;
   std::function<void()> onApplied_;
