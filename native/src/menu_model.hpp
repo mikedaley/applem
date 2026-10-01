@@ -47,6 +47,15 @@ struct MenuItem {
 // menu are the platform's own.
 using MenuBar = std::vector<MenuItem>;
 
+// What the toolbar shows. Its buttons send the same actions as the menu
+// items they stand for.
+struct ToolbarState {
+  bool powered = false;
+  std::string machineName;
+  std::vector<MenuItem> machines; // the Machine menu's choices
+  bool hardDrives = false;        // there is a SmartPort to show
+};
+
 // A string that changes whenever anything a menu shows changes, so the
 // platform knows when to rebuild.
 std::string menuSignature(const MenuBar &bar);

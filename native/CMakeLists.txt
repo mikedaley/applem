@@ -46,6 +46,7 @@ set(NATIVE_SOURCES
     src/media_store.cpp
     src/menu_model.cpp
     src/native_menu.mm
+    src/native_toolbar.mm
     src/no_signal_frame.cpp
     src/platform_paths.mm
     src/save_states.cpp

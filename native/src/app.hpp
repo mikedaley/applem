@@ -94,6 +94,7 @@ public:
   // The menu bar as of the last frame, and an item chosen from it. The
   // action runs at the start of the next frame, where ImGui may be used.
   const MenuBar &menuBar() const { return menuBar_; }
+  const ToolbarState &toolbarState() const { return toolbar_; }
   void menuChosen(const std::string &action) { pendingActions_.push_back(action); }
 
   // Whether a key with Command held should skip the menu bar and go to the
@@ -172,6 +173,7 @@ private:
   std::set<int> keysDown_; // ImGuiKey values
 
   MenuBar menuBar_;
+  ToolbarState toolbar_;
   std::map<std::string, std::function<void()>> menuActions_;
   std::vector<std::string> pendingActions_;
   bool textInputActive_ = false;

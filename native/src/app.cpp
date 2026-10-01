@@ -385,6 +385,15 @@ void App::buildMenus() {
   });
 
   menuBar_ = {file, edit, machineMenu(), viewMenu()};
+
+  // The toolbar: the same actions, and the machine choices from the menu.
+  toolbar_.powered = emulation_.powered();
+  toolbar_.machineName = profile_ ? profile_->name : "";
+  toolbar_.hardDrives = hardDrives_->available();
+  toolbar_.machines.clear();
+  for (const MenuItem &entry : menuBar_[2].children) {
+    if (entry.action.rfind("machine.select.", 0) == 0) toolbar_.machines.push_back(entry);
+  }
 }
 
 MenuItem App::machineMenu() {
@@ -598,7 +607,8 @@ bool App::switchMachine(MachineId id) {
 
 void App::updateWindowTitle() {
   if (platform_.setWindowTitle && profile_) {
-    platform_.setWindowTitle(std::string("ApplEm · ") + profile_->name);
+    // The machine is the window's subtitle, under the app's name.
+    platform_.setWindowTitle("ApplEm");
   }
 }
 

@@ -19,6 +19,7 @@
 #include "app.hpp"
 #include "ui_theme.hpp"
 #include "native_menu.hpp"
+#include "native_toolbar.hpp"
 #include "platform_paths.hpp"
 #include "screen_renderer_metal.hpp"
 
@@ -79,11 +80,13 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
 - (void)releaseKeys;
 - (void)filesDropped:(const std::vector<std::string> &)paths;
 - (BOOL)commandKeysToWindow;
+- (void)attachToolbarTo:(NSWindow *)window;
 @end
 
 @implementation AppViewController {
   std::unique_ptr<App> _app;
   NativeMenu *_menu;
+  NativeToolbar *_toolbar;
 }
 
 - (instancetype)init {
@@ -205,6 +208,9 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
   _menu = [[NativeMenu alloc] initWithChosen:^(NSString *action) {
     app->menuChosen(action.UTF8String);
   }];
+  _toolbar = [[NativeToolbar alloc] initWithChosen:^(NSString *action) {
+    app->menuChosen(action.UTF8String);
+  }];
   return self;
 }
 
@@ -268,6 +274,7 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
   }
 
   [_menu update:_app->menuBar()];
+  [_toolbar update:_app->toolbarState()];
   if (_app->quitRequested()) [NSApp terminate:nil];
 }
 
@@ -276,6 +283,10 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
 
 - (void)filesDropped:(const std::vector<std::string> &)paths {
   if (_app) _app->filesDropped(paths);
+}
+
+- (void)attachToolbarTo:(NSWindow *)window {
+  [_toolbar attachToWindow:window];
 }
 
 - (BOOL)commandKeysToWindow {
@@ -328,6 +339,7 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
   [self.window center];
   [self.window setFrameAutosaveName:@"ApplEmMainWindow"];
   self.window.collectionBehavior |= NSWindowCollectionBehaviorFullScreenPrimary;
+  [self.controller attachToolbarTo:self.window];
   [self.window makeKeyAndOrderFront:nil];
   [NSApp activateIgnoringOtherApps:YES];
 
