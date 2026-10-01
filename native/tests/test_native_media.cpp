@@ -15,9 +15,11 @@
 #include "../src/media_store.hpp"
 #include "../src/slot_layout.hpp"
 #include "../src/state_store.hpp"
+#include "../src/volume_map.hpp"
 #include "../../src/host/machine_host.hpp"
 #include "machine/machine_profile.hpp"
 
+#include <cstring>
 #include <filesystem>
 #include <random>
 
@@ -115,6 +117,68 @@ TEST_CASE("A dropped image goes to the drive it belongs in", "[media]") {
   REQUIRE_FALSE(HardDrives::isBlockImage("ProDOS.po", 143360));
   REQUIRE(HardDrives::isBlockImage("Big.po", 800 * 1024));
   REQUIRE_FALSE(HardDrives::isBlockImage("Game.dsk", 143360));
+}
+
+namespace {
+
+// An 800K ProDOS volume named HARD1, its bitmap in block 6, with blocks 0
+// to 99 in use and three entries in its directory.
+std::vector<uint8_t> prodosVolume() {
+  std::vector<uint8_t> image(1600 * 512, 0);
+  uint8_t *header = image.data() + 2 * 512;
+  header[0x04] = 0xF5;
+  std::memcpy(header + 0x05, "HARD1", 5);
+  header[0x23] = 0x27;
+  header[0x24] = 0x0D;
+  header[0x25] = 3;
+  header[0x27] = 6;
+  header[0x29] = 1600 & 0xFF;
+  header[0x2A] = 1600 >> 8;
+  uint8_t *bitmap = image.data() + 6 * 512;
+  for (int block = 100; block < 1600; block++) bitmap[block / 8] |= 0x80 >> (block % 8);
+  return image;
+}
+
+} // namespace
+
+TEST_CASE("A SmartPort volume is read off its own blocks", "[media][volume]") {
+  const std::vector<uint8_t> image = prodosVolume();
+  const VolumeSummary volume = summariseVolume(image.data(), image.size(), 16);
+  CHECK(volume.prodos);
+  CHECK(volume.name == "/HARD1");
+  CHECK(volume.totalBlocks == 1600);
+  CHECK(volume.freeBlocks == 1500);
+  CHECK(volume.entries == 3);
+  REQUIRE(volume.used.size() == 16);
+  CHECK(volume.used[0] == 1.0f); // blocks 0 to 99, all in use
+  CHECK(volume.used[1] == 0.0f);
+  CHECK(volume.used[15] == 0.0f);
+}
+
+TEST_CASE("A volume that is not ProDOS has only its size", "[media][volume]") {
+  std::vector<uint8_t> image(800 * 512, 0);
+  const VolumeSummary volume = summariseVolume(image.data(), image.size(), 16);
+  CHECK_FALSE(volume.prodos);
+  CHECK(volume.totalBlocks == 800);
+  CHECK(volume.used.empty());
+
+  // A volume claiming a bitmap past the end of the image is not trusted.
+  std::vector<uint8_t> broken = prodosVolume();
+  broken[2 * 512 + 0x27] = 0xFF;
+  broken[2 * 512 + 0x28] = 0x7F;
+  CHECK_FALSE(summariseVolume(broken.data(), broken.size(), 16).prodos);
+}
+
+TEST_CASE("Every block has a cell, and the cells cover the volume", "[media][volume]") {
+  CHECK(cellForBlock(0, 65535, 384) == 0);
+  CHECK(cellForBlock(65534, 65535, 384) == 383);
+  CHECK(cellForBlock(70000, 65535, 384) == 383); // past the end, clamped
+  for (int cell = 0; cell < 384; cell++) {
+    const uint32_t first = cellFirstBlock(cell, 65535, 384);
+    CHECK(cellForBlock(first, 65535, 384) == cell);
+    if (first > 0) CHECK(cellForBlock(first - 1, 65535, 384) == cell - 1);
+  }
+  CHECK(cellFirstBlock(384, 65535, 384) == 65535);
 }
 
 TEST_CASE("The label colour is the browser's", "[media]") {

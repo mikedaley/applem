@@ -55,6 +55,7 @@ set(NATIVE_SOURCES
     src/state_store.cpp
     src/ui_controls.cpp
     src/ui_theme.mm
+    src/volume_map.cpp
 )
 
 add_executable(ApplEmNative MACOSX_BUNDLE ${NATIVE_SOURCES})
@@ -164,6 +165,7 @@ add_executable(test_native_media
     src/ui_controls.cpp
     src/ui_theme.mm
     src/platform_paths.mm
+    src/volume_map.cpp
 )
 target_include_directories(test_native_media PRIVATE
     ${CMAKE_SOURCE_DIR}/tests/catch2

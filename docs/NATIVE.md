@@ -166,12 +166,26 @@ View > Disk Drives is the browser's window and its rules
 ## SmartPort drives and expansion slots
 
 View > SmartPort Drives (`hard_drives.*`) is offered when the machine has a
-SmartPort: a IIgs's, or a card. Two devices, each with an activity light
-(green reading, red writing; the SmartPort reports activity for the card,
-so every device with an image lights), Insert, Recent with the library's
-hard drive images, and Eject, which offers a changed image for saving as it
-is. On a IIgs an image inserted while the machine runs is taken at the next
-reset, and the window says so.
+SmartPort: a IIgs's, or a card, and says which slot it is in. Each of the
+two devices is a card: a drive whose light shows a transfer (green reading,
+red writing), the ProDOS volume's name, the image's name and size, Edited
+and Locked when they apply, how full the volume is, a map of its blocks,
+the last four seconds' transfers as a graph with their rates, and Insert,
+Recent with the library's hard drive images, and Eject, which offers a
+changed image for saving as it is. An empty device is a place to drop one.
+On a IIgs an image inserted while the machine runs is taken at the next
+reset, and the window says so in a banner.
+
+**The map is the volume, and the machine's reads and writes light it.**
+`volume_map.*` reads the volume directory's header in block 2 and the
+free-block bitmap it points at, and divides the volume into 384 equal runs
+of blocks, each shaded by how much of it is in use (tested in
+`test_native_media`). The card's transfer callback reports every block the
+machine reads or writes, on the emulation thread under the machine's lock;
+the window collects them under the same lock each frame and warms that
+block's cell green or red, cooling over about two seconds. A write marks the
+volume's figures for reading again, at most once a second. The callback is
+set once per card, since a refit or a machine switch builds a new one.
 
 View > Expansion Slots (`expansion_slots.*`, `slot_layout.*`) is the
 browser's window: each slot's offers from its `SLOT_UI` table, each card

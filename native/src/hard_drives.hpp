@@ -9,11 +9,16 @@
 
 #include "media_store.hpp"
 #include "platform.hpp"
+#include "volume_map.hpp"
 
 #include <array>
 #include <optional>
 #include <string>
 #include <vector>
+
+namespace a2e {
+class SmartPortCard;
+}
 
 namespace a2e::native {
 
@@ -38,6 +43,7 @@ public:
   static constexpr int DEVICES = 2;
 
   HardDrives(Emulation &emulation, Platform &platform, std::string mediaDirectory);
+  ~HardDrives();
 
   void restore();
   void machineChanged();
@@ -61,11 +67,44 @@ public:
   int dropTarget() const;
 
 private:
+  // The block map's grid, and the activity graph's bins.
+  static constexpr int MAP_COLUMNS = 48;
+  static constexpr int MAP_ROWS = 8;
+  static constexpr int MAP_CELLS = MAP_COLUMNS * MAP_ROWS;
+  static constexpr int HISTORY_BINS = 60;
+  static constexpr double HISTORY_BIN_SECONDS = 1.0 / 15.0; // four seconds across
+
   struct Device {
     std::optional<std::string> filename;
     size_t size = 0;
     int activityFrames = 0;
     bool lastWrite = false;
+    bool modified = false;
+    double lightAt = -1; // the last transfer, for the drive's light
+    bool lightWrite = false;
+    bool writeProtected = false;
+
+    // What the volume holds, read again a moment after anything writes.
+    VolumeSummary volume;
+    bool volumeStale = true;
+    double volumeReadAt = -1;
+
+    // Where on the volume the machine has been lately: each transfer warms
+    // its cell, which cools over about a second.
+    std::array<float, MAP_CELLS> readHeat{};
+    std::array<float, MAP_CELLS> writeHeat{};
+    // Blocks read and written in each of the last few seconds' bins.
+    std::array<uint16_t, HISTORY_BINS> readHistory{};
+    std::array<uint16_t, HISTORY_BINS> writeHistory{};
+  };
+
+  // A block transfer the card reported, kept until the next frame. The card
+  // reports on the emulation thread, under the machine's lock, and the
+  // frame takes them under the same lock.
+  struct Transfer {
+    int device;
+    uint32_t block;
+    bool write;
   };
 
   void insertImage(int device, const std::string &filename, const std::vector<uint8_t> &data,
@@ -76,6 +115,12 @@ private:
   void reportError(const std::string &message);
   void drawDevice(int index);
   void drawRecentPopup(int index);
+  void drawHeader();
+  // Watch the card's transfers, once per card: a refit or a machine switch
+  // builds a new one.
+  void watchTransfers(SmartPortCard *card);
+  void applyTransfers(double now);
+  void readVolumes(double now);
 
   Emulation &emulation_;
   Platform &platform_;
@@ -84,6 +129,11 @@ private:
   std::string libraryDirectory_;
   std::array<Device, DEVICES> devices_;
   bool available_ = false;
+  std::string location_; // "Slot 7", where the SmartPort is
+  SmartPortCard *watched_ = nullptr;
+  std::vector<Transfer> transfers_;
+  long historyBin_ = -1; // the bin the newest history entry is for
+  double lastUpdate_ = 0;
   std::string notice_;
   double noticeUntil_ = 0;
   std::string error_;
