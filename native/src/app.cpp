@@ -118,8 +118,7 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "ShowDisplaySettings=%d", &value) == 1) s.showDisplaySettings = value;
     else if (std::sscanf(line, "UKCharacterSet=%d", &value) == 1) s.ukCharacterSet = value;
     else if (std::sscanf(line, "ShowDiskDrives=%d", &value) == 1) s.showDiskDrives = value;
-    else if (std::sscanf(line, "DiskSurface=%d", &value) == 1) s.diskSurface = value;
-    else if (std::sscanf(line, "DiskDetails=%d", &value) == 1) s.diskDetails = value;
+    else if (std::sscanf(line, "DiskInspector=%d", &value) == 1) s.diskInspector = value;
     else if (std::sscanf(line, "DriveSounds=%d", &value) == 1) s.driveSounds = value;
     else if (std::sscanf(line, "ShowHardDrives=%d", &value) == 1) s.showHardDrives = value;
     else if (std::sscanf(line, "ShowExpansionSlots=%d", &value) == 1) s.showExpansionSlots = value;
@@ -152,8 +151,7 @@ void App::registerSettingsHandler() {
     out->appendf("ShowDisplaySettings=%d\n", s.showDisplaySettings ? 1 : 0);
     out->appendf("UKCharacterSet=%d\n", s.ukCharacterSet ? 1 : 0);
     out->appendf("ShowDiskDrives=%d\n", s.showDiskDrives ? 1 : 0);
-    out->appendf("DiskSurface=%d\n", s.diskSurface ? 1 : 0);
-    out->appendf("DiskDetails=%d\n", s.diskDetails ? 1 : 0);
+    out->appendf("DiskInspector=%d\n", s.diskInspector ? 1 : 0);
     out->appendf("DriveSounds=%d\n", s.driveSounds ? 1 : 0);
     out->appendf("ShowHardDrives=%d\n", s.showHardDrives ? 1 : 0);
     out->appendf("ShowExpansionSlots=%d\n", s.showExpansionSlots ? 1 : 0);
@@ -238,8 +236,7 @@ void App::startEmulation() {
   slots_.setMachine(*wanted);
   slots_.apply();
   restoreBatteryRam();
-  drives_->surfaceShown = settings_.diskSurface;
-  drives_->detailsShown = settings_.diskDetails;
+  drives_->inspectorShown = settings_.diskInspector;
   emulation_.driveSounds().setEnabled(settings_.driveSounds);
   drives_->restore();
   // After the slot layout: fitting it can rebuild the SmartPort, taking an
@@ -758,10 +755,8 @@ void App::drawDiskDrives() {
   hardDrives_->draw(&showHard);
   if (hardDrives_->available()) settings_.showHardDrives = showHard;
   const bool sounds = emulation_.driveSounds().enabled();
-  if (drives_->surfaceShown != settings_.diskSurface || drives_->detailsShown != settings_.diskDetails ||
-      sounds != settings_.driveSounds) {
-    settings_.diskSurface = drives_->surfaceShown;
-    settings_.diskDetails = drives_->detailsShown;
+  if (drives_->inspectorShown != settings_.diskInspector || sounds != settings_.driveSounds) {
+    settings_.diskInspector = drives_->inspectorShown;
     settings_.driveSounds = sounds;
     ImGui::MarkIniSettingsDirty();
   }

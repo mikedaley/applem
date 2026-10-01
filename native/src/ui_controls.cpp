@@ -456,4 +456,20 @@ bool Disclosure(const char *label, bool defaultOpen) {
   return open;
 }
 
+bool Disclosure(const char *label, bool *open) {
+  ImGuiWindow *window = ImGui::GetCurrentWindow();
+  if (window->SkipItems) return false;
+  ImGui::GetStateStorage()->SetBool(window->GetID(label), *open);
+  const bool now = Disclosure(label, *open);
+  const bool changed = now != *open;
+  *open = now;
+  return changed;
+}
+
+float SwitchWidth(const char *label) {
+  const float trackWidth = std::round(std::round(ImGui::GetFrameHeight() * 0.78f) * 1.75f);
+  const float text = ImGui::CalcTextSize(label, nullptr, true).x;
+  return (text > 0 ? text + ImGui::GetStyle().ItemInnerSpacing.x * 2 : 0) + trackWidth;
+}
+
 } // namespace a2e::native::ui

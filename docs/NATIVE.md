@@ -133,8 +133,41 @@ right-click menu, to leave); View > Full Screen is macOS's.
 
 ## Disk drives
 
-View > Disk Drives is the browser's window and its rules
-(`disk_drives.*`, `media_store.*`, `drive_sounds.*`):
+View > Disk Drives is the browser's Disk Drives and Disk Inspector windows
+in one (`disk_drives.*`, `disk_inspector_data.*`, `disk_platter.*`,
+`media_store.*`, `drive_sounds.*`). A card per drive carries the disk,
+turning as the real one does, with the head on it; the label in the
+filename's sticker colour; what the inspector found (format, 13 or 16
+sector, flux, bad sectors); the head's track; the controller's phases,
+latch and state; and Insert, Recent, Blank and Eject. Clicking a card
+inspects that drive, below: the platter coloured by what is recorded on
+every quarter track (or, in Timing, how long a flux track's cells took),
+hover for what is under the pointer and click to pick a track; the track
+unrolled as a strip that zooms with the scroll wheel down to the flux
+transitions, with its sectors named and the head marked; the sectors in the
+order they pass the head; and the picked sector's bytes or every nibble on
+the track. Follow head keeps the inspector on the head's track. The
+inspector folds away under its disclosure (`DiskInspector` in the
+settings).
+
+**One description of a disk, the core's.** The whole disk comes through
+`inspect::buildOverview`, the buffer the browser parses, read here by
+`parseOverview`, so both builds draw the same thing; a single track is read
+straight from `inspect::analyzeTrack`, since nothing here needs it as bytes.
+A disk is read again only when `DiskController::getRevision` moves, and at
+most twice a second while it is being written, through the *const* image
+accessor: the writable one counts as a change, and the disk would be read
+for ever.
+
+**The platter is painted once and turned.** `paintPlatter` lays the
+overview out pixel by pixel from polar coordinates, as the browser's
+`_paintDisk` does, into a texture that is repainted only when the overview
+or the mode changes; a frame draws it as one quad turned by the core's own
+`DiskImage::getRotation()`, so what passes under the drawn head is what is
+passing under the real one. `test_native_media` pins the parsing, the
+summary, a whole track, the ring geometry and the painting's transparency.
+
+The drive's rules are the browser's:
 
 - **A drive remembers the image as it was inserted**, in
   `Media/floppy/` under Application Support, and puts it back at startup;
@@ -155,11 +188,8 @@ View > Disk Drives is the browser's window and its rules
   6kHz low pass and mixed into the output by the audio callback through a
   counter, without locking. It plays when an active drive crosses a whole
   track.
-- The surface is the browser's canvas drawing in ImGui: the platter spins
-  while the drive is active and coasts down with a 600ms half life, tracks
-  warm with use and cool every 100ms, and the label colour comes from the
-  same hash of the filename (pinned against the browser's own in
-  `test_native_media`).
+- The label colour comes from the same hash of the filename as the
+  browser's (pinned against the browser's own in `test_native_media`).
 - Files dropped on the window go to the first empty drive. The browser's
   `public/disks` library is bundled and offered under Recent.
 

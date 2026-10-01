@@ -34,6 +34,8 @@ set(NATIVE_SOURCES
     src/app.cpp
     src/audio_output.mm
     src/disk_drives.cpp
+    src/disk_inspector_data.cpp
+    src/disk_platter.cpp
     src/display.cpp
     src/display_settings.cpp
     src/drive_sounds.cpp
@@ -157,6 +159,8 @@ add_executable(test_native_media
     src/slot_layout.cpp
     src/state_store.cpp
     src/disk_drives.cpp
+    src/disk_inspector_data.cpp
+    src/disk_platter.cpp
     src/hard_drives.cpp
     src/drive_sounds.cpp
     src/media_store.cpp

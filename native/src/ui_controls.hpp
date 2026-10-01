@@ -54,6 +54,11 @@ bool SliderFloat(const char *label, float *value, float min, float max, const ch
 // A disclosure: a chevron and a title that show or hide what follows. Returns
 // whether it is open; the state is kept per window, as ImGui keeps a tree's.
 bool Disclosure(const char *label, bool defaultOpen = false);
+// The same, open as `*open` says and writing back a click; true on a click.
+bool Disclosure(const char *label, bool *open);
+
+// How wide Switch draws with this label, for placing one at a right edge.
+float SwitchWidth(const char *label);
 
 bool BeginPopUpButton(const char *label, const char *preview, float width = 0.0f);
 void EndPopUpButton();

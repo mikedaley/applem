@@ -16,6 +16,9 @@
 #include "../src/slot_layout.hpp"
 #include "../src/state_store.hpp"
 #include "../src/volume_map.hpp"
+#include "../src/disk_inspector_data.hpp"
+#include "../src/disk_platter.hpp"
+#include "disk-image/dsk_disk_image.hpp"
 #include "../../src/host/machine_host.hpp"
 #include "machine/machine_profile.hpp"
 
@@ -179,6 +182,79 @@ TEST_CASE("Every block has a cell, and the cells cover the volume", "[media][vol
     if (first > 0) CHECK(cellForBlock(first - 1, 65535, 384) == cell - 1);
   }
   CHECK(cellFirstBlock(384, 65535, 384) == 65535);
+}
+
+TEST_CASE("The inspector reads a whole disk through the core's overview", "[media][inspector]") {
+  auto data = readFile("public/disks/ProDOS 2.4.3.po");
+  REQUIRE(data);
+  a2e::DskDiskImage image;
+  REQUIRE(image.load(data->data(), data->size(), "ProDOS 2.4.3.po"));
+
+  const auto overview = parseOverview(a2e::inspect::buildOverview(image, 720));
+  REQUIRE(overview);
+  CHECK(overview->buckets == 720);
+  REQUIRE(overview->tracks.size() == 160);
+  CHECK(overview->tracks[0].present);
+  CHECK(overview->tracks[0].sectorsFound == 16);
+  CHECK(overview->tracks[0].kinds.size() == 720);
+
+  const DiskSummary summary = summariseDisk(*overview);
+  CHECK(summary.tracks == 35);
+  CHECK(summary.sectors == 560);
+  CHECK(summary.good == 560);
+  CHECK(summary.bad == 0);
+  CHECK(summary.format == "16 sector");
+
+  // A buffer it does not know is refused rather than drawn.
+  std::vector<uint8_t> wrong = a2e::inspect::buildOverview(image, 720);
+  wrong[4] = 99;
+  CHECK_FALSE(parseOverview(wrong));
+  CHECK_FALSE(parseOverview({}));
+}
+
+TEST_CASE("The inspector reads one track in full", "[media][inspector]") {
+  auto data = readFile("public/disks/ProDOS 2.4.3.po");
+  REQUIRE(data);
+  a2e::DskDiskImage image;
+  REQUIRE(image.load(data->data(), data->size(), "ProDOS 2.4.3.po"));
+
+  const TrackDetail track = readTrackDetail(image, 0);
+  CHECK(track.present);
+  CHECK_FALSE(track.flux);
+  CHECK(track.analysis.sectors.size() == 16);
+  REQUIRE_FALSE(track.analysis.nibbles.empty());
+
+  // Every nibble is found again from any of its cells, and the cells before
+  // the first belong to the last, round the end of the track.
+  const auto &nibbles = track.analysis.nibbles;
+  for (size_t i = 0; i < nibbles.size(); i += 97) {
+    CHECK(nibbleAtCell(nibbles, nibbles[i].start_bit) == static_cast<int>(i));
+    CHECK(nibbleAtCell(nibbles, nibbles[i].start_bit + nibbles[i].cells - 1) == static_cast<int>(i));
+  }
+  if (nibbles.front().start_bit > 0) {
+    CHECK(nibbleAtCell(nibbles, 0) == static_cast<int>(nibbles.size()) - 1);
+  }
+
+  CHECK_FALSE(readTrackDetail(image, 159).present); // past the last track
+  CHECK(trackLabel(0) == "0");
+  CHECK(trackLabel(69) == "17.25");
+  CHECK(trackLabel(70) == "17.5");
+}
+
+TEST_CASE("The platter puts each quarter track on its own ring", "[media][inspector]") {
+  for (int qt = 0; qt < platter::QUARTER_TRACKS; qt++) {
+    CHECK(platter::quarterTrackAt(platter::radiusOf(qt)) == qt);
+  }
+  CHECK(platter::quarterTrackAt(platter::BAND_OUTER + 0.01f) == -1);
+  CHECK(platter::quarterTrackAt(platter::BAND_INNER - 0.01f) == -1);
+
+  // Outside the disk and in the hub hole is transparent; the medium is not.
+  std::vector<uint8_t> rgba;
+  paintPlatter(rgba, 64, nullptr, PlatterMode::Structure);
+  REQUIRE(rgba.size() == 64 * 64 * 4);
+  CHECK(rgba[3] == 0);                      // a corner
+  CHECK(rgba[(32 * 64 + 32) * 4 + 3] == 0); // the middle of the hub hole
+  CHECK(rgba[(32 * 64 + 2) * 4 + 3] > 200); // on the medium, near the rim
 }
 
 TEST_CASE("The label colour is the browser's", "[media]") {
