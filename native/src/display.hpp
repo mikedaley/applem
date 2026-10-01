@@ -7,6 +7,8 @@
 
 #pragma once
 
+#include "ui_controls.hpp"
+
 #include "display_settings.hpp"
 
 #include "imgui.h"
@@ -120,6 +122,8 @@ private:
   float groupWidth_ = 0;
   bool groupHasRow_ = false;
   float rowTop_ = 0;
+  // Where this window's dialogs open: over it.
+  ui::DialogAnchor dialogs_;
 };
 
 } // namespace a2e::native

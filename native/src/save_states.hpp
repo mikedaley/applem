@@ -7,6 +7,8 @@
 
 #pragma once
 
+#include "ui_controls.hpp"
+
 #include "platform.hpp"
 #include "state_store.hpp"
 
@@ -98,6 +100,8 @@ private:
   std::map<std::string, std::pair<std::string, double>> flashes_; // id: text, when
   std::string error_;
   bool openError_ = false;
+  // Where this window's dialogs open: over it.
+  ui::DialogAnchor dialogs_;
 };
 
 } // namespace a2e::native

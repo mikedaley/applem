@@ -478,6 +478,20 @@ bool g_windowDocking = false;
 
 void SetWindowDocking(bool allowed) { g_windowDocking = allowed; }
 
+void DialogAnchor::note() {
+  const ImVec2 pos = ImGui::GetWindowPos();
+  const ImVec2 size = ImGui::GetWindowSize();
+  centre_ = ImVec2(pos.x + size.x * 0.5f, pos.y + size.y * 0.5f);
+  frame_ = ImGui::GetFrameCount();
+}
+
+void DialogAnchor::placeNext() const {
+  // Drawn this frame or the last: the window is showing.
+  const bool showing = frame_ >= 0 && ImGui::GetFrameCount() - frame_ <= 1;
+  ImGui::SetNextWindowPos(showing ? centre_ : ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing,
+                          ImVec2(0.5f, 0.5f));
+}
+
 void BeforeWindow(const char *name) {
   if (g_windowDocking) return;
   ImGuiWindowClass own;

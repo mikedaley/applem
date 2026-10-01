@@ -67,6 +67,20 @@ float SwitchWidth(const char *label);
 void SetWindowDocking(bool allowed);
 void BeforeWindow(const char *name);
 
+// Where a window's dialogs open: over the window, while it is showing, and
+// over the main window when it is not (an action from a menu with the
+// window shut). note() inside the window's Begin each frame; placeNext()
+// before the dialog's.
+class DialogAnchor {
+public:
+  void note();
+  void placeNext() const;
+
+private:
+  ImVec2 centre_{0, 0};
+  int frame_ = -1;
+};
+
 bool BeginPopUpButton(const char *label, const char *preview, float width = 0.0f);
 void EndPopUpButton();
 

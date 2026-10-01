@@ -1638,7 +1638,7 @@ void DiskDrives::drawSavePopup() {
     ImGui::OpenPopup(SAVE_POPUP);
     save_.open = false;
   }
-  ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+  dialogs_.placeNext();
   if (!ImGui::BeginPopupModal(SAVE_POPUP, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
 
   ImGui::Text("The disk in drive %d has changed. Save it as:", save_.drive + 1);
@@ -1691,7 +1691,7 @@ void DiskDrives::drawErrorPopup() {
     ImGui::OpenPopup(ERROR_POPUP);
     openError_ = false;
   }
-  ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+  dialogs_.placeNext();
   if (!ImGui::BeginPopupModal(ERROR_POPUP, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
   ImGui::TextUnformatted(error_.c_str());
   if (ui::Button("OK", ImVec2(110, 0)) || ImGui::IsKeyPressed(ImGuiKey_Enter) ||
@@ -1707,6 +1707,7 @@ void DiskDrives::draw(bool *open) {
     for (Drive &d : drives_) paintPlatters(d);
     ui::BeforeWindow("Disk Drives");
     if (ImGui::Begin("Disk Drives", open, ImGuiWindowFlags_AlwaysAutoResize)) {
+      dialogs_.note();
       const ImVec2 top = ImGui::GetCursorScreenPos();
       ui::Switch("Inspector", &inspectorShown);
       bool sounds = emulation_.driveSounds().enabled();

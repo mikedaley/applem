@@ -489,8 +489,7 @@ void Display::drawSaveAsPopup() {
     ImGui::OpenPopup(SAVE_AS_POPUP);
     openSaveAs_ = false;
   }
-  ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing,
-                          ImVec2(0.5f, 0.5f));
+  dialogs_.placeNext();
   if (!ImGui::BeginPopupModal(SAVE_AS_POPUP, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
 
   DisplayState &state = current();
@@ -552,8 +551,7 @@ void Display::drawDeletePopup() {
     ImGui::OpenPopup(DELETE_POPUP);
     openDelete_ = false;
   }
-  ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing,
-                          ImVec2(0.5f, 0.5f));
+  dialogs_.placeNext();
   if (!ImGui::BeginPopupModal(DELETE_POPUP, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
   DisplayState &state = current();
   const DisplayProfile *profile = findProfile(profiles_, state.preset);
@@ -684,6 +682,7 @@ void Display::drawPage(int page) {
 void Display::drawWindow(bool *open) {
   ui::BeforeWindow("Display Settings");
   if (ImGui::Begin("Display Settings", open, ImGuiWindowFlags_AlwaysAutoResize)) {
+    dialogs_.note();
     DisplayState &state = current();
     ImDrawList *draw = ImGui::GetWindowDrawList();
     caption(draw, ImGui::GetCursorScreenPos(), "MONITOR");

@@ -7,6 +7,8 @@
 
 #pragma once
 
+#include "ui_controls.hpp"
+
 #include "media_store.hpp"
 #include "platform.hpp"
 #include "volume_map.hpp"
@@ -147,6 +149,8 @@ private:
   double noticeUntil_ = 0;
   std::string error_;
   bool openError_ = false;
+  // Where this window's dialogs open: over it.
+  ui::DialogAnchor dialogs_;
 };
 
 } // namespace a2e::native

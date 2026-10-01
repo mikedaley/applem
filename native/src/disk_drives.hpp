@@ -7,6 +7,8 @@
 
 #pragma once
 
+#include "ui_controls.hpp"
+
 #include "disk_inspector_data.hpp"
 #include "disk_platter.hpp"
 #include "media_store.hpp"
@@ -227,6 +229,8 @@ private:
   PendingSave save_;
   std::string error_;
   bool openError_ = false;
+  // Where this window's dialogs open: over it.
+  ui::DialogAnchor dialogs_;
 };
 
 // The formats a disk can be saved as, in the order offered, as the core

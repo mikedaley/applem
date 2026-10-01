@@ -382,6 +382,10 @@ The app is meant to feel like a Mac app rather than an ImGui tool:
   ImGui control in a window stands out at once.
 - **SF Pro** for the interface and **SF Mono** for figures.
 - A dock area holding one window hides its tab, so the screen has none.
+- **A window's dialogs open over it** (`ui::DialogAnchor`): each window
+  notes its centre every frame it is drawn, and its confirmations and
+  errors are placed there; one asked for while the window is shut (an eject
+  from the File menu) opens over the main window.
 - **Windows stay windows unless View > Window Docking is on** (off by
   default, remembered as `WindowDocking`). Docking itself stays on, because
   the screen is docked to fill the main window; instead each window calls

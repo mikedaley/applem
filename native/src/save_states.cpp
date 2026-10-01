@@ -529,6 +529,7 @@ void SaveStates::draw(bool *open) {
     ui::BeforeWindow("Save States");
 
     if (ImGui::Begin("Save States", open, ImGuiWindowFlags_AlwaysAutoResize)) {
+      dialogs_.note();
       const float width = CARD_WIDTH * 3 + COLUMN_GAP * 2;
       drawAutosave(width);
       ImGui::Dummy(ImVec2(0, 6));
@@ -557,7 +558,7 @@ void SaveStates::draw(bool *open) {
     ImGui::OpenPopup(SWITCH_POPUP);
     openSwitch_ = false;
   }
-  ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+  dialogs_.placeNext();
   if (ImGui::BeginPopupModal(SWITCH_POPUP, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
     ImGui::Text("%s was saved on the %s.", pendingWhat_.c_str(), pendingMachineName_.c_str());
     ImGui::TextDisabled("Switching rebuilds the machine; disks and memory now in it are lost.");
@@ -585,7 +586,7 @@ void SaveStates::draw(bool *open) {
     ImGui::OpenPopup(ERROR_POPUP);
     openError_ = false;
   }
-  ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+  dialogs_.placeNext();
   if (ImGui::BeginPopupModal(ERROR_POPUP, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
     ImGui::PushTextWrapPos(ImGui::GetFontSize() * 32);
     ImGui::TextUnformatted(error_.c_str());

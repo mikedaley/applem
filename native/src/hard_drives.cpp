@@ -707,6 +707,7 @@ void HardDrives::draw(bool *open) {
   if (open && *open) {
     ui::BeforeWindow("SmartPort Drives");
     if (ImGui::Begin("SmartPort Drives", open, ImGuiWindowFlags_AlwaysAutoResize)) {
+      dialogs_.note();
       drawHeader();
       drawDevice(0);
       ImGui::SameLine(0, ImGui::GetStyle().ItemSpacing.x * 2);
@@ -719,7 +720,7 @@ void HardDrives::draw(bool *open) {
     ImGui::OpenPopup(ERROR_POPUP);
     openError_ = false;
   }
-  ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+  dialogs_.placeNext();
   if (ImGui::BeginPopupModal(ERROR_POPUP, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
     ImGui::PushTextWrapPos(ImGui::GetFontSize() * 32);
     ImGui::TextUnformatted(error_.c_str());
