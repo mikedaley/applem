@@ -60,14 +60,24 @@ set(NATIVE_SOURCES
     src/volume_map.cpp
 )
 
+# The app's version is the one the release process bumps, the browser's, so
+# every build says the same as the release it came from.
+file(READ ${CMAKE_SOURCE_DIR}/src/js/config/version.js VERSION_JS)
+string(REGEX MATCH "VERSION = \"([^\"]+)\"" _ "${VERSION_JS}")
+set(APPLEM_VERSION "${CMAKE_MATCH_1}")
+if(NOT APPLEM_VERSION)
+    set(APPLEM_VERSION "${PROJECT_VERSION}")
+endif()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/js/config/version.js)
+
 add_executable(ApplEmNative MACOSX_BUNDLE ${NATIVE_SOURCES})
 set_target_properties(ApplEmNative PROPERTIES
     OUTPUT_NAME "ApplEm"
     MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/resources/Info.plist.in
     MACOSX_BUNDLE_BUNDLE_NAME "ApplEm"
     MACOSX_BUNDLE_GUI_IDENTIFIER "uk.co.retrotech71.applem.native"
-    MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
-    MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+    MACOSX_BUNDLE_BUNDLE_VERSION "${APPLEM_VERSION}"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "${APPLEM_VERSION}"
     MACOSX_BUNDLE_ICON_FILE "icon.icns"
 )
 

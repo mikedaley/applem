@@ -90,10 +90,29 @@ NSEventModifierFlags modifierMask(unsigned modifiers) {
   return item;
 }
 
+// The system's About panel, with who made the app and where to find more.
+- (void)showAbout:(id)sender {
+  NSMutableParagraphStyle *centred = [[NSMutableParagraphStyle alloc] init];
+  centred.alignment = NSTextAlignmentCenter;
+  NSFont *font = [NSFont systemFontOfSize:NSFont.smallSystemFontSize];
+  NSMutableAttributedString *credits = [[NSMutableAttributedString alloc]
+      initWithString:@"Mike Daley\n"
+          attributes:@{NSFontAttributeName : font, NSForegroundColorAttributeName : NSColor.labelColor,
+                       NSParagraphStyleAttributeName : centred}];
+  [credits appendAttributedString:[[NSAttributedString alloc]
+                                      initWithString:@"www.retrotech71.co.uk"
+                                          attributes:@{NSFontAttributeName : font,
+                                                       NSLinkAttributeName : [NSURL URLWithString:@"https://www.retrotech71.co.uk"],
+                                                       NSParagraphStyleAttributeName : centred}]];
+  [NSApp orderFrontStandardAboutPanelWithOptions:@{NSAboutPanelOptionCredits : credits}];
+  [NSApp activateIgnoringOtherApps:YES];
+}
+
 - (NSMenuItem *)applicationMenu {
   NSMenuItem *appItem = [[NSMenuItem alloc] init];
   NSMenu *menu = [[NSMenu alloc] init];
-  [menu addItemWithTitle:@"About ApplEm" action:@selector(orderFrontStandardAboutPanel:) keyEquivalent:@""];
+  NSMenuItem *about = [menu addItemWithTitle:@"About ApplEm" action:@selector(showAbout:) keyEquivalent:@""];
+  about.target = self;
   [menu addItem:[NSMenuItem separatorItem]];
   NSMenuItem *services = [menu addItemWithTitle:@"Services" action:nil keyEquivalent:@""];
   services.submenu = [[NSMenu alloc] init];
