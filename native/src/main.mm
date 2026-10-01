@@ -15,6 +15,7 @@
 #import <Metal/Metal.h>
 #import <MetalKit/MetalKit.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+#import <objc/runtime.h>
 
 #include "app.hpp"
 #include "ui_theme.hpp"
@@ -31,9 +32,85 @@
 
 using a2e::native::App;
 
-// The Metal view, taking files dropped on the window.
+// Files dropped on any of the app's windows: the main one and every window
+// ImGui makes for a window dragged out of it. Each drop and each move of a
+// drag over a window carries where it is, in ImGui's coordinates, so a disk
+// dropped on a drive's card goes into that drive and the card can light up
+// while the drag is over it.
+namespace {
+
+App *g_dropApp = nullptr;
+
+// A point in a window's own coordinates, in ImGui's: the primary screen's top
+// left, y down, as the Cocoa backend places viewports.
+ImVec2 imguiPoint(NSWindow *window, NSPoint inWindow) {
+  const NSRect screen = [window convertRectToScreen:NSMakeRect(inWindow.x, inWindow.y, 0, 0)];
+  return ImVec2(static_cast<float>(screen.origin.x),
+                static_cast<float>(NSScreen.screens[0].frame.size.height - screen.origin.y));
+}
+
+std::vector<std::string> droppedPaths(id<NSDraggingInfo> info) {
+  NSArray<NSURL *> *urls = [info.draggingPasteboard
+      readObjectsForClasses:@[ NSURL.class ]
+                    options:@{NSPasteboardURLReadingFileURLsOnlyKey : @YES}];
+  std::vector<std::string> paths;
+  for (NSURL *url in urls) paths.push_back(url.path.UTF8String);
+  return paths;
+}
+
+NSDragOperation dragMoved(NSWindow *window, id<NSDraggingInfo> info) {
+  if (g_dropApp) g_dropApp->dragHover(imguiPoint(window, info.draggingLocation));
+  return NSDragOperationCopy;
+}
+
+void dragLeft() {
+  if (g_dropApp) g_dropApp->dragHover(std::nullopt);
+}
+
+BOOL dropped(NSWindow *window, id<NSDraggingInfo> info) {
+  const std::vector<std::string> paths = droppedPaths(info);
+  dragLeft();
+  if (paths.empty() || !g_dropApp) return NO;
+  g_dropApp->filesDropped(paths, imguiPoint(window, info.draggingLocation));
+  return YES;
+}
+
+// The same, added to the view ImGui's backend puts in each window it makes,
+// which is not a class of ours.
+NSDragOperation viewportDragEntered(NSView *self, SEL, id<NSDraggingInfo> info) { return dragMoved(self.window, info); }
+NSDragOperation viewportDragUpdated(NSView *self, SEL, id<NSDraggingInfo> info) { return dragMoved(self.window, info); }
+void viewportDragExited(NSView *, SEL, id<NSDraggingInfo>) { dragLeft(); }
+BOOL viewportPerformDrag(NSView *self, SEL, id<NSDraggingInfo> info) { return dropped(self.window, info); }
+
+void (*g_platformCreateWindow)(ImGuiViewport *) = nullptr;
+
+void createViewportWindow(ImGuiViewport *viewport) {
+  g_platformCreateWindow(viewport);
+  void *handle = viewport->PlatformHandleRaw ? viewport->PlatformHandleRaw : viewport->PlatformHandle;
+  NSWindow *window = handle ? (__bridge NSWindow *)handle : nil;
+  NSView *view = window.contentView;
+  if (!view) return;
+  Class viewClass = view.class;
+  // Added once per class; a class that already answers keeps its own.
+  class_addMethod(viewClass, @selector(draggingEntered:), (IMP)viewportDragEntered, "Q@:@");
+  class_addMethod(viewClass, @selector(draggingUpdated:), (IMP)viewportDragUpdated, "Q@:@");
+  class_addMethod(viewClass, @selector(draggingExited:), (IMP)viewportDragExited, "v@:@");
+  class_addMethod(viewClass, @selector(performDragOperation:), (IMP)viewportPerformDrag, "B@:@");
+  [view registerForDraggedTypes:@[ NSPasteboardTypeFileURL ]];
+}
+
+// Call once, after the Cocoa backend is initialised.
+void acceptDropsOnViewports() {
+  ImGuiPlatformIO &io = ImGui::GetPlatformIO();
+  if (g_platformCreateWindow || !io.Platform_CreateWindow) return;
+  g_platformCreateWindow = io.Platform_CreateWindow;
+  io.Platform_CreateWindow = createViewportWindow;
+}
+
+} // namespace
+
+// The Metal view, the main window's.
 @interface ApplEmView : MTKView
-@property(nonatomic, copy) void (^onDrop)(NSArray<NSString *> *paths);
 @end
 
 @implementation ApplEmView
@@ -45,17 +122,19 @@ using a2e::native::App;
 }
 
 - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
-  return NSDragOperationCopy;
+  return dragMoved(self.window, sender);
+}
+
+- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender {
+  return dragMoved(self.window, sender);
+}
+
+- (void)draggingExited:(id<NSDraggingInfo>)sender {
+  dragLeft();
 }
 
 - (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
-  NSArray<NSURL *> *urls = [sender.draggingPasteboard
-      readObjectsForClasses:@[ NSURL.class ]
-                    options:@{NSPasteboardURLReadingFileURLsOnlyKey : @YES}];
-  NSMutableArray<NSString *> *paths = [NSMutableArray array];
-  for (NSURL *url in urls) [paths addObject:url.path];
-  if (paths.count && self.onDrop) self.onDrop(paths);
-  return paths.count > 0;
+  return dropped(self.window, sender);
 }
 
 @end
@@ -78,7 +157,6 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
 @property(nonatomic, strong) id<MTLCommandQueue> commandQueue;
 - (void)shutdown;
 - (void)releaseKeys;
-- (void)filesDropped:(const std::vector<std::string> &)paths;
 - (BOOL)commandKeysToWindow;
 - (void)attachToolbarTo:(NSWindow *)window;
 - (NSSize)contentSizeFor:(NSSize)proposed current:(NSSize)current;
@@ -243,14 +321,7 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
 }
 
 - (void)loadView {
-  ApplEmView *view = [[ApplEmView alloc] initWithFrame:NSMakeRect(0, 0, 1280, 860)];
-  __weak AppViewController *weakSelf = self;
-  view.onDrop = ^(NSArray<NSString *> *paths) {
-    std::vector<std::string> files;
-    for (NSString *path in paths) files.push_back(path.UTF8String);
-    [weakSelf filesDropped:files];
-  };
-  self.view = view;
+  self.view = [[ApplEmView alloc] initWithFrame:NSMakeRect(0, 0, 1280, 860)];
 }
 
 - (void)viewDidLoad {
@@ -259,6 +330,8 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
   self.mtkView.delegate = self;
   self.mtkView.preferredFramesPerSecond = 60;
   ImGui_ImplOSX_Init(self.view);
+  acceptDropsOnViewports();
+  g_dropApp = _app.get();
 }
 
 - (void)drawInMTKView:(MTKView *)view {
@@ -305,9 +378,6 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
 - (void)mtkView:(MTKView *)view drawableSizeWillChange:(CGSize)size {
 }
 
-- (void)filesDropped:(const std::vector<std::string> &)paths {
-  if (_app) _app->filesDropped(paths);
-}
 
 - (void)attachToolbarTo:(NSWindow *)window {
   [_toolbar attachToWindow:window];
@@ -351,6 +421,7 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
 
 - (void)shutdown {
   if (!_app) return;
+  g_dropApp = nullptr;
   _app->shutdown();
   // Written before the context goes, while the settings handler can still
   // reach the App.

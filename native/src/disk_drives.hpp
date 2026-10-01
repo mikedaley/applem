@@ -76,6 +76,10 @@ public:
   void insertFile(int drive, const std::string &path);
   // Where a dropped disk goes: the first empty drive, else drive 1.
   int dropTarget() const;
+  // The drive whose card is at a point, as last drawn, or -1.
+  int driveAt(ImVec2 point) const;
+  // Where a drag of files is, for lighting the card it would land on.
+  std::optional<ImVec2> dragOver;
 
   // For the menus.
   void chooseDisk(int drive);
@@ -215,6 +219,10 @@ private:
   int ringsDrive_ = -1;
   uint32_t ringsRevision_ = 0;
   double ringsAt_ = -1;
+
+  // Each drive's card as last drawn, and in which frame, for drops.
+  std::array<ImVec2, DRIVES * 2> deckRects_{};
+  int deckFrame_ = -1;
 
   PendingSave save_;
   std::string error_;

@@ -762,21 +762,28 @@ void App::drawDiskDrives() {
   }
 }
 
-void App::filesDropped(const std::vector<std::string> &paths) {
+void App::filesDropped(const std::vector<std::string> &paths, std::optional<ImVec2> at) {
   if (!started_) return;
   for (const std::string &path : paths) {
     std::error_code error;
     const size_t size = static_cast<size_t>(std::filesystem::file_size(path, error));
     if (error) continue;
     if (HardDrives::isBlockImage(path, size)) {
-      hardDrives_->insertFile(hardDrives_->dropTarget(), path);
+      const int device = at ? hardDrives_->deviceAt(*at) : -1;
+      hardDrives_->insertFile(device >= 0 ? device : hardDrives_->dropTarget(), path);
       return;
     }
     if (DiskDrives::isFloppyImage(path)) {
-      drives_->insertFile(drives_->dropTarget(), path);
+      const int drive = at ? drives_->driveAt(*at) : -1;
+      drives_->insertFile(drive >= 0 ? drive : drives_->dropTarget(), path);
       return;
     }
   }
+}
+
+void App::dragHover(std::optional<ImVec2> at) {
+  drives_->dragOver = at;
+  hardDrives_->dragOver = at;
 }
 
 // The machine's frames, or while it is switched off the no-signal picture,

@@ -224,6 +224,17 @@ void DiskDrives::chooseDisk(int drive) {
                      });
 }
 
+int DiskDrives::driveAt(ImVec2 point) const {
+  // Only a card drawn in the last frame or so: a closed window has none.
+  if (deckFrame_ < 0 || ImGui::GetFrameCount() - deckFrame_ > 2) return -1;
+  for (int drive = 0; drive < DRIVES; drive++) {
+    const ImVec2 min = deckRects_[drive * 2];
+    const ImVec2 max = deckRects_[drive * 2 + 1];
+    if (point.x >= min.x && point.x < max.x && point.y >= min.y && point.y < max.y) return drive;
+  }
+  return -1;
+}
+
 int DiskDrives::dropTarget() const {
   if (!drives_[0].filename) return 0;
   if (!drives_[1].filename) return 1;
@@ -707,6 +718,9 @@ void DiskDrives::drawDeck(int index) {
   // the card is drawn, so its first item would otherwise take it.
   ImGui::Dummy(ImVec2(0, 0));
   const ImVec2 end(card.x + DECK_WIDTH, card.y + DECK_HEIGHT);
+  deckRects_[index * 2] = card;
+  deckRects_[index * 2 + 1] = end;
+  deckFrame_ = ImGui::GetFrameCount();
   const bool dark = ui::isDark();
   const bool inspected = inspectorShown && index == inspected_;
   draw->AddRectFilled(card, end, dark ? IM_COL32(255, 255, 255, 10) : IM_COL32(0, 0, 0, 8), CARD_ROUNDING);
@@ -826,6 +840,22 @@ void DiskDrives::drawDeck(int index) {
     stripQt_ = -1;
     followHead_ = true;
     fitPlatter();
+  }
+
+  // A drag of files over the card: where the disk would go.
+  if (dragOver && dragOver->x >= card.x && dragOver->x < end.x && dragOver->y >= card.y && dragOver->y < end.y) {
+    ImDrawList *top = ImGui::GetForegroundDrawList(ImGui::GetWindowViewport());
+    top->AddRectFilled(card, end, withAlpha(accent(), 0.16f), CARD_ROUNDING);
+    top->AddRect(card, end, accent(), CARD_ROUNDING, 0, 2.5f);
+    const std::string prompt = (d.filename ? "Drop to replace the disk in Drive " : "Drop to insert into Drive ") +
+                               std::to_string(index + 1);
+    ImGui::PushFont(nullptr, ImGui::GetFontSize() * 1.15f);
+    const ImVec2 size = ImGui::CalcTextSize(prompt.c_str());
+    const ImVec2 middle((card.x + end.x) * 0.5f, (card.y + end.y) * 0.5f);
+    const ImVec2 pill(middle.x - size.x * 0.5f - 16, middle.y - size.y * 0.5f - 9);
+    top->AddRectFilled(pill, ImVec2(middle.x + size.x * 0.5f + 16, middle.y + size.y * 0.5f + 9), accent(), 20.0f);
+    top->AddText(ImVec2(middle.x - size.x * 0.5f, middle.y - size.y * 0.5f), IM_COL32_WHITE, prompt.c_str());
+    ImGui::PopFont();
   }
 
   ImGui::SetCursorScreenPos(card);

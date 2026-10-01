@@ -263,6 +263,16 @@ void HardDrives::syncWithMachine() {
   });
 }
 
+int HardDrives::deviceAt(ImVec2 point) const {
+  if (cardFrame_ < 0 || ImGui::GetFrameCount() - cardFrame_ > 2) return -1;
+  for (int device = 0; device < DEVICES; device++) {
+    const ImVec2 min = cardRects_[device * 2];
+    const ImVec2 max = cardRects_[device * 2 + 1];
+    if (point.x >= min.x && point.x < max.x && point.y >= min.y && point.y < max.y) return device;
+  }
+  return -1;
+}
+
 int HardDrives::dropTarget() const {
   if (!devices_[0].filename) return 0;
   if (!devices_[1].filename) return 1;
@@ -496,6 +506,9 @@ void HardDrives::drawDevice(int index) {
       CARD_PADDING + headerHeight + 14.0f + bodyHeight + 14.0f + ImGui::GetFrameHeight() + CARD_PADDING;
   const ImVec2 card = ImGui::GetCursorScreenPos();
   const ImVec2 cardEnd(card.x + CARD_WIDTH, card.y + cardHeight);
+  cardRects_[index * 2] = card;
+  cardRects_[index * 2 + 1] = cardEnd;
+  cardFrame_ = ImGui::GetFrameCount();
   // Takes the SameLine that put this card beside the other. The card is
   // drawn rather than laid out, so its first item is the Insert button,
   // which would otherwise take it and set the row for the buttons after it
@@ -665,6 +678,24 @@ void HardDrives::drawDevice(int index) {
   const float unitWidth = ImGui::CalcTextSize(unit.c_str()).x;
   draw->AddText(ImVec2(cardEnd.x - CARD_PADDING - unitWidth, buttonsY + ImGui::GetStyle().FramePadding.y),
                 secondary(), present ? unit.c_str() : "");
+
+  // A drag of files over the card: where the image would go.
+  if (dragOver && dragOver->x >= card.x && dragOver->x < cardEnd.x && dragOver->y >= card.y &&
+      dragOver->y < cardEnd.y) {
+    ImDrawList *top = ImGui::GetForegroundDrawList(ImGui::GetWindowViewport());
+    const ImU32 accent = ImGui::GetColorU32(ImGuiCol_CheckMark);
+    top->AddRectFilled(card, cardEnd, withAlpha(accent, 0.16f), CARD_ROUNDING);
+    top->AddRect(card, cardEnd, accent, CARD_ROUNDING, 0, 2.5f);
+    const std::string prompt = (present ? "Drop to replace the image in Device " : "Drop to insert into Device ") +
+                               std::to_string(index + 1);
+    ImGui::PushFont(nullptr, ImGui::GetFontSize() * 1.15f);
+    const ImVec2 size = ImGui::CalcTextSize(prompt.c_str());
+    const ImVec2 middle((card.x + cardEnd.x) * 0.5f, (card.y + cardEnd.y) * 0.5f);
+    top->AddRectFilled(ImVec2(middle.x - size.x * 0.5f - 16, middle.y - size.y * 0.5f - 9),
+                       ImVec2(middle.x + size.x * 0.5f + 16, middle.y + size.y * 0.5f + 9), accent, 20.0f);
+    top->AddText(ImVec2(middle.x - size.x * 0.5f, middle.y - size.y * 0.5f), IM_COL32_WHITE, prompt.c_str());
+    ImGui::PopFont();
+  }
 
   ImGui::SetCursorScreenPos(card);
   ImGui::Dummy(ImVec2(CARD_WIDTH, cardHeight));

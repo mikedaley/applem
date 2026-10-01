@@ -87,8 +87,13 @@ public:
   // Stop the machine before the platform goes away.
   void shutdown();
 
-  // Files dropped on the window: a disk goes into the first empty drive.
-  void filesDropped(const std::vector<std::string> &paths);
+  // Files dropped on one of the app's windows, at a point in ImGui's
+  // coordinates: a disk dropped on a drive's card goes into that drive, and
+  // anywhere else into the first empty one.
+  void filesDropped(const std::vector<std::string> &paths, std::optional<ImVec2> at = std::nullopt);
+  // Where a drag of files is over one of the app's windows, or nothing once
+  // it has left, so the card it would land on can light up.
+  void dragHover(std::optional<ImVec2> at);
 
   // The menu bar as of the last frame, and an item chosen from it. The
   // action runs at the start of the next frame, where ImGui may be used.

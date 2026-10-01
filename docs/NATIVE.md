@@ -201,7 +201,11 @@ The drive's rules are the browser's:
   track.
 - The label colour comes from the same hash of the filename as the
   browser's (pinned against the browser's own in `test_native_media`).
-- Files dropped on the window go to the first empty drive. The browser's
+- Files can be dropped on any of the app's windows, including one dragged
+  out of the main window: `main.mm` registers the view ImGui's backend puts
+  in each window it makes. A disk dropped on a drive's card (or an image on
+  a SmartPort device's) goes into that drive, which lights up while the
+  drag is over it; dropped anywhere else, it goes to the first empty drive. The browser's
   `public/disks` library is bundled and offered under Recent.
 
 ## SmartPort drives and expansion slots

@@ -11,6 +11,8 @@
 #include "platform.hpp"
 #include "volume_map.hpp"
 
+#include "imgui.h"
+
 #include <array>
 #include <optional>
 #include <string>
@@ -65,6 +67,10 @@ public:
   static bool isBlockImage(const std::string &path, size_t size);
   void insertFile(int device, const std::string &path);
   int dropTarget() const;
+  // The device whose card is at a point, as last drawn, or -1.
+  int deviceAt(ImVec2 point) const;
+  // Where a drag of files is, for lighting the card it would land on.
+  std::optional<ImVec2> dragOver;
 
 private:
   // The block map's grid, and the activity graph's bins.
@@ -129,6 +135,9 @@ private:
   std::string libraryDirectory_;
   std::array<Device, DEVICES> devices_;
   bool available_ = false;
+  // Each device's card as last drawn, and in which frame, for drops.
+  std::array<ImVec2, DEVICES * 2> cardRects_{};
+  int cardFrame_ = -1;
   std::string location_; // "Slot 7", where the SmartPort is
   SmartPortCard *watched_ = nullptr;
   std::vector<Transfer> transfers_;
