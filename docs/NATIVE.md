@@ -239,10 +239,14 @@ volume's figures for reading again, at most once a second. The callback is
 set once per card, since a refit or a machine switch builds a new one.
 
 View > Expansion Slots (`expansion_slots.*`, `slot_layout.*`) has the
-browser's rules drawn as the machine's logic board: each slot a connector
-with its number in silkscreen, the card in it a small board in the card's
-colour with its name, chips and gold fingers, and beside it the slot's use
-and its I/O and ROM addresses. A click on a slot offers its cards from its
+browser's rules drawn as the machine's logic board: each slot its number
+in silkscreen and its connector along the bottom of the row, the card in it
+drawn as Apple II cards are, a green board standing on the gold-fingered tab
+along its bottom edge, a chamfered back corner, the chips and parts the real
+card carries (the Mockingboard's AY-3-8910s, the Disk II's PROMs and drive
+headers, the Super Serial Card's DIP switches), a paper label in the card's
+colour with its name and its board number in silkscreen; beside it the
+slot's use and its I/O and ROM addresses. A click on a slot offers its cards from its
 `SLOT_UI` table, each card fitted once; a fixed slot's card is grey and
 padlocked; an empty slot is a dashed outline; a slot changed and not yet
 fitted is marked ON RESET until Apply & Reset. The No-Slot Clock is a
