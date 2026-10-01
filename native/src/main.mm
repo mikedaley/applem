@@ -492,14 +492,19 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
   return YES;
 }
 
-// Closing the main window quits. The app also quits after its last window
-// closes, but the windows ImGui makes for windows dragged out of the main
-// one are windows too, so with any of them open closing the main window left
-// them on the screen with nothing behind them.
+// Closing the main window closes everything and quits. The windows ImGui
+// makes for windows dragged out of the main one are windows too, as are a
+// file panel and a dialog, so the app would otherwise never close its last
+// window; and they are put away at once rather than left on the screen
+// while the app shuts down.
 - (void)windowWillClose:(NSNotification *)notification {
-  if (notification.object == self.window) {
-    dispatch_async(dispatch_get_main_queue(), ^{ [NSApp terminate:nil]; });
+  if (notification.object != self.window) return;
+  for (NSWindow *window in NSApp.windows) {
+    if (window == self.window) continue;
+    if ([window isKindOfClass:NSSavePanel.class]) [(NSSavePanel *)window cancel:nil];
+    [window orderOut:nil];
   }
+  dispatch_async(dispatch_get_main_queue(), ^{ [NSApp terminate:nil]; });
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {

@@ -414,8 +414,11 @@ The app is meant to feel like a Mac app rather than an ImGui tool:
   window just opened landed there instead (the SmartPort window's Insert
   did nothing until something else had been clicked); and it guessed which
   of two overlapping windows was on top from which was focused last.
-- **Closing the main window quits**, since the windows ImGui makes are
-  windows too and the last window never closed while any was open.
+- **Closing the main window closes every window and quits**: the windows
+  ImGui makes are windows too, so the last window never closed while any
+  was open. A file panel is cancelled and every other window put away at
+  once, then the app quits, rather than leaving them on the screen while it
+  shuts down.
 - **A window's dialogs open over it** (`ui::DialogAnchor`): each window
   notes its centre every frame it is drawn, and its confirmations and
   errors are placed there; one asked for while the window is shut (an eject
