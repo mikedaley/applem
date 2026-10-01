@@ -18,13 +18,18 @@ build-macos/native/test_native_input
 `native:build` configures the top-level CMake with `-DA2E_BUILD_NATIVE=ON`.
 The ROMs are embedded exactly as for the browser build.
 
-**The app runs on macOS 26 and later.** The top-level `CMakeLists.txt` sets
-`CMAKE_OSX_DEPLOYMENT_TARGET` to 26.0 before `project()`, so the core is
-built for the same macOS as the app; without it the compiler targets the
-macOS doing the building, and an app built on 27 would not start on 26.
-`Info.plist`'s `LSMinimumSystemVersion` is that same value. Using an API
-newer than 26 is a compiler warning (`-Wunguarded-availability-new`); guard
-it with `@available` rather than raising the target.
+**The app runs on macOS 15 and later.** The top-level `CMakeLists.txt` sets
+`CMAKE_OSX_DEPLOYMENT_TARGET` from `A2E_MACOS_MINIMUM` (15.0) before
+`project()`, so the core is built for the same macOS as the app, and sets it
+outright so a build directory that cached another value follows a change;
+without it the compiler targets the macOS doing the building, and an app
+built on 27 would not start on anything older. `Info.plist`'s
+`LSMinimumSystemVersion` is that same value. Using an API newer than 15 is a
+compiler warning (`-Wunguarded-availability-new`); guard it with
+`@available` rather than raising the target. Two things the compiler cannot
+check are checked by hand: the SF Symbols (all from macOS 11 and 12) and the
+CRT shader, compiled at startup with no language version asked for and
+`MTLCompileOptions.mathMode`, which is macOS 15's.
 
 **A release** is `npm run native:release` (`scripts/build-native-mac.sh`):
 a Release build in its own `build-macos-release/`, stamped with the version
