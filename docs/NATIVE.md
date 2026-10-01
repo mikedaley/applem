@@ -251,7 +251,12 @@ slot's use and its I/O and ROM addresses. A click on a slot offers its cards fro
 padlocked; an empty slot is a dashed outline; a slot changed and not yet
 fitted is marked ON RESET until Apply & Reset. The No-Slot Clock is a
 DS1215 on the board with its switch, and on a IIgs each slot has its
-built-in-or-card switch, which takes effect at once.
+built-in-or-card switch, which takes effect at once. A IIgs slot answered
+by the machine's own device holds that device as a padlocked card with its
+own chips (the SCC for the ports and AppleTalk, the ADB GLU, the IWM, the
+Mega II for slot 3's 80 columns), so every slot in use has a card standing
+in its connector; a card in a socket the built-in device is answering over
+is marked idle.
 Layouts are kept per machine under `[ApplEmSlots][<machine key>]`.
 
 **The host applies the slot layout, and before the power comes on.** The

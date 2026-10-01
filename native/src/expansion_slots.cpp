@@ -20,6 +20,7 @@
 #include <cmath>
 #include <cstdio>
 #include <map>
+#include <optional>
 #include <vector>
 
 namespace a2e::native {
@@ -159,6 +160,19 @@ const std::vector<PartSpec> &partsFor(const std::string &id) {
       {"parallel", {{Part::Chip, "P1 PROM"}, {Part::Chip, "74LS374"}, {Part::Header, "PRINTER"}}},
       {"80col", {{Part::Chip, "4164"}, {Part::Chip, "4164"}, {Part::Chip, "4164"}, {Part::Chip, "4164"}}},
       {"languagecard", {{Part::Chip, "4116"}, {Part::Chip, "4116"}, {Part::Chip, "4116"}, {Part::Chip, "74LS175"}}},
+      // A //c's ports are the SSC's ACIA with no card round it, and its disk an IWM.
+      {"serial1", {{Part::BigChip, "6551 ACIA"}}},
+      {"serial2", {{Part::BigChip, "6551 ACIA"}}},
+      {"iwm", {{Part::BigChip, "IWM"}}},
+      // A IIgs's own devices: the SCC behind both ports and AppleTalk, the
+      // GLU for the ADB mouse, the IWM, and the Mega II's 80 columns.
+      {"gs-printer", {{Part::BigChip, "Z8530 SCC"}}},
+      {"gs-modem", {{Part::BigChip, "Z8530 SCC"}}},
+      {"gs-mouse", {{Part::BigChip, "ADB GLU"}}},
+      {"gs-smartport", {{Part::BigChip, "IWM"}, {Part::Chip, "ROM 01"}}},
+      {"gs-drives", {{Part::BigChip, "IWM"}, {Part::Header, "DISK"}}},
+      {"gs-appletalk", {{Part::BigChip, "Z8530 SCC"}, {Part::Header, "LOCALTALK"}}},
+      {"gs-80col", {{Part::BigChip, "MEGA II"}}},
   };
   static const std::vector<PartSpec> generic = {{Part::Chip, "ROM"}, {Part::Chip, "74LS"}};
   auto it = parts.find(id);
@@ -172,6 +186,7 @@ const char *boardNumber(const std::string &id) {
       {"mouse", "820-0104"},      {"softcard", "MICROSOFT"},       {"ssc", "820-0118"},
       {"parallel", "820-0004"},   {"80col", "820-0067"},           {"languagecard", "820-0057"},
   };
+  if (id.rfind("gs-", 0) == 0) return "APPLE IIGS";
   auto it = numbers.find(id);
   return it != numbers.end() ? it->second : "APPLE II";
 }
@@ -321,6 +336,17 @@ void card(ImDrawList *draw, ImVec2 at, ImVec2 size, const std::string &id, unsig
   ImGui::PopFont();
 }
 
+// The parts a IIgs's built-in device is drawn with, by its name.
+std::string builtInParts(const std::string &name) {
+  static const std::map<std::string, std::string> ids = {
+      {"Printer Port", "gs-printer"}, {"Modem Port", "gs-modem"},     {"Mouse", "gs-mouse"},
+      {"SmartPort", "gs-smartport"},   {"5.25\" Drives", "gs-drives"}, {"AppleTalk", "gs-appletalk"},
+      {"80-Column", "gs-80col"},
+  };
+  auto it = ids.find(name);
+  return it != ids.end() ? it->second : "";
+}
+
 } // namespace
 
 void ExpansionSlots::draw(bool *open) {
@@ -390,8 +416,13 @@ void ExpansionSlots::draw(bool *open) {
     ImGui::PopFont();
 
     if (isFixedSlot(*machine_, slot)) {
+      // A IIgs's fixed slots are its own devices, with its own chips: its
+      // ports are the SCC, where a //c's are the ACIA.
       const char *fixed = machine_->slots[slot].fixedCard;
-      const std::string fixedId = fixed ? fixed : "";
+      std::string fixedId = fixed ? fixed : "";
+      if (iigs) {
+        if (const auto device = builtInDevice(*machine_, slot)) fixedId = builtInParts(*device);
+      }
       card(draw, cardAt, ImVec2(CARD_WIDTH, cardHeight), fixedId, 0x8b949e, fixedCardLabel(*machine_, slot).c_str(), true);
       if (ImGui::IsMouseHoveringRect(cardAt, ImVec2(cardAt.x + CARD_WIDTH, cardAt.y + cardHeight)) &&
           ImGui::IsWindowHovered()) {
@@ -405,7 +436,36 @@ void ExpansionSlots::draw(bool *open) {
       const bool clicked = ImGui::InvisibleButton("##slot", ImVec2(CARD_WIDTH, cardHeight));
       const bool hovered = ImGui::IsItemHovered();
       if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-      if (info) {
+      // On a IIgs a slot the machine's own device answers holds that device,
+      // drawn as a built-in card, as slot 3's 80 columns do with no card in it.
+      std::optional<std::string> builtIn;
+      if (iigs) {
+        builtIn = builtInDevice(*machine_, slot);
+        if (!builtIn && slot == 3) builtIn = "80-Column";
+      }
+      const bool answering = builtIn && (slot == 3 ? !info : emulation_.withMachine([&](host::MachineHost &host) {
+                                           return host.isSlotInternal(slot);
+                                         }));
+      if (answering) {
+        card(draw, cardAt, ImVec2(CARD_WIDTH, cardHeight), builtInParts(*builtIn), 0x8b949e,
+             (*builtIn + " (Built-in)").c_str(), true);
+        if (hovered) {
+          draw->AddRect(ImVec2(cardAt.x - 2, cardAt.y - 2), ImVec2(cardAt.x + CARD_WIDTH + 2, cardAt.y + cardHeight + 2),
+                        IM_COL32(255, 255, 255, 200), 5.0f, 0, 1.5f);
+          ImGui::SetTooltip("Part of the machine, and answering for this slot. Click to choose a card for its "
+                            "socket; it answers once the slot is set to Your Card.");
+        }
+        // A card in the socket that the built-in device is answering over.
+        if (info) {
+          ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.75f);
+          const std::string idle = std::string("IDLE: ") + info->name;
+          const ImVec2 size = ImGui::CalcTextSize(idle.c_str());
+          const ImVec2 chip(cardAt.x + CARD_WIDTH - size.x - 24, cardAt.y - 6);
+          draw->AddRectFilled(chip, ImVec2(chip.x + size.x + 10, chip.y + size.y + 4), rgb(info->color), 6.0f);
+          draw->AddText(ImVec2(chip.x + 5, chip.y + 2), IM_COL32(20, 20, 20, 255), idle.c_str());
+          ImGui::PopFont();
+        }
+      } else if (info) {
         card(draw, cardAt, ImVec2(CARD_WIDTH, cardHeight), info->id, info->color, info->name, false);
         if (hovered) draw->AddRect(ImVec2(cardAt.x - 2, cardAt.y - 2), ImVec2(cardAt.x + CARD_WIDTH + 2, cardAt.y + cardHeight + 2),
                                    IM_COL32(255, 255, 255, 200), 5.0f, 0, 1.5f);
