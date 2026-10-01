@@ -100,6 +100,8 @@ constexpr float CONNECTOR_X = 54;   // where a card's front edge sits, from the 
 // runs to this share of its length, as on Apple's cards.
 constexpr float TAB_INSET = 22;
 constexpr float TAB_SHARE = 0.62f;
+// An Apple II slot is a 50-contact connector, 25 on each side of the card.
+constexpr int PINS_PER_SIDE = 25;
 constexpr float CARD_WIDTH = 270;
 constexpr ImU32 PCB = IM_COL32(0x1f, 0x5a, 0x3a, 255);
 constexpr ImU32 PCB_DARK = IM_COL32(0x16, 0x45, 0x2c, 255);
@@ -130,12 +132,18 @@ void dashedRect(ImDrawList *draw, ImVec2 a, ImVec2 b, ImU32 colour) {
 }
 
 // A slot's edge connector, from the side: a black body along the bottom of
-// the row with its opening and contacts, which a card's tab goes into.
-void connector(ImDrawList *draw, ImVec2 at, float width) {
-  draw->AddRectFilled(ImVec2(at.x, at.y + 2), ImVec2(at.x + width, at.y + 12), IM_COL32(0x10, 0x10, 0x10, 255), 2.0f);
-  draw->AddRectFilled(ImVec2(at.x - 3, at.y + 8), ImVec2(at.x + width + 3, at.y + 12), IM_COL32(0x08, 0x08, 0x08, 255), 1.0f);
-  for (float x = at.x + 4; x < at.x + width - 3; x += 4) {
-    draw->AddLine(ImVec2(x, at.y + 12), ImVec2(x, at.y + 14), IM_COL32(0xc8, 0xc8, 0xc8, 150), 1.0f);
+// the row, which a card's tab goes into, and its fifty pins, twenty-five a
+// side, coming out under it as two staggered rows, at the same pitch as a
+// card's fingers.
+void connector(ImDrawList *draw, float tabLeft, float tabRight, float y) {
+  const float pitch = (tabRight - tabLeft) / PINS_PER_SIDE;
+  draw->AddRectFilled(ImVec2(tabLeft - 6, y + 2), ImVec2(tabRight + 6, y + 12), IM_COL32(0x10, 0x10, 0x10, 255), 2.0f);
+  draw->AddRectFilled(ImVec2(tabLeft - 9, y + 8), ImVec2(tabRight + 9, y + 12), IM_COL32(0x08, 0x08, 0x08, 255), 1.0f);
+  for (int pin = 0; pin < PINS_PER_SIDE; pin++) {
+    const float x = tabLeft + pitch * (pin + 0.5f);
+    // Component side, then solder side, a quarter pitch either way.
+    draw->AddLine(ImVec2(x - pitch * 0.25f, y + 12), ImVec2(x - pitch * 0.25f, y + 15), IM_COL32(0xd0, 0xd0, 0xd0, 170), 1.0f);
+    draw->AddLine(ImVec2(x + pitch * 0.25f, y + 12), ImVec2(x + pitch * 0.25f, y + 17), IM_COL32(0xa8, 0xa8, 0xa8, 150), 1.0f);
   }
 }
 
@@ -213,8 +221,11 @@ void card(ImDrawList *draw, ImVec2 at, ImVec2 size, const std::string &id, unsig
   const float tabLeft = at.x + TAB_INSET;
   const float tabRight = at.x + size.x * TAB_SHARE;
   draw->AddRectFilled(ImVec2(tabLeft, end.y - 1), ImVec2(tabRight, end.y + tab), board);
-  for (float x = tabLeft + 3; x < tabRight - 3; x += 3.5f) {
-    draw->AddRectFilled(ImVec2(x, end.y + 1), ImVec2(x + 2, end.y + tab), GOLD);
+  // Twenty-five fingers, one for each contact on this side of the slot.
+  const float pitch = (tabRight - tabLeft) / PINS_PER_SIDE;
+  for (int finger = 0; finger < PINS_PER_SIDE; finger++) {
+    const float x = tabLeft + pitch * (finger + 0.2f);
+    draw->AddRectFilled(ImVec2(x, end.y + 1), ImVec2(x + pitch * 0.6f, end.y + tab), GOLD, 0.5f);
   }
 
   // The board: square at the front, its back corner cut.
@@ -403,8 +414,7 @@ void ExpansionSlots::draw(bool *open) {
     ImGui::PopFont();
     // The slot's connector along the bottom of the row, under where a card's
     // tab goes, whether or not there is a card in it.
-    connector(draw, ImVec2(cardAt.x + TAB_INSET - 6, cardAt.y + cardHeight + 2),
-              CARD_WIDTH * TAB_SHARE - TAB_INSET + 12);
+    connector(draw, cardAt.x + TAB_INSET, cardAt.x + CARD_WIDTH * TAB_SHARE, cardAt.y + cardHeight + 2);
 
     // Beside the card: what the slot is for, and where it answers.
     const float infoX = cardAt.x + CARD_WIDTH + 14;
