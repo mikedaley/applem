@@ -636,45 +636,84 @@ void App::drawDockSpace() {
   ImGui::DockBuilderFinish(dockspace);
 }
 
+// Small indicators along the bottom, as a macOS window's status bar has
+// them: the drives' lights on the left, what the keyboard and sound are
+// doing in the middle, and the clock on the right. The machine's name is in
+// the window's subtitle, so it is not repeated here.
 void App::drawStatusBar() {
-  const float height = ImGui::GetFrameHeight();
-  const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar |
-                                 ImGuiWindowFlags_NoSavedSettings |
+  const float height = ImGui::GetFrameHeight() + 2;
+  const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
                                  ImGuiWindowFlags_MenuBar;
-  if (ImGui::BeginViewportSideBar("##StatusBar", ImGui::GetMainViewport(),
-                                  ImGuiDir_Down, height, flags)) {
+  ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10, 4));
+  if (ImGui::BeginViewportSideBar("##StatusBar", ImGui::GetMainViewport(), ImGuiDir_Down, height, flags)) {
     if (ImGui::BeginMenuBar()) {
-      ImGui::TextUnformatted(profile_ ? profile_->name : "");
-      ImGui::Separator();
-      if (emulation_.powered()) {
-        ImGui::PushFont(ui::monoFont(), 0.0f);
-        ImGui::Text("%.3f MHz", emulation_.measuredMHz());
-        ImGui::PopFont();
-        if (settings_.speed > 1 && profile_ && profile_->family != MachineFamily::AppleIIgs) {
-          ImGui::TextColored(ImVec4(0.99f, 0.72f, 0.15f, 1.0f), "%dx", settings_.speed);
+      ImDrawList *draw = ImGui::GetWindowDrawList();
+      const ImVec4 secondary = ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled);
+      const float lineHeight = ImGui::GetTextLineHeight();
+
+      // A light: green while reading, red while writing, a dim ring empty.
+      auto light = [&](const char *label, bool present, bool busy, bool writing) {
+        const ImVec2 at = ImGui::GetCursorScreenPos();
+        const ImVec2 centre(at.x + 5, at.y + lineHeight * 0.5f);
+        const ImU32 colour = !present ? IM_COL32(128, 128, 128, 70)
+                             : !busy ? IM_COL32(128, 128, 128, 140)
+                             : writing ? IM_COL32(224, 58, 62, 255)
+                                       : IM_COL32(97, 187, 70, 255);
+        if (present) draw->AddCircleFilled(centre, 4.0f, colour);
+        else draw->AddCircle(centre, 3.5f, colour, 0, 1.2f);
+        ImGui::Dummy(ImVec2(12, lineHeight));
+        ImGui::SameLine(0, 4);
+        ImGui::TextColored(present ? ImGui::GetStyleColorVec4(ImGuiCol_Text) : secondary, "%s", label);
+        ImGui::SameLine(0, 14);
+      };
+      light("Disk 1", drives_->hasDisk(0), drives_->isActive(0), drives_->isWriting(0));
+      light("Disk 2", drives_->hasDisk(1), drives_->isActive(1), drives_->isWriting(1));
+      if (hardDrives_->available()) {
+        for (int device = 0; device < HardDrives::DEVICES; device++) {
+          const std::string label = "HD " + std::to_string(device + 1);
+          light(label.c_str(), hardDrives_->hasImage(device), hardDrives_->isBusy(device),
+                hardDrives_->isWriting(device));
         }
-      } else {
-        ImGui::TextDisabled("Off");
       }
-      ImGui::Separator();
-      if (emulation_.audioRunning()) {
-        ImGui::TextUnformatted(settings_.muted ? "Muted" : "Audio");
-      } else {
-        ImGui::TextDisabled("No audio device: free-running");
+
+      // What the keys are doing.
+      if (screenHadKeyboard_) {
+        ImGui::TextColored(secondary, "%s", commandIsOpenApple() ? "⌘ is Open Apple" : "⌥ is Open Apple");
+        ImGui::SameLine(0, 14);
       }
       if (joystick_.cursorKeys) {
-        ImGui::Separator();
-        ImGui::TextColored(ImVec4(0.0f, 0.62f, 0.86f, 1.0f), "CURSOR KEYS");
+        ImGui::TextColored(ImGui::GetStyleColorVec4(ImGuiCol_CheckMark), "Cursor Keys as Joystick");
+        ImGui::SameLine(0, 14);
       }
-      if (screenHadKeyboard_) {
-        ImGui::Separator();
-        ImGui::TextUnformatted(commandIsOpenApple() ? "Keyboard: Cmd is Open Apple"
-                                                    : "Keyboard: Option is Open Apple");
+      // Sound only when it is not simply working.
+      if (!emulation_.audioRunning()) {
+        ImGui::TextColored(ImVec4(0.96f, 0.51f, 0.12f, 1.0f), "No audio device");
+        ImGui::SameLine(0, 14);
+      } else if (settings_.muted) {
+        ImGui::TextColored(secondary, "Muted");
+        ImGui::SameLine(0, 14);
       }
+
+      // The clock, against the right-hand edge.
+      char clock[48];
+      if (!emulation_.powered()) {
+        std::snprintf(clock, sizeof(clock), "Off");
+      } else if (settings_.speed > 1 && profile_ && profile_->family != MachineFamily::AppleIIgs) {
+        std::snprintf(clock, sizeof(clock), "%dx  %.3f MHz", settings_.speed, emulation_.measuredMHz());
+      } else {
+        std::snprintf(clock, sizeof(clock), "%.3f MHz", emulation_.measuredMHz());
+      }
+      ImGui::PushFont(ui::monoFont(), 0.0f);
+      const float width = ImGui::CalcTextSize(clock).x;
+      const float right = ImGui::GetWindowContentRegionMax().x - ImGui::GetStyle().FramePadding.x;
+      if (ImGui::GetCursorPosX() < right - width) ImGui::SetCursorPosX(right - width);
+      ImGui::TextColored(emulation_.powered() ? ImGui::GetStyleColorVec4(ImGuiCol_Text) : secondary, "%s", clock);
+      ImGui::PopFont();
       ImGui::EndMenuBar();
     }
   }
   ImGui::End();
+  ImGui::PopStyleVar();
 }
 
 // The window draws every frame it is open; its save and error questions are

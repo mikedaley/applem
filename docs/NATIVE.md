@@ -253,10 +253,36 @@ start leaves the file byte for byte as the first wrote it. The browser
 restores them before it rebuilds a remembered IIgs, so its firmware writes
 defaults; the native order avoids that.
 
+## Look and feel
+
+The app is meant to feel like a Mac app rather than an ImGui tool:
+
+- **The menus are the macOS menu bar** (`menu_model.*`, `native_menu.mm`).
+  The App describes File, Edit, Machine and View as a C++ model each frame;
+  the bar is rebuilt only when that changes and never while a menu is open,
+  around the system's application and Window menus. A chosen item runs at
+  the start of the next frame, where ImGui can be used. Command keys go past
+  the menus to the window when the machine takes Command as Open Apple and
+  has the keyboard, or an ImGui text field is being typed into; Command-Q
+  always quits.
+- **A unified toolbar** (`native_toolbar.mm`): Power (green while on),
+  Ctrl+Reset, Reboot, a pull-down naming and choosing the machine, and the
+  windows, with SF Symbols, sending the menu items' own actions. The window
+  is titled ApplEm with the machine as its subtitle.
+- **System colours** (`ui_theme.mm`): AppKit's named colours resolved under
+  the current appearance, the user's accent colour for checks, sliders,
+  selection and tabs, reapplied when either changes. View > Appearance
+  offers System, Light or Dark.
+- **SF Pro** for the interface and **SF Mono** for figures.
+- A dock area holding one window hides its tab, so the screen has none.
+- The status bar is indicators: the drives' lights, which key is Open Apple,
+  cursor keys, sound only when muted or missing, and the clock on the right.
+
 ## Typeface
 
-The UI is set in SF Mono at 13pt (`uiFontPath()` in `platform_paths.mm`),
-read from the copy Terminal ships with, which has the static cuts on every
+Figures are set in SF Mono (`uiFontPath()` in `platform_paths.mm`, loaded
+by `ui_theme.mm` beside SF Pro for everything else), read from the copy
+Terminal ships with, which has the static cuts on every
 Mac, else from the system's variable SFNSMono. Neither is copied into the
 app. ImGui 1.92's dynamic atlas rasterises it at each viewport's density, so
 it is sharp on Retina and on a second monitor that is not, and glyphs beyond

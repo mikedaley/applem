@@ -51,6 +51,10 @@ public:
   // Whether the machine has a SmartPort to take an image, as of the last
   // update. The window is offered only when it does.
   bool available() const { return available_; }
+  // For the status bar's light: a transfer within the last few frames.
+  bool isBusy(int device) const { return devices_[device].activityFrames > 0; }
+  bool isWriting(int device) const { return devices_[device].activityFrames > 0 && devices_[device].lastWrite; }
+  bool hasImage(int device) const { return devices_[device].filename.has_value(); }
 
   static bool isBlockImage(const std::string &path, size_t size);
   void insertFile(int device, const std::string &path);

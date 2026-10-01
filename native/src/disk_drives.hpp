@@ -64,6 +64,9 @@ public:
   void chooseDisk(int drive);
   void ejectDrive(int drive) { requestEject(drive); }
   bool hasDisk(int drive) const { return drives_[drive].filename.has_value(); }
+  // For the status bar's lights: turning under the head, and writing.
+  bool isActive(int drive) const { return drives_[drive].active; }
+  bool isWriting(int drive) const { return drives_[drive].active && drives_[drive].writing; }
 
   bool surfaceShown = true;
   bool detailsShown = false;
