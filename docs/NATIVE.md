@@ -288,8 +288,13 @@ The app is meant to feel like a Mac app rather than an ImGui tool:
 - **The window keeps the picture's shape.** While the picture fills the main
   window (docked there, or Full Page), a resize lands on the size that keeps
   the picture at the machine's aspect, with the status bar and anything
-  docked beside it carried on top; the edge dragged furthest leads, and the
-  zoom button picks the largest such size on the screen. A change of shape
+  docked beside it carried on top. The edge grabbed decides, for the whole
+  drag, whether the width or the height leads (deciding at each step flips
+  between them in a corner and the window jumps), and the zoom button picks
+  the largest such size on the screen. During the drag ImGui is given no
+  mouse and merges no floating window into the main one: it sees every event
+  the app gets, the press on the frame included, and took it for a drag of
+  whichever floating window was nearby, which then followed the pointer. A change of shape
   (another machine, or a panel docked beside it) refits the window once the
   mouse is up. Floating, the Screen window keeps the shape itself through an
   ImGui size constraint. Full screen is the system's to size, so there the

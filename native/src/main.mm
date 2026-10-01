@@ -83,6 +83,8 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
 - (void)attachToolbarTo:(NSWindow *)window;
 - (NSSize)contentSizeFor:(NSSize)proposed current:(NSSize)current;
 - (NSSize)contentSizeWithin:(NSSize)limit;
+- (void)beginLiveResize:(BOOL)widthLeads;
+- (void)endLiveResize;
 @end
 
 @implementation AppViewController {
@@ -327,6 +329,14 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
   return NSMakeSize(width, height);
 }
 
+- (void)beginLiveResize:(BOOL)widthLeads {
+  if (_app) _app->beginLiveResize(widthLeads);
+}
+
+- (void)endLiveResize {
+  if (_app) _app->endLiveResize();
+}
+
 - (NSSize)contentSizeWithin:(NSSize)limit {
   float width = 0;
   float height = 0;
@@ -410,6 +420,23 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
   const NSSize current = [window contentRectForFrameRect:frame].size;
   const NSSize content = [self.controller contentSizeFor:proposed current:current];
   return [window frameRectForContentRect:NSMakeRect(0, 0, content.width, content.height)].size;
+}
+
+// Which edge is being dragged decides which dimension leads, for the whole
+// drag: the side edges and the corners lead with the width, the top and
+// bottom with the height. Deciding afresh at each step by which changed
+// more flips between the two in a corner drag, and the window jumps.
+- (void)windowWillStartLiveResize:(NSNotification *)notification {
+  NSWindow *window = notification.object;
+  const NSPoint mouse = window.mouseLocationOutsideOfEventStream;
+  const NSSize size = window.frame.size;
+  const CGFloat fromSide = std::min(mouse.x, size.width - mouse.x);
+  const CGFloat fromTopOrBottom = std::min(mouse.y, size.height - mouse.y);
+  [self.controller beginLiveResize:fromSide <= fromTopOrBottom + 8];
+}
+
+- (void)windowDidEndLiveResize:(NSNotification *)notification {
+  [self.controller endLiveResize];
 }
 
 // The zoom button: as large as the screen allows at the picture's shape.

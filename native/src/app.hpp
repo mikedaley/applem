@@ -112,6 +112,11 @@ public:
   // The largest content that keeps that shape within `maxWidth` by
   // `maxHeight`, for the zoom button.
   bool mainContentSizeWithin(float maxWidth, float maxHeight, float &width, float &height) const;
+  // The user is dragging the main window's frame, by a side edge (the
+  // width leads) or by the top or bottom (the height does). Nothing refits
+  // the window while they do, and floating windows keep their own.
+  void beginLiveResize(bool widthLeads);
+  void endLiveResize();
 
 private:
   void registerSettingsHandler();
@@ -184,6 +189,8 @@ private:
   bool screenDocked_ = true;
   ImVec2 screenChrome_{0, 0};
   // What the main window was last fitted to, so it is fitted once a change.
+  bool liveResize_ = false;
+  bool widthLeads_ = true;
   float fittedAspect_ = 0;
   ImVec2 fittedExtra_{-1, -1};
   // The powered-off picture needs drawing again: switched off, or another

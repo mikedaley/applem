@@ -283,7 +283,7 @@ void App::frame() {
   }
 
   screenWindowName_ = nullptr;
-  screenFillsMain_ = false;
+  screenFillsMain_ = liveResize_ && screenFillsMain_;
   if (fullPage_) {
     drawFullPage();
     if (settings_.showDisplaySettings) display_.drawWindow(&settings_.showDisplaySettings);
@@ -907,7 +907,9 @@ void App::drawScreen() {
   const ImGuiViewport *mainViewport = ImGui::GetMainViewport();
   screenDocked_ = ImGui::IsWindowDocked();
   screenChrome_ = ImVec2(ImGui::GetWindowWidth() - avail.x, ImGui::GetWindowHeight() - avail.y);
-  if (ImGui::GetWindowViewport() == mainViewport && (screenDocked_ || fullPage_)) {
+  // What surrounds the picture is held through a drag: it does not change,
+  // and measured mid-drag it can be a frame behind the window.
+  if (ImGui::GetWindowViewport() == mainViewport && (screenDocked_ || fullPage_) && !liveResize_) {
     screenFillsMain_ = true;
     screenExtra_ = ImVec2(mainViewport->Size.x - avail.x, mainViewport->Size.y - avail.y);
     fitMainWindow();
@@ -950,7 +952,10 @@ bool App::mainContentSizeFor(float proposedWidth, float proposedHeight, float cu
   if (!screenFillsMain_ || screenAspect_ <= 0) return false;
   const ImVec2 extra = screenExtra_;
   float picture;
-  if (std::fabs(proposedWidth - currentWidth) >= std::fabs(proposedHeight - currentHeight)) {
+  const bool widthLeads = liveResize_ ? widthLeads_
+                                      : std::fabs(proposedWidth - currentWidth) >=
+                                            std::fabs(proposedHeight - currentHeight);
+  if (widthLeads) {
     picture = proposedWidth - extra.x;
   } else {
     picture = (proposedHeight - extra.y) * screenAspect_;
@@ -971,12 +976,39 @@ bool App::mainContentSizeWithin(float maxWidth, float maxHeight, float &width, f
   return true;
 }
 
+void App::beginLiveResize(bool widthLeads) {
+  liveResize_ = true;
+  widthLeads_ = widthLeads;
+  // A floating window the main window grows over would be merged into it,
+  // and then carried along when the window's top or left edge moves. Held
+  // apart, each keeps its place on the screen; they merge again after.
+  ImGui::GetIO().ConfigViewportsNoAutoMerge = true;
+  // ImGui sees every mouse event the app gets, the press on the window's
+  // frame included, and a floating window near that point takes it for a
+  // drag of itself and follows the pointer round the resize. The mouse is
+  // the frame's until the resize ends.
+  ImGuiIO &io = ImGui::GetIO();
+  io.ConfigFlags |= ImGuiConfigFlags_NoMouse;
+  io.AddMouseButtonEvent(ImGuiMouseButton_Left, false);
+  GImGui->MovingWindow = nullptr;
+  ImGui::ClearActiveID();
+}
+
+void App::endLiveResize() {
+  liveResize_ = false;
+  ImGui::GetIO().ConfigViewportsNoAutoMerge = false;
+  ImGui::GetIO().ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
+  // The drag kept the shape; what it left is the new fit.
+  fittedAspect_ = screenAspect_;
+  fittedExtra_ = screenExtra_;
+}
+
 void App::fitMainWindow() {
   if (!platform_.setMainContentSize) return;
   // The dock space settles over the first frames, and a splitter or a
   // window being dragged changes what is left for the picture as it goes:
   // fit when it has settled, not during.
-  if (ImGui::GetFrameCount() < 4 || ImGui::IsMouseDown(ImGuiMouseButton_Left)) return;
+  if (liveResize_ || ImGui::GetFrameCount() < 4 || ImGui::IsMouseDown(ImGuiMouseButton_Left)) return;
   if (std::fabs(screenAspect_ - fittedAspect_) < 1e-4f && std::fabs(screenExtra_.x - fittedExtra_.x) < 0.5f &&
       std::fabs(screenExtra_.y - fittedExtra_.y) < 0.5f) {
     return;
