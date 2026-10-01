@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 
 namespace a2e::native {
 
@@ -51,9 +52,13 @@ App::App(std::string settingsDirectory, Platform platform)
       iniPath_(settingsDirectory_ + "/layout.ini"),
       platform_(std::move(platform)),
       display_(settingsDirectory_ + "/display-profiles.ini"),
-      drives_(std::make_unique<DiskDrives>(emulation_, platform_, settingsDirectory_ + "/Media")) {
+      drives_(std::make_unique<DiskDrives>(emulation_, platform_, settingsDirectory_ + "/Media")),
+      hardDrives_(std::make_unique<HardDrives>(emulation_, platform_, settingsDirectory_ + "/Media")) {
   registerSettingsHandler();
   registerDisplayHandler();
+  registerSlotsHandler();
+  // Refitting can rebuild the SmartPort, and its images with it.
+  slots_.setAppliedCallback([this] { hardDrives_->syncWithMachine(); });
 }
 
 App::~App() { shutdown(); }
@@ -79,7 +84,8 @@ void App::registerSettingsHandler() {
   };
   handler.ReadLineFn = [](ImGuiContext *, ImGuiSettingsHandler *h, void *,
                           const char *line) {
-    Settings &s = static_cast<App *>(h->UserData)->settings_;
+    App *app = static_cast<App *>(h->UserData);
+    Settings &s = app->settings_;
     char text[64] = {};
     int value = 0;
     float number = 0.0f;
@@ -94,6 +100,9 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "DiskSurface=%d", &value) == 1) s.diskSurface = value;
     else if (std::sscanf(line, "DiskDetails=%d", &value) == 1) s.diskDetails = value;
     else if (std::sscanf(line, "DriveSounds=%d", &value) == 1) s.driveSounds = value;
+    else if (std::sscanf(line, "ShowHardDrives=%d", &value) == 1) s.showHardDrives = value;
+    else if (std::sscanf(line, "ShowExpansionSlots=%d", &value) == 1) s.showExpansionSlots = value;
+    else if (std::sscanf(line, "NoSlotClock=%d", &value) == 1) app->slots_.noSlotClock = value;
     else if (std::sscanf(line, "ShowStatusBar=%d", &value) == 1) s.showStatusBar = value;
     else if (std::sscanf(line, "CommandIsOpenApple.%63[^=]=%d", text, &value) == 2) {
       s.commandIsOpenApple[text] = value;
@@ -101,7 +110,8 @@ void App::registerSettingsHandler() {
   };
   handler.WriteAllFn = [](ImGuiContext *, ImGuiSettingsHandler *h,
                           ImGuiTextBuffer *out) {
-    const Settings &s = static_cast<const App *>(h->UserData)->settings_;
+    const App *app = static_cast<const App *>(h->UserData);
+    const Settings &s = app->settings_;
     out->appendf("[%s][Settings]\n", h->TypeName);
     out->appendf("Machine=%s\n", s.machine.c_str());
     out->appendf("IIgsMemoryKB=%d\n", s.iigsMemoryKB);
@@ -114,6 +124,9 @@ void App::registerSettingsHandler() {
     out->appendf("DiskSurface=%d\n", s.diskSurface ? 1 : 0);
     out->appendf("DiskDetails=%d\n", s.diskDetails ? 1 : 0);
     out->appendf("DriveSounds=%d\n", s.driveSounds ? 1 : 0);
+    out->appendf("ShowHardDrives=%d\n", s.showHardDrives ? 1 : 0);
+    out->appendf("ShowExpansionSlots=%d\n", s.showExpansionSlots ? 1 : 0);
+    out->appendf("NoSlotClock=%d\n", app->slots_.noSlotClock ? 1 : 0);
     out->appendf("ShowStatusBar=%d\n", s.showStatusBar ? 1 : 0);
     for (const auto &[key, on] : s.commandIsOpenApple) {
       out->appendf("CommandIsOpenApple.%s=%d\n", key.c_str(), on ? 1 : 0);
@@ -144,6 +157,24 @@ void App::registerDisplayHandler() {
   ImGui::AddSettingsHandler(&handler);
 }
 
+// Each machine's slot layout, under [ApplEmSlots][<machine key>].
+void App::registerSlotsHandler() {
+  ImGuiSettingsHandler handler;
+  handler.TypeName = "ApplEmSlots";
+  handler.TypeHash = ImHashStr("ApplEmSlots");
+  handler.UserData = &slots_;
+  handler.ReadOpenFn = [](ImGuiContext *, ImGuiSettingsHandler *h, const char *name) -> void * {
+    return static_cast<ExpansionSlots *>(h->UserData)->openSection(name);
+  };
+  handler.ReadLineFn = [](ImGuiContext *, ImGuiSettingsHandler *h, void *entry, const char *line) {
+    static_cast<ExpansionSlots *>(h->UserData)->readLine(static_cast<SlotLayout *>(entry), line);
+  };
+  handler.WriteAllFn = [](ImGuiContext *, ImGuiSettingsHandler *h, ImGuiTextBuffer *out) {
+    static_cast<const ExpansionSlots *>(h->UserData)->writeAll(out, h->TypeName);
+  };
+  ImGui::AddSettingsHandler(&handler);
+}
+
 // Started on the first frame rather than in the constructor, because ImGui
 // reads the ini, and so the settings, inside the first NewFrame.
 void App::startEmulation() {
@@ -160,12 +191,22 @@ void App::startEmulation() {
   emulation_.setVolume(settings_.volume);
   emulation_.setMuted(settings_.muted);
   emulation_.start(wanted->id, static_cast<size_t>(settings_.iigsMemoryKB) * 1024);
-  emulation_.setPowered(true);
-  started_ = true;
+  // The cards, then the media, then the power: the machine starts with the
+  // layout and the disks it was left with, as a real one would, and its
+  // boot scan finds them. Media restored after the power came on was missed
+  // by the scan, so a //e left with a hard drive started without it.
+  slots_.setMachine(*wanted);
+  slots_.apply();
   drives_->surfaceShown = settings_.diskSurface;
   drives_->detailsShown = settings_.diskDetails;
   emulation_.driveSounds().setEnabled(settings_.driveSounds);
   drives_->restore();
+  // After the slot layout: fitting it can rebuild the SmartPort, taking an
+  // image with it.
+  hardDrives_->update();
+  hardDrives_->restore();
+  emulation_.setPowered(true);
+  started_ = true;
   updateWindowTitle();
 }
 
@@ -174,6 +215,7 @@ void App::frame() {
 
   updateScreenSource();
   drives_->update(ImGui::GetTime());
+  hardDrives_->update();
 
   // The decoder and character set live in the machine's video, which a
   // rebuild replaces, so they are told again whenever they may have gone.
@@ -236,6 +278,14 @@ void App::drawMenuBar() {
     ImGui::MenuItem(SCREEN_WINDOW, nullptr, &settings_.showScreen);
     ImGui::MenuItem("Display Settings", nullptr, &settings_.showDisplaySettings);
     ImGui::MenuItem("Disk Drives", nullptr, &settings_.showDiskDrives);
+    // Not on a //c, whose every slot is soldered down.
+    if (profile_ && profile_->caps.hasExpansionSlots) {
+      ImGui::MenuItem("Expansion Slots", nullptr, &settings_.showExpansionSlots);
+    }
+    // Offered only when there is a SmartPort: a IIgs's, or a card.
+    if (hardDrives_->available()) {
+      ImGui::MenuItem("SmartPort Drives", nullptr, &settings_.showHardDrives);
+    }
     ImGui::MenuItem("Status Bar", nullptr, &settings_.showStatusBar);
     ImGui::Separator();
     if (ImGui::MenuItem("Full Page", "Ctrl+Esc to leave")) {
@@ -312,6 +362,7 @@ void App::drawMachineMenu() {
         releaseKeys();
         emulation_.setIIgsFastRam(static_cast<size_t>(size.kb) * 1024);
         display_.machineRebuilt();
+        slots_.apply();
       }
     }
     ImGui::EndMenu();
@@ -355,7 +406,10 @@ void App::switchMachine(MachineId id) {
   profile_ = &machineProfile(id);
   settings_.machine = profile_->key;
   display_.setMachine(*profile_);
+  slots_.setMachine(*profile_);
+  slots_.apply();
   drives_->machineChanged();
+  hardDrives_->machineChanged();
   noSignalStale_ = true;
   ImGui::MarkIniSettingsDirty();
   // The new machine starts as if switched on, as the old one was.
@@ -430,7 +484,13 @@ void App::drawStatusBar() {
 // The window draws every frame it is open; its save and error questions are
 // drawn whether it is or not. The options it toggles are remembered.
 void App::drawDiskDrives() {
+  bool showSlots = settings_.showExpansionSlots && profile_ && profile_->caps.hasExpansionSlots;
+  slots_.draw(&showSlots);
+  if (profile_ && profile_->caps.hasExpansionSlots) settings_.showExpansionSlots = showSlots;
   drives_->draw(&settings_.showDiskDrives);
+  bool showHard = settings_.showHardDrives && hardDrives_->available();
+  hardDrives_->draw(&showHard);
+  if (hardDrives_->available()) settings_.showHardDrives = showHard;
   const bool sounds = emulation_.driveSounds().enabled();
   if (drives_->surfaceShown != settings_.diskSurface || drives_->detailsShown != settings_.diskDetails ||
       sounds != settings_.driveSounds) {
@@ -444,6 +504,13 @@ void App::drawDiskDrives() {
 void App::filesDropped(const std::vector<std::string> &paths) {
   if (!started_) return;
   for (const std::string &path : paths) {
+    std::error_code error;
+    const size_t size = static_cast<size_t>(std::filesystem::file_size(path, error));
+    if (error) continue;
+    if (HardDrives::isBlockImage(path, size)) {
+      hardDrives_->insertFile(hardDrives_->dropTarget(), path);
+      return;
+    }
     if (DiskDrives::isFloppyImage(path)) {
       drives_->insertFile(drives_->dropTarget(), path);
       return;

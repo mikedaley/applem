@@ -158,6 +158,31 @@ View > Disk Drives is the browser's window and its rules
 - Files dropped on the window go to the first empty drive. The browser's
   `public/disks` library is bundled and offered under Recent.
 
+## SmartPort drives and expansion slots
+
+View > SmartPort Drives (`hard_drives.*`) is offered when the machine has a
+SmartPort: a IIgs's, or a card. Two devices, each with an activity light
+(green reading, red writing; the SmartPort reports activity for the card,
+so every device with an image lights), Insert, Recent with the library's
+hard drive images, and Eject, which offers a changed image for saving as it
+is. On a IIgs an image inserted while the machine runs is taken at the next
+reset, and the window says so.
+
+View > Expansion Slots (`expansion_slots.*`, `slot_layout.*`) is the
+browser's window: each slot's offers from its `SLOT_UI` table, each card
+fitted once, fixed slots locked, Apply & Reset, the No-Slot Clock, and on a
+IIgs the built-in-or-card switch each slot has, which takes effect at once.
+Layouts are kept per machine under `[ApplEmSlots][<machine key>]`.
+
+**The host applies the slot layout, and before the power comes on.** The
+`Emulator` constructor fits only the drives, the Mockingboard and a //c's
+ports from the profile's defaults; the SmartPort and the Thunderclock come
+from the layout, which the browser's slot window applies at startup.
+Without it a //e has no SmartPort (`test_machine_host` pins this). The
+startup order is the cards, then the floppies, then the hard drive images
+(fitting a layout can rebuild the SmartPort and take its images), then the
+power, so the boot scan finds what the machine was left with.
+
 ## Typeface
 
 The UI is set in SF Mono at 13pt (`uiFontPath()` in `platform_paths.mm`),
@@ -183,8 +208,8 @@ different things.
 1. Core as a library and the shared host layer. Done.
 2. Scaffolding: window, docking, multi-viewport, menu bar. Done.
 3. A machine running on screen, machine selection, keyboard, audio. Done.
-4. Media and configuration: disk drives (done), SmartPort, expansion slots,
-   save states, IIgs battery RAM, game port.
+4. Media and configuration: disk drives, SmartPort and expansion slots
+   (done); save states, IIgs battery RAM, game port.
 5. Display fidelity: the CRT shaders in Metal, display settings and profiles. Done.
 6. Debugger: CPU, memory, stack, zero page, soft switches, trace.
 7. The remaining debug views, including the Disk Inspector.

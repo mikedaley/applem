@@ -9,7 +9,9 @@
 
 #include "disk_drives.hpp"
 #include "display.hpp"
+#include "hard_drives.hpp"
 #include "emulation.hpp"
+#include "expansion_slots.hpp"
 #include "key_mapper.hpp"
 #include "platform.hpp"
 
@@ -36,6 +38,8 @@ struct Settings {
   bool diskSurface = true;
   bool diskDetails = false;
   bool driveSounds = true;
+  bool showHardDrives = false;
+  bool showExpansionSlots = false;
   // Per machine, keyed by profile key. Absent means the machine's default:
   // on for a IIgs, whose keyboard is a Mac's, and off for the rest.
   std::map<std::string, bool> commandIsOpenApple;
@@ -77,6 +81,7 @@ public:
 private:
   void registerSettingsHandler();
   void registerDisplayHandler();
+  void registerSlotsHandler();
   void startEmulation();
 
   void drawMenuBar();
@@ -107,6 +112,8 @@ private:
   Display display_;
   Emulation emulation_;
   std::unique_ptr<DiskDrives> drives_;
+  std::unique_ptr<HardDrives> hardDrives_;
+  ExpansionSlots slots_{emulation_};
   bool started_ = false;
 
   // The machine profile currently built, for drawing; refreshed on a switch.

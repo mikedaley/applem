@@ -11,7 +11,10 @@
 
 #include "../src/disk_drives.hpp"
 #include "../src/drive_sounds.hpp"
+#include "../src/hard_drives.hpp"
 #include "../src/media_store.hpp"
+#include "../src/slot_layout.hpp"
+#include "machine/machine_profile.hpp"
 
 #include <filesystem>
 #include <random>
@@ -103,6 +106,15 @@ TEST_CASE("Floppy images are known by their extension", "[media]") {
   for (const char *name : {"a.2mg", "a.hdv", "a.txt", "dsk"}) REQUIRE_FALSE(DiskDrives::isFloppyImage(name));
 }
 
+TEST_CASE("A dropped image goes to the drive it belongs in", "[media]") {
+  REQUIRE(HardDrives::isBlockImage("Total Replay.hdv", 32 * 1024 * 1024));
+  REQUIRE(HardDrives::isBlockImage("System 6.2MG", 800 * 1024));
+  // A 140K ProDOS-order image is a floppy; a bigger one is a hard drive.
+  REQUIRE_FALSE(HardDrives::isBlockImage("ProDOS.po", 143360));
+  REQUIRE(HardDrives::isBlockImage("Big.po", 800 * 1024));
+  REQUIRE_FALSE(HardDrives::isBlockImage("Game.dsk", 143360));
+}
+
 TEST_CASE("The label colour is the browser's", "[media]") {
   // Expected values from the browser's own _getStickerColor, run in Node.
   REQUIRE(stickerColor("ProDOS 2.4.3.po") == 0xb8d4e8);
@@ -137,4 +149,40 @@ TEST_CASE("A seek click plays once, at the main volume", "[media][sound]") {
   sounds.playSeek();
   sounds.mix(buffer.data(), 4096, 1.0f);
   REQUIRE(std::all_of(buffer.begin(), buffer.end(), [](float s) { return s == 0.0f; }));
+}
+
+TEST_CASE("A fresh machine's slots are its profile's defaults", "[slots]") {
+  using a2e::MachineId;
+  const SlotLayout iie = defaultLayout(a2e::machineProfile(MachineId::AppleIIe));
+  REQUIRE(iie == SlotLayout{{4, "mockingboard"}, {5, "thunderclock"}, {6, "disk2"}, {7, "smartport"}});
+  // Fixed slots are not the user's, so they are not in the layout.
+  REQUIRE(iie.count(3) == 0);
+  REQUIRE(isFixedSlot(a2e::machineProfile(MachineId::AppleIIe), 3));
+  REQUIRE(fixedCardLabel(a2e::machineProfile(MachineId::AppleIIe), 3) == "80-Column (Built-in)");
+  // A //c's slots are all soldered down.
+  REQUIRE(defaultLayout(a2e::machineProfile(MachineId::AppleIIc)).empty());
+}
+
+TEST_CASE("Each slot offers what it conventionally takes", "[slots]") {
+  const auto &iie = a2e::machineProfile(a2e::MachineId::AppleIIe);
+  REQUIRE(slotOffers(iie, 6) == std::vector<std::string>{"disk2"});
+  REQUIRE(slotOffers(iie, 4) ==
+          std::vector<std::string>{"mockingboard", "mouse", "smartport", "softcard"});
+  const auto &gs = a2e::machineProfile(a2e::MachineId::AppleIIgs);
+  REQUIRE(slotOffers(gs, 4).size() == 6);
+  REQUIRE(builtInDevice(gs, 5) == std::optional<std::string>("SmartPort"));
+  REQUIRE_FALSE(builtInDevice(gs, 3)); // slot 3 has no switch
+  REQUIRE_FALSE(builtInDevice(iie, 5));
+}
+
+TEST_CASE("Slot lines are read back and nonsense is refused", "[slots]") {
+  int slot = 0;
+  std::string card;
+  REQUIRE(parseSlotLine(formatSlotLine(4, "mouse").c_str(), slot, card));
+  REQUIRE(slot == 4);
+  REQUIRE(card == "mouse");
+  REQUIRE(parseSlotLine("Slot2=empty", slot, card));
+  REQUIRE_FALSE(parseSlotLine("Slot9=mouse", slot, card));
+  REQUIRE_FALSE(parseSlotLine("Slot4=toaster", slot, card));
+  REQUIRE(cardsInUse({{4, "mouse"}, {5, "empty"}, {7, "smartport"}}, 7) == std::vector<std::string>{"mouse"});
 }

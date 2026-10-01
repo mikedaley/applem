@@ -35,14 +35,17 @@ set(NATIVE_SOURCES
     src/audio_output.mm
     src/disk_drives.cpp
     src/display.cpp
-    src/drive_sounds.cpp
     src/display_settings.cpp
+    src/drive_sounds.cpp
     src/emulation.cpp
+    src/expansion_slots.cpp
+    src/hard_drives.cpp
     src/key_mapper.cpp
     src/media_store.cpp
     src/no_signal_frame.cpp
     src/platform_paths.mm
     src/screen_renderer_metal.mm
+    src/slot_layout.cpp
 )
 
 add_executable(ApplEmNative MACOSX_BUNDLE ${NATIVE_SOURCES})
@@ -140,7 +143,9 @@ add_test(NAME test_native_display COMMAND test_native_display
 # The media store, the save naming rules and the seek click.
 add_executable(test_native_media
     tests/test_native_media.cpp
+    src/slot_layout.cpp
     src/disk_drives.cpp
+    src/hard_drives.cpp
     src/drive_sounds.cpp
     src/media_store.cpp
     src/audio_output.mm
