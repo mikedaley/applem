@@ -210,6 +210,13 @@ void DiskDrives::syncWithMachine() {
   }
 }
 
+void DiskDrives::chooseDisk(int drive) {
+  platform_.openFile("Insert a disk into drive " + std::to_string(drive + 1),
+                     {"dsk", "do", "po", "woz", "nib"}, [this, drive](const std::string &path) {
+                       if (!path.empty()) insertFile(drive, path);
+                     });
+}
+
 int DiskDrives::dropTarget() const {
   if (!drives_[0].filename) return 0;
   if (!drives_[1].filename) return 1;
@@ -541,12 +548,7 @@ void DiskDrives::drawDrive(int index) {
   if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) ImGui::SetTooltip("Current track");
 
   // Controls.
-  if (ImGui::Button("Insert")) {
-    platform_.openFile("Insert a disk into drive " + std::to_string(index + 1),
-                       {"dsk", "do", "po", "woz", "nib"}, [this, index](const std::string &path) {
-                         if (!path.empty()) insertFile(index, path);
-                       });
-  }
+  if (ImGui::Button("Insert")) chooseDisk(index);
   ImGui::SameLine();
   const std::string recentId = "##recent" + std::to_string(index);
   if (ImGui::Button("Recent")) ImGui::OpenPopup(recentId.c_str());

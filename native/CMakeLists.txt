@@ -44,6 +44,8 @@ set(NATIVE_SOURCES
     src/joystick.cpp
     src/key_mapper.cpp
     src/media_store.cpp
+    src/menu_model.cpp
+    src/native_menu.mm
     src/no_signal_frame.cpp
     src/platform_paths.mm
     src/save_states.cpp

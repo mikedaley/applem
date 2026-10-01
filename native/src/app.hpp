@@ -15,8 +15,10 @@
 #include "emulation.hpp"
 #include "expansion_slots.hpp"
 #include "key_mapper.hpp"
+#include "menu_model.hpp"
 #include "platform.hpp"
 
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
@@ -88,14 +90,26 @@ public:
   // Files dropped on the window: a disk goes into the first empty drive.
   void filesDropped(const std::vector<std::string> &paths);
 
+  // The menu bar as of the last frame, and an item chosen from it. The
+  // action runs at the start of the next frame, where ImGui may be used.
+  const MenuBar &menuBar() const { return menuBar_; }
+  void menuChosen(const std::string &action) { pendingActions_.push_back(action); }
+
+  // Whether a key with Command held should skip the menu bar and go to the
+  // window: the machine takes Command as Open Apple and has the keyboard,
+  // or an ImGui text field is being typed into.
+  bool commandKeysToWindow() const;
+
 private:
   void registerSettingsHandler();
   void registerDisplayHandler();
   void registerSlotsHandler();
   void startEmulation();
 
-  void drawMenuBar();
-  void drawMachineMenu();
+  void buildMenus();
+  void runMenuActions();
+  MenuItem machineMenu();
+  MenuItem viewMenu();
   void drawDockSpace();
   void drawScreenWindow();
   void drawFullPage();
@@ -155,6 +169,11 @@ private:
   // that have not come up, so losing the keyboard can release them.
   bool screenHadKeyboard_ = false;
   std::set<int> keysDown_; // ImGuiKey values
+
+  MenuBar menuBar_;
+  std::map<std::string, std::function<void()>> menuActions_;
+  std::vector<std::string> pendingActions_;
+  bool textInputActive_ = false;
 
   // A machine switch waiting for the user to confirm it.
   std::optional<MachineId> pendingMachine_;

@@ -256,6 +256,8 @@ void App::startEmulation() {
 
 void App::frame() {
   if (!started_) startEmulation();
+  runMenuActions();
+  textInputActive_ = ImGui::GetIO().WantTextInput;
 
   updateScreenSource();
   drives_->update(ImGui::GetTime());
@@ -284,10 +286,10 @@ void App::frame() {
     drawSwitchConfirmation();
     handleAppShortcuts();
     routeKeyboard();
+    buildMenus();
     return;
   }
 
-  drawMenuBar();
   if (settings_.showStatusBar) drawStatusBar();
   drawDockSpace();
   if (settings_.showScreen) drawScreenWindow();
@@ -301,146 +303,228 @@ void App::frame() {
 
   handleAppShortcuts();
   routeKeyboard();
+  buildMenus();
 }
 
 // ---------------------------------------------------------------------------
 // Menus
 // ---------------------------------------------------------------------------
 
-void App::drawMenuBar() {
-  if (!ImGui::BeginMainMenuBar()) return;
+namespace {
 
-  if (ImGui::BeginMenu("File")) {
-    ImGui::MenuItem("Save States", nullptr, &settings_.showSaveStates);
-    ImGui::Separator();
-    if (ImGui::MenuItem("Quit", "Cmd+Q")) quitRequested_ = true;
-    ImGui::EndMenu();
-  }
-
-  if (ImGui::BeginMenu("Edit")) {
-    if (ImGui::MenuItem("Paste to Machine", commandIsOpenApple() ? nullptr : "Cmd+V")) {
-      paste();
-    }
-    ImGui::EndMenu();
-  }
-
-  drawMachineMenu();
-
-  if (ImGui::BeginMenu("View")) {
-    ImGui::MenuItem(SCREEN_WINDOW, nullptr, &settings_.showScreen);
-    ImGui::MenuItem("Display Settings", nullptr, &settings_.showDisplaySettings);
-    ImGui::MenuItem("Disk Drives", nullptr, &settings_.showDiskDrives);
-    ImGui::MenuItem("Joystick", nullptr, &settings_.showJoystick);
-    ImGui::MenuItem("Cursor Keys as Joystick", nullptr, &joystick_.cursorKeys);
-    // Not on a //c, whose every slot is soldered down.
-    if (profile_ && profile_->caps.hasExpansionSlots) {
-      ImGui::MenuItem("Expansion Slots", nullptr, &settings_.showExpansionSlots);
-    }
-    // Offered only when there is a SmartPort: a IIgs's, or a card.
-    if (hardDrives_->available()) {
-      ImGui::MenuItem("SmartPort Drives", nullptr, &settings_.showHardDrives);
-    }
-    ImGui::MenuItem("Status Bar", nullptr, &settings_.showStatusBar);
-    ImGui::Separator();
-    if (ImGui::MenuItem("Full Page", "Ctrl+Esc to leave")) {
-      fullPage_ = true;
-      enterFullPage_ = true;
-    }
-    if (ImGui::MenuItem("Full Screen") && platform_.toggleFullScreen) platform_.toggleFullScreen();
-    ImGui::Separator();
-    if (profile_ && profile_->caps.hasUkCharSet &&
-        ImGui::MenuItem("UK Character Set", nullptr, &settings_.ukCharacterSet)) {
-      applyMachineDisplay();
-      ImGui::MarkIniSettingsDirty();
-    }
-    bool command = commandIsOpenApple();
-    if (ImGui::MenuItem("Cmd as Open Apple", nullptr, &command)) {
-      releaseKeys();
-      settings_.commandIsOpenApple[profile_->key] = command;
-      ImGui::MarkIniSettingsDirty();
-    }
-    ImGui::Separator();
-    if (ImGui::MenuItem("Mute", nullptr, &settings_.muted)) {
-      emulation_.setMuted(settings_.muted);
-      ImGui::MarkIniSettingsDirty();
-    }
-    ImGui::SetNextItemWidth(160.0f);
-    if (ImGui::SliderFloat("Volume", &settings_.volume, 0.0f, 1.0f, "%.2f")) {
-      emulation_.setVolume(settings_.volume);
-      ImGui::MarkIniSettingsDirty();
-    }
-    ImGui::Separator();
-    ImGui::MenuItem("ImGui Demo", nullptr, &showDemo_);
-    ImGui::EndMenu();
-  }
-
-  ImGui::EndMainMenuBar();
+// An item that runs `run` when chosen, registered under `id`.
+MenuItem item(std::map<std::string, std::function<void()>> &actions, const std::string &id,
+              const std::string &title, std::function<void()> run, const std::string &key = "",
+              unsigned modifiers = 0, bool checked = false, bool enabled = true) {
+  MenuItem result;
+  result.title = title;
+  result.action = id;
+  result.key = key;
+  result.modifiers = modifiers;
+  result.checked = checked;
+  result.enabled = enabled;
+  actions[id] = std::move(run);
+  return result;
 }
 
-void App::drawMachineMenu() {
-  if (!ImGui::BeginMenu("Machine")) return;
+MenuItem submenu(const std::string &title, std::vector<MenuItem> children, bool enabled = true) {
+  MenuItem result;
+  result.title = title;
+  result.children = std::move(children);
+  result.enabled = enabled;
+  return result;
+}
 
-  bool powered = emulation_.powered();
-  if (ImGui::MenuItem("Power", nullptr, &powered)) {
-    releaseKeys();
-    emulation_.setPowered(powered);
-  }
-  if (ImGui::MenuItem("Ctrl+Reset", "Ctrl+F12", false, powered)) {
-    emulation_.withMachine([](host::MachineHost &host) { host.warmReset(); });
-  }
-  if (ImGui::MenuItem("Reboot", nullptr, false, powered)) {
-    emulation_.withMachine([](host::MachineHost &host) { host.reset(); });
-  }
+} // namespace
 
-  ImGui::Separator();
+bool App::commandKeysToWindow() const {
+  return textInputActive_ || (screenHadKeyboard_ && commandIsOpenApple());
+}
+
+void App::runMenuActions() {
+  std::vector<std::string> actions;
+  actions.swap(pendingActions_);
+  for (const std::string &action : actions) {
+    auto it = menuActions_.find(action);
+    if (it != menuActions_.end()) it->second();
+  }
+}
+
+// The menus, rebuilt in full each frame so they always say what is true;
+// the platform only rebuilds the real ones when this changes. The
+// application and Window menus are the platform's own.
+void App::buildMenus() {
+  menuActions_.clear();
+  auto &a = menuActions_;
+  auto toggle = [](bool &flag) {
+    return [&flag] {
+      flag = !flag;
+      ImGui::MarkIniSettingsDirty();
+    };
+  };
+
+  MenuItem file = submenu("File", {
+      item(a, "disk.insert.1", "Insert Disk…", [this] { drives_->chooseDisk(0); }, "o", MOD_COMMAND),
+      item(a, "disk.insert.2", "Insert Disk in Drive 2…", [this] { drives_->chooseDisk(1); }, "o",
+           MOD_COMMAND | MOD_SHIFT),
+      item(a, "disk.eject.1", "Eject Drive 1", [this] { drives_->ejectDrive(0); }, "e", MOD_COMMAND, false,
+           drives_->hasDisk(0)),
+      item(a, "disk.eject.2", "Eject Drive 2", [this] { drives_->ejectDrive(1); }, "e", MOD_COMMAND | MOD_SHIFT,
+           false, drives_->hasDisk(1)),
+      MenuItem::separatorItem(),
+      item(a, "states.show", "Save States…", toggle(settings_.showSaveStates), "s", MOD_COMMAND | MOD_SHIFT,
+           settings_.showSaveStates),
+  });
+
+  MenuItem edit = submenu("Edit", {
+      item(a, "edit.paste", "Paste to Machine", [this] { paste(); }, "v", MOD_COMMAND),
+  });
+
+  menuBar_ = {file, edit, machineMenu(), viewMenu()};
+}
+
+MenuItem App::machineMenu() {
+  auto &a = menuActions_;
+  const bool powered = emulation_.powered();
+  std::vector<MenuItem> items = {
+      item(a, "machine.power", "Power", [this] {
+             releaseKeys();
+             emulation_.setPowered(!emulation_.powered());
+           }, "", 0, powered),
+      item(a, "machine.ctrlreset", "Ctrl+Reset", [this] {
+             emulation_.withMachine([](host::MachineHost &host) { host.warmReset(); });
+           }, "F12", MOD_CONTROL, false, powered),
+      item(a, "machine.reboot", "Reboot", [this] {
+             emulation_.withMachine([](host::MachineHost &host) { host.reset(); });
+           }, "r", MOD_CONTROL | MOD_COMMAND, false, powered),
+      MenuItem::separatorItem(),
+  };
+
   for (int i = 0; i < MACHINE_COUNT; i++) {
     const MachineProfile &machine = machineProfileAt(i);
     const bool runnable = Emulator::isMachineRunnable(machine.id);
     const bool current = profile_ && machine.id == profile_->id;
-    std::string label = machine.name;
-    if (!runnable) label += " (ROM missing)";
-    if (ImGui::MenuItem(label.c_str(), nullptr, current, runnable) && !current) {
-      pendingMachine_ = machine.id;
-    }
+    std::string title = machine.name;
+    if (!runnable) title += " (ROM missing)";
+    const MachineId id = machine.id;
+    items.push_back(item(a, std::string("machine.select.") + machine.key, title, [this, id, current] {
+                           if (!current) pendingMachine_ = id;
+                         }, "", 0, current, runnable));
   }
+  items.push_back(MenuItem::separatorItem());
 
   // A IIgs keeps its own speed register, so it is not offered one here.
-  if (profile_ && profile_->family != MachineFamily::AppleIIgs && ImGui::BeginMenu("CPU Speed")) {
+  if (profile_ && profile_->family != MachineFamily::AppleIIgs) {
+    std::vector<MenuItem> speeds;
     for (int multiple : {1, 2, 4, 8}) {
-      char label[32];
-      std::snprintf(label, sizeof(label), "%dx  (%.3f MHz)", multiple,
+      char title[32];
+      std::snprintf(title, sizeof(title), "%dx  (%.3f MHz)", multiple,
                     profile_->timing.cpuClockHz * multiple / 1.0e6);
-      if (ImGui::MenuItem(label, nullptr, settings_.speed == multiple)) {
-        settings_.speed = multiple;
-        applySpeed();
-        ImGui::MarkIniSettingsDirty();
-      }
+      speeds.push_back(item(a, "machine.speed." + std::to_string(multiple), title, [this, multiple] {
+                              settings_.speed = multiple;
+                              applySpeed();
+                              ImGui::MarkIniSettingsDirty();
+                            }, "", 0, settings_.speed == multiple));
     }
-    ImGui::EndMenu();
+    items.push_back(submenu("CPU Speed", speeds));
   }
 
-  ImGui::Separator();
-  if (ImGui::BeginMenu("IIgs Memory")) {
-    for (const MemorySize &size : IIGS_MEMORY_SIZES) {
-      const bool current = settings_.iigsMemoryKB == size.kb;
-      if (ImGui::MenuItem(size.label, nullptr, current) && !current) {
-        // Changing it rebuilds a running IIgs, as switching machines does,
-        // and is only remembered by any other machine.
-        settings_.iigsMemoryKB = size.kb;
-        ImGui::MarkIniSettingsDirty();
-        releaseKeys();
-        saveBatteryRamIfChanged(-1);
-        emulation_.setIIgsFastRam(static_cast<size_t>(size.kb) * 1024);
-        display_.machineRebuilt();
-        slots_.apply();
-        restoreBatteryRam();
-        joystick_.machineRebuilt();
-      }
-    }
-    ImGui::EndMenu();
+  std::vector<MenuItem> memory;
+  for (const MemorySize &size : IIGS_MEMORY_SIZES) {
+    const int kb = size.kb;
+    memory.push_back(item(a, "machine.iigsmemory." + std::to_string(kb), size.label, [this, kb] {
+                            if (settings_.iigsMemoryKB == kb) return;
+                            // Changing it rebuilds a running IIgs, as
+                            // switching machines does, and is only
+                            // remembered by any other machine.
+                            settings_.iigsMemoryKB = kb;
+                            ImGui::MarkIniSettingsDirty();
+                            releaseKeys();
+                            saveBatteryRamIfChanged(-1);
+                            emulation_.setIIgsFastRam(static_cast<size_t>(kb) * 1024);
+                            display_.machineRebuilt();
+                            slots_.apply();
+                            restoreBatteryRam();
+                            joystick_.machineRebuilt();
+                          }, "", 0, settings_.iigsMemoryKB == kb));
   }
+  items.push_back(submenu("IIgs Memory", memory));
 
-  ImGui::EndMenu();
+  // Not on a //c, whose every slot is soldered down.
+  if (profile_ && profile_->caps.hasExpansionSlots) {
+    items.push_back(MenuItem::separatorItem());
+    items.push_back(item(a, "slots.show", "Expansion Slots…", [this] {
+                           settings_.showExpansionSlots = !settings_.showExpansionSlots;
+                           ImGui::MarkIniSettingsDirty();
+                         }, "", 0, settings_.showExpansionSlots));
+  }
+  return submenu("Machine", items);
+}
+
+MenuItem App::viewMenu() {
+  auto &a = menuActions_;
+  auto window = [&a](const std::string &id, const std::string &title, bool &flag, const std::string &key,
+                     unsigned modifiers = MOD_COMMAND) {
+    return item(a, id, title, [&flag] {
+      flag = !flag;
+      ImGui::MarkIniSettingsDirty();
+    }, key, modifiers, flag);
+  };
+
+  std::vector<MenuItem> items = {
+      window("view.screen", "Screen", settings_.showScreen, "1"),
+      window("view.drives", "Disk Drives", settings_.showDiskDrives, "2"),
+  };
+  // Offered only when there is a SmartPort: a IIgs's, or a card.
+  if (hardDrives_->available()) {
+    items.push_back(window("view.harddrives", "SmartPort Drives", settings_.showHardDrives, "3"));
+  }
+  items.push_back(window("view.joystick", "Joystick", settings_.showJoystick, "4"));
+  items.push_back(window("view.display", "Display Settings…", settings_.showDisplaySettings, ","));
+  items.push_back(window("view.statusbar", "Status Bar", settings_.showStatusBar, "/"));
+  items.push_back(MenuItem::separatorItem());
+  items.push_back(item(a, "view.fullpage", fullPage_ ? "Leave Full Page" : "Full Page", [this] {
+                         fullPage_ = !fullPage_;
+                         enterFullPage_ = fullPage_;
+                       }, "Escape", MOD_CONTROL, fullPage_));
+  items.push_back(item(a, "toggleFullScreen", "Enter Full Screen", [] {}, "f", MOD_CONTROL | MOD_COMMAND));
+  items.push_back(MenuItem::separatorItem());
+
+  if (profile_ && profile_->caps.hasUkCharSet) {
+    items.push_back(item(a, "view.ukcharset", "UK Character Set", [this] {
+                           settings_.ukCharacterSet = !settings_.ukCharacterSet;
+                           applyMachineDisplay();
+                           ImGui::MarkIniSettingsDirty();
+                         }, "", 0, settings_.ukCharacterSet));
+  }
+  items.push_back(item(a, "view.commandapple", "Command as Open Apple", [this] {
+                         releaseKeys();
+                         settings_.commandIsOpenApple[profile_->key] = !commandIsOpenApple();
+                         ImGui::MarkIniSettingsDirty();
+                       }, "", 0, commandIsOpenApple()));
+  items.push_back(item(a, "view.cursorkeys", "Cursor Keys as Joystick", [this] {
+                         joystick_.cursorKeys = !joystick_.cursorKeys;
+                       }, "", 0, joystick_.cursorKeys));
+  items.push_back(MenuItem::separatorItem());
+
+  items.push_back(item(a, "view.mute", "Mute", [this] {
+                         settings_.muted = !settings_.muted;
+                         emulation_.setMuted(settings_.muted);
+                         ImGui::MarkIniSettingsDirty();
+                       }, "", 0, settings_.muted));
+  std::vector<MenuItem> volumes;
+  for (int percent : {25, 50, 75, 100}) {
+    volumes.push_back(item(a, "view.volume." + std::to_string(percent), std::to_string(percent) + "%",
+                           [this, percent] {
+                             settings_.volume = percent / 100.0f;
+                             emulation_.setVolume(settings_.volume);
+                             ImGui::MarkIniSettingsDirty();
+                           }, "", 0, std::lround(settings_.volume * 100) == percent));
+  }
+  items.push_back(submenu("Volume", volumes));
+  items.push_back(MenuItem::separatorItem());
+  items.push_back(item(a, "view.imguidemo", "Dear ImGui Demo", [this] { showDemo_ = !showDemo_; }, "", 0, showDemo_));
+  return submenu("View", items);
 }
 
 // Switching is destructive, so it asks first, as the browser build's machine
@@ -814,23 +898,9 @@ void App::paste() {
   emulation_.withMachine([text](host::MachineHost &host) { host.pasteText(text); });
 }
 
-// The app's own keys. These are checked before the machine is given the
-// keyboard and are never passed on to it.
-void App::handleAppShortcuts() {
-  if (!started_ || !emulation_.powered()) return;
-  const bool swap = ImGui::GetIO().ConfigMacOSXBehaviors;
-  const HeldModifiers held = heldModifiers(swap);
-
-  // A Mac has no Reset key; Ctrl+F12 is Ctrl+Reset.
-  if (held.control && ImGui::IsKeyPressed(ImGuiKey_F12, false)) {
-    emulation_.withMachine([](host::MachineHost &host) { host.warmReset(); });
-  }
-  // Cmd+V pastes, unless Cmd is the machine's Open Apple key.
-  if (screenHadKeyboard_ && held.command && !commandIsOpenApple() &&
-      ImGui::IsKeyPressed(ImGuiKey_V, false)) {
-    paste();
-  }
-}
+// The app's own keys are the menu bar's key equivalents now (Ctrl+F12 is
+// Ctrl+Reset, Command-V pastes); this is what is left that a menu cannot be.
+void App::handleAppShortcuts() {}
 
 // While the screen has the keyboard, every key goes to the machine as a
 // browser keycode, so the core's own translation does the rest exactly as it

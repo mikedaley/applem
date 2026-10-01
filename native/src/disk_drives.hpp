@@ -60,6 +60,11 @@ public:
   // Where a dropped disk goes: the first empty drive, else drive 1.
   int dropTarget() const;
 
+  // For the menus.
+  void chooseDisk(int drive);
+  void ejectDrive(int drive) { requestEject(drive); }
+  bool hasDisk(int drive) const { return drives_[drive].filename.has_value(); }
+
   bool surfaceShown = true;
   bool detailsShown = false;
 

@@ -17,6 +17,7 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 #include "app.hpp"
+#include "native_menu.hpp"
 #include "platform_paths.hpp"
 #include "screen_renderer_metal.hpp"
 
@@ -76,10 +77,12 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
 - (void)shutdown;
 - (void)releaseKeys;
 - (void)filesDropped:(const std::vector<std::string> &)paths;
+- (BOOL)commandKeysToWindow;
 @end
 
 @implementation AppViewController {
   std::unique_ptr<App> _app;
+  NativeMenu *_menu;
 }
 
 - (instancetype)init {
@@ -203,6 +206,11 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
   io.IniFilename = _app->iniPath();
 
   ImGui_ImplMetal_Init(_device);
+
+  App *app = _app.get();
+  _menu = [[NativeMenu alloc] initWithChosen:^(NSString *action) {
+    app->menuChosen(action.UTF8String);
+  }];
   return self;
 }
 
@@ -263,6 +271,7 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
     ImGui::RenderPlatformWindowsDefault();
   }
 
+  [_menu update:_app->menuBar()];
   if (_app->quitRequested()) [NSApp terminate:nil];
 }
 
@@ -271,6 +280,10 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
 
 - (void)filesDropped:(const std::vector<std::string> &)paths {
   if (_app) _app->filesDropped(paths);
+}
+
+- (BOOL)commandKeysToWindow {
+  return _app && _app->commandKeysToWindow();
 }
 
 // Another app took the keyboard: key-ups for anything held will never come.
@@ -305,7 +318,6 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
-  [self buildMenuBar];
 
   self.controller = [[AppViewController alloc] init];
   self.window = [[NSWindow alloc]
@@ -322,6 +334,21 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
   self.window.collectionBehavior |= NSWindowCollectionBehaviorFullScreenPrimary;
   [self.window makeKeyAndOrderFront:nil];
   [NSApp activateIgnoringOtherApps:YES];
+
+  // Command keys skip the menu bar when the machine takes Command as Open
+  // Apple, or an ImGui text field is being typed into; Command-Q always
+  // reaches the menu, as the Tauri build does it.
+  __weak AppDelegate *weakSelf = self;
+  [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
+                                        handler:^NSEvent *(NSEvent *event) {
+    if (!(event.modifierFlags & NSEventModifierFlagCommand)) return event;
+    if ([event.charactersIgnoringModifiers.lowercaseString isEqualToString:@"q"]) return event;
+    if (![weakSelf.controller commandKeysToWindow]) return event;
+    NSResponder *responder = event.window.firstResponder;
+    if (!responder) return event;
+    [responder keyDown:event];
+    return nil;
+  }];
 }
 
 - (void)applicationDidResignActive:(NSNotification *)notification {
@@ -330,25 +357,6 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
 
 - (void)applicationWillTerminate:(NSNotification *)notification {
   [self.controller shutdown];
-}
-
-// The application menu, so ⌘Q, ⌘H and ⌘M behave as on every other Mac app.
-// The emulator's own menus are ImGui's, inside the window.
-- (void)buildMenuBar {
-  NSMenu *bar = [[NSMenu alloc] init];
-  NSMenuItem *appItem = [[NSMenuItem alloc] init];
-  [bar addItem:appItem];
-  NSMenu *appMenu = [[NSMenu alloc] init];
-  [appMenu addItemWithTitle:@"About ApplEm"
-                     action:@selector(orderFrontStandardAboutPanel:)
-              keyEquivalent:@""];
-  [appMenu addItem:[NSMenuItem separatorItem]];
-  [appMenu addItemWithTitle:@"Hide ApplEm" action:@selector(hide:) keyEquivalent:@"h"];
-  [appMenu addItemWithTitle:@"Minimize" action:@selector(performMiniaturize:) keyEquivalent:@"m"];
-  [appMenu addItem:[NSMenuItem separatorItem]];
-  [appMenu addItemWithTitle:@"Quit ApplEm" action:@selector(terminate:) keyEquivalent:@"q"];
-  appItem.submenu = appMenu;
-  NSApp.mainMenu = bar;
 }
 
 @end
