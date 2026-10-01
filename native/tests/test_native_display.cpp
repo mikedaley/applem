@@ -18,11 +18,34 @@
 using namespace a2e;
 using namespace a2e::native;
 
-TEST_CASE("The shipped defaults are the Pixel Exact preset", "[display]") {
+TEST_CASE("The shipped defaults are the Solid Colour preset", "[display]") {
   DisplaySettings defaults;
-  DisplaySettings flat;
-  applyValues(flat, findPreset("flat")->values);
-  REQUIRE(defaults == flat);
+  DisplaySettings solid;
+  applyValues(solid, findPreset("solid")->values);
+  REQUIRE(defaults == solid);
+  REQUIRE(defaults.colorMode == COLOR_SOLID);
+
+  // A first run selects it by name, so the window says Solid Colour, and
+  // Reset to Defaults comes back to it.
+  DisplayState fresh;
+  REQUIRE(fresh.preset == "solid");
+  fresh.reconcile({});
+  REQUIRE(fresh.settings == solid);
+}
+
+TEST_CASE("A choice made once is the one that stays", "[display]") {
+  // What is saved is read back in place of the default.
+  DisplayState state;
+  state.applyPreset("composite", {});
+  DisplaySettings stored = state.settings;
+  DisplayState loaded;
+  SettingValues values;
+  for (const SettingField &field : settingFields()) parseSetting(formatSetting(field, stored), values);
+  applyValues(loaded.settings, values);
+  loaded.preset = "composite";
+  loaded.reconcile({});
+  REQUIRE(loaded.preset == "composite");
+  REQUIRE(loaded.settings.colorMode == COLOR_COMPOSITE);
 }
 
 TEST_CASE("Each machine has its own screen border", "[display]") {

@@ -58,7 +58,7 @@ struct DisplaySettings {
   int sharpness = 0;
   int colorBleed = 0;
   int monochromeMode = 0; // 0 colour, 1 green, 2 amber, 3 white
-  int colorMode = COLOR_PIXEL_EXACT;
+  int colorMode = COLOR_SOLID;
   int screenInset = 0;
   int bezelColor = 0xC8B89A;
 
@@ -112,7 +112,8 @@ struct NameCheck {
 NameCheck validateProfileName(const std::string &raw);
 
 // The settings a machine starts with: the shipped defaults, which are the
-// Pixel Exact preset, with that machine's screen border. The 8-bit machines'
+// Solid Colour preset (the native app's first-run choice; the browser starts
+// on Pixel Exact), with that machine's screen border. The 8-bit machines'
 // pictures fill the frame and want a strip of glass round them; a IIgs draws
 // its own border.
 constexpr int DEFAULT_SCREEN_BORDER = 35;
@@ -124,7 +125,7 @@ class DisplayState {
 public:
   DisplaySettings settings;
   // A built-in preset id, a profile id, or CUSTOM_PRESET.
-  std::string preset = "flat";
+  std::string preset = "solid";
   // Whether the selected profile has edits not yet saved into it. Only
   // meaningful while a profile is selected: a built-in drops to Custom the
   // moment it is edited, and so is never "modified".

@@ -112,6 +112,11 @@ what found that the shadow mask must count rows from the bottom, as
 Only effects that do not move are compared; flicker, jitter, noise, sync
 and the glowing line depend on when each side drew.
 
+**A first run starts on Solid Colour**, where the browser starts on Pixel
+Exact; Reset to Defaults comes back to it. A machine's settings are written
+only once they have been changed, so from the first change on, that choice
+is what the machine starts with.
+
 **The settings are the browser's** (`display_settings.*`, unit-tested in
 `test_native_display`): the same presets with the same values, the same
 0-100 scales, presets that never touch calibration or the bezel, Custom on
