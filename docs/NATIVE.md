@@ -210,7 +210,14 @@ browser does, with the same mechanism (the core runs more cycles per audio
 sample, so audio keeps pacing it). It is a preference rather than machine
 state: kept, applied again after a switch, snapped to the nearest offered
 value, and not offered on a IIgs, which has its own speed register. Above
-1x the status bar says so. Measured: 4.105 MHz at 4x.
+1x the status bar says so.
+
+The status bar's clock is measured across a sliding ten-second window. A
+refill runs a whole video frame at once, about 17,000 cycles, so a
+one-second window caught one refill more or fewer and wandered by about
+1.3% (1.019 to 1.026 MHz); ten seconds brings that to about 0.1%, and it
+reads 1.023. It starts again on a power cycle, a machine change, a speed
+change, or a clock that went backwards (a rebuilt or reloaded machine).
 
 ## Game port
 

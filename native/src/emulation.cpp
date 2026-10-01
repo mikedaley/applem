@@ -64,7 +64,6 @@ void Emulation::run() {
   std::vector<float> scratch(SAMPLES_PER_FRAME * 2);
   auto last = std::chrono::steady_clock::now();
   double owed = 0.0; // free-run samples not yet generated
-  measureStart_ = last;
 
   while (!quit_) {
     const bool audio = audio_.running();
@@ -117,19 +116,33 @@ void Emulation::refill(float *scratch, bool toDevice) {
 }
 
 void Emulation::measure() {
+  constexpr double SAMPLE_SECONDS = 1.0;
+  constexpr double WINDOW_SECONDS = 10.0;
   const auto now = std::chrono::steady_clock::now();
-  const double seconds = std::chrono::duration<double>(now - measureStart_).count();
-  if (seconds < 1.0) return;
+  if (measureReset_.exchange(false)) {
+    measureSamples_.clear();
+    measuredMHz_ = 0.0;
+  }
+  if (!measureSamples_.empty() &&
+      std::chrono::duration<double>(now - measureSamples_.back().first).count() < SAMPLE_SECONDS) {
+    return;
+  }
   uint64_t cycles = 0;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     cycles = host_.totalCycles();
   }
-  if (cycles >= measureCycles_ && measureCycles_ != 0) {
-    measuredMHz_ = (cycles - measureCycles_) / seconds / 1.0e6;
+  // A clock that went backwards is a machine that was rebuilt or reloaded.
+  if (!measureSamples_.empty() && cycles < measureSamples_.back().second) measureSamples_.clear();
+  measureSamples_.emplace_back(now, cycles);
+  while (measureSamples_.size() > 2 &&
+         std::chrono::duration<double>(now - measureSamples_.front().first).count() > WINDOW_SECONDS) {
+    measureSamples_.pop_front();
   }
-  measureCycles_ = cycles;
-  measureStart_ = now;
+  if (measureSamples_.size() < 2) return;
+  const auto &[firstTime, firstCycles] = measureSamples_.front();
+  const double seconds = std::chrono::duration<double>(now - firstTime).count();
+  if (seconds > 0) measuredMHz_ = (cycles - firstCycles) / seconds / 1.0e6;
 }
 
 void Emulation::setPowered(bool on) {
@@ -141,10 +154,9 @@ void Emulation::setPowered(bool on) {
     } else if (DiskController *disk = host_.diskController()) {
       disk->stopMotor();
     }
-    measureCycles_ = 0;
   }
   ring_.clear();
-  measuredMHz_ = 0.0;
+  measureReset_ = true;
   powered_ = on;
   dispatch_semaphore_signal(wake_);
 }
@@ -155,8 +167,8 @@ bool Emulation::setMachine(MachineId id) {
     std::lock_guard<std::mutex> lock(mutex_);
     ok = host_.setMachine(id);
     applyGain();
-    measureCycles_ = 0;
   }
+  measureReset_ = true;
   ring_.clear();
   return ok;
 }

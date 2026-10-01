@@ -689,6 +689,7 @@ void App::applySpeed() {
   }
   settings_.speed = multiple;
   emulation_.withMachine([&](host::MachineHost &host) { host.setSpeedMultiplier(multiple); });
+  emulation_.resetMeasurement();
 }
 
 // The video settings that live in the machine rather than in the shader.

@@ -15,6 +15,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <deque>
 #include <dispatch/dispatch.h>
 #include <mutex>
 #include <thread>
@@ -78,8 +79,13 @@ public:
   bool audioRunning() const { return audio_.running(); }
   // The drives' own sounds, mixed in at the main volume.
   DriveSounds &driveSounds() { return driveSounds_; }
-  // The machine's clock as measured against the wall, in MHz.
+  // The machine's clock as measured against the wall, in MHz, across the
+  // last ten seconds. A refill runs a whole video frame at once (about
+  // 17,000 cycles), so a one-second window caught a refill more or fewer and
+  // wandered by about 1.3%; ten seconds brings that to about 0.1%.
   double measuredMHz() const { return measuredMHz_.load(); }
+  // Start the measurement again: the clock it is measuring has changed.
+  void resetMeasurement() { measureReset_ = true; }
 
 private:
   void run();
@@ -104,8 +110,9 @@ private:
   bool muted_ = false;
 
   std::atomic<double> measuredMHz_{0.0};
-  std::chrono::steady_clock::time_point measureStart_;
-  uint64_t measureCycles_ = 0;
+  // (time, cycles) once a second, oldest first, on the emulation thread only.
+  std::deque<std::pair<std::chrono::steady_clock::time_point, uint64_t>> measureSamples_;
+  std::atomic<bool> measureReset_{true};
 };
 
 } // namespace a2e::native
