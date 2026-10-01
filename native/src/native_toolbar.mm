@@ -23,6 +23,7 @@ const Button BUTTONS[] = {
     {@"reboot", @"Reboot", @"arrow.clockwise.circle", @"machine.reboot", @"Restart the machine from cold"},
     {@"drives", @"Disks", @"opticaldiscdrive", @"view.drives", @"Disk Drives"},
     {@"harddrives", @"SmartPort", @"externaldrive", @"view.harddrives", @"SmartPort Drives"},
+    {@"slots", @"Slots", @"memorychip", @"slots.show", @"Expansion Slots"},
     {@"joystick", @"Joystick", @"gamecontroller", @"view.joystick", @"Joystick"},
     {@"display", @"Display", @"tv", @"view.display", @"Display Settings"},
     {@"states", @"States", @"clock.arrow.circlepath", @"states.show", @"Save States"},
@@ -39,6 +40,7 @@ NSString *const MACHINE = @"machine";
   NSMenuToolbarItem *_machine;
   std::string _signature;
   BOOL _hardDrives;
+  BOOL _expansionSlots;
   BOOL _powered;
   BOOL _poweredKnown;
 }
@@ -76,12 +78,13 @@ NSString *const MACHINE = @"machine";
 
 - (BOOL)validateToolbarItem:(NSToolbarItem *)item {
   if ([item.itemIdentifier isEqualToString:@"harddrives"]) return _hardDrives;
+  if ([item.itemIdentifier isEqualToString:@"slots"]) return _expansionSlots;
   return YES;
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar {
   return @[ @"power", @"reset", @"reboot", NSToolbarFlexibleSpaceItemIdentifier, MACHINE,
-            NSToolbarFlexibleSpaceItemIdentifier, @"drives", @"harddrives", @"joystick", @"display", @"states" ];
+            NSToolbarFlexibleSpaceItemIdentifier, @"drives", @"harddrives", @"slots", @"joystick", @"display", @"states" ];
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar {
@@ -122,6 +125,7 @@ NSString *const MACHINE = @"machine";
 
 - (void)update:(const a2e::native::ToolbarState &)state {
   _hardDrives = state.hardDrives;
+  _expansionSlots = state.expansionSlots;
 
   // Power wears green while the machine is on.
   NSToolbarItem *power = _items[@"power"];

@@ -389,6 +389,7 @@ void App::buildMenus() {
   toolbar_.powered = emulation_.powered();
   toolbar_.machineName = profile_ ? profile_->name : "";
   toolbar_.hardDrives = hardDrives_->available();
+  toolbar_.expansionSlots = profile_ && profile_->caps.hasExpansionSlots;
   toolbar_.machines.clear();
   for (const MenuItem &entry : menuBar_[2].children) {
     if (entry.action.rfind("machine.select.", 0) == 0) toolbar_.machines.push_back(entry);

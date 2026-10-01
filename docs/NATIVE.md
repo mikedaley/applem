@@ -365,7 +365,8 @@ The app is meant to feel like a Mac app rather than an ImGui tool:
   always quits.
 - **A unified toolbar** (`native_toolbar.mm`): Power (green while on),
   Ctrl+Reset, Reboot, a pull-down naming and choosing the machine, and the
-  windows, with SF Symbols, sending the menu items' own actions. The window
+  windows (Disk Drives, SmartPort, Expansion Slots when the machine has
+  sockets, Joystick, Display Settings, Save States), with SF Symbols, sending the menu items' own actions. The window
   is titled ApplEm with the machine as its subtitle.
 - **System colours** (`ui_theme.mm`): AppKit's named colours resolved under
   the current appearance, the user's accent colour for checks, sliders,
