@@ -66,7 +66,14 @@ private:
   void loadBytes(const std::vector<uint8_t> &data, const std::string &what);
   void importNow(const std::vector<uint8_t> &data, const std::string &what);
   void exportRecord(const std::string &id, const std::string &suggestedName);
-  void drawRow(const char *label, const std::string &id, bool isAutosave);
+  void drawAutosave(float width);
+  void drawSlot(int slot, ImVec2 at, ImVec2 size);
+  void drawFileCard(ImVec2 at, ImVec2 size);
+  // A picture of the machine as a small screen: rounded, with glass on it.
+  void drawScreen(const Row &row, ImVec2 at, ImVec2 size);
+  // "Saved" or "Loaded" over a card for a moment, so an action is seen.
+  void flash(const std::string &id, const std::string &text);
+  void drawFlash(const std::string &id, ImVec2 at, ImVec2 size);
   void notice(const std::string &message);
   void error(const std::string &message);
 
@@ -88,6 +95,7 @@ private:
 
   std::string notice_;
   double noticeUntil_ = 0;
+  std::map<std::string, std::pair<std::string, double>> flashes_; // id: text, when
   std::string error_;
   bool openError_ = false;
 };

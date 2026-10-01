@@ -249,10 +249,17 @@ power, so the boot scan finds what the machine was left with.
 
 ## Save states
 
-File > Save States (`save_states.*`, `state_store.*`) is the browser's
-window: an autosave row and five slots, each with a thumbnail (140x96, box
-filtered from the frame, so a IIgs's comes out whole), the machine that
-wrote it and when, and Save, Load, Clear and Export; plus Load from File.
+File > Save States (`save_states.*`, `state_store.*`) holds the browser's
+records in cards: the autosave across the top, with its switch and a bar
+filling toward the next save, then the five slots and Load from File three
+to a row. A filled slot shows its thumbnail (140x96, box filtered from the
+frame, so a IIgs's comes out whole) as a small screen, the machine that
+wrote it (orange when loading it would switch machines) and when ("4
+minutes ago", the date on hover); hovering puts Load, Save, Export and
+Clear over the picture, and a right click gives them as a menu. An empty
+slot saves when clicked. A save or a load flashes over its card. A card's
+hover is taken from its own rectangle: the buttons over the picture would
+otherwise take it from the card, hide, and give it back.
 States are kept in `States/` as `<id>.a2state` with `.meta` and `.thumb`
 beside them. The five slots are shared by every machine; the autosave is
 one per machine, written every five seconds while the machine runs when
