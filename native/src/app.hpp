@@ -39,7 +39,7 @@ struct Settings {
   bool ukCharacterSet = false;
   bool showStatusBar = true;
   bool showDiskDrives = true;
-  bool diskInspector = true;
+  bool diskInspector = false; // hidden until first shown
   bool driveSounds = true;
   bool showHardDrives = false;
   bool showExpansionSlots = false;

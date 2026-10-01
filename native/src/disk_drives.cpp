@@ -818,16 +818,14 @@ void DiskDrives::drawDeck(int index) {
   draw->AddText(ImVec2(right - nameWidth, end.y - 14 - ImGui::GetFrameHeight() + ImGui::GetStyle().FramePadding.y),
                 inspected ? accent() : secondary(), driveName.c_str());
 
-  // A click anywhere else on the card inspects this drive.
-  if (ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect(card, end) && !ImGui::IsAnyItemHovered() &&
-      ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-    if (inspected_ != index) {
-      inspected_ = index;
-      stripQt_ = -1;
-      followHead_ = true;
-      fitPlatter();
-    }
-    inspectorShown = true;
+  // With the inspector shown, a click anywhere else on the card inspects
+  // this drive. Only the Inspector switch shows it.
+  if (inspectorShown && ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect(card, end) &&
+      !ImGui::IsAnyItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && inspected_ != index) {
+    inspected_ = index;
+    stripQt_ = -1;
+    followHead_ = true;
+    fitPlatter();
   }
 
   ImGui::SetCursorScreenPos(card);

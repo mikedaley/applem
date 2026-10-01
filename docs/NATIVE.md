@@ -151,7 +151,9 @@ down to sixteen cells, where each nibble's value and kind are written and
 every cell shows its 1 or 0, with its sectors named and the head marked; the sectors in the
 order they pass the head; and the picked sector's bytes or every nibble on
 the track. Follow head keeps the inspector on the head's track. The
-Inspector switch hides the inspector (`DiskInspector` in the settings).
+Inspector switch shows the inspector. It is hidden until it is first shown,
+and the choice is remembered (`DiskInspector` in the settings); clicking a
+card picks the drive it inspects but does not open it.
 
 **One description of a disk, the core's.** The whole disk comes through
 `inspect::buildOverview`, the buffer the browser parses, read here by

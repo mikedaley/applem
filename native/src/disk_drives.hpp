@@ -85,8 +85,9 @@ public:
   bool isActive(int drive) const { return drives_[drive].active; }
   bool isWriting(int drive) const { return drives_[drive].active && drives_[drive].writing; }
 
-  // Whether the inspector is open below the drives.
-  bool inspectorShown = true;
+  // Whether the inspector is open below the drives: hidden until the user
+  // first shows it, and remembered after.
+  bool inspectorShown = false;
 
 private:
   struct Drive {
