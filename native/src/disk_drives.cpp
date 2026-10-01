@@ -937,17 +937,16 @@ void DiskDrives::drawPlatter(ImVec2 origin, float size) {
   }
   draw->PushClipRect(viewMin, viewMax, true);
 
-  // A ring outlined: one stroke while it is thin, its two edges once wide.
+  // A ring marked, for the track picked and the one under the pointer, while
+  // rings are too thin to tell apart. Once a ring is wide it is plain to see
+  // and the tooltip names it, and lines along its edges only got in the way
+  // of what is recorded there.
   const ImVec2 hub = toScreen(0, 0);
   const float ringPixels = static_cast<float>(platter::RING_WIDTH * scale);
   auto outline = [&](int qt, ImU32 colour) {
+    if (ringPixels >= 6) return;
     const float r = static_cast<float>(platter::radiusOf(qt) * scale);
-    if (ringPixels < 6) {
-      draw->AddCircle(hub, r, colour, 0, std::max(1.5f, ringPixels + 0.5f));
-    } else {
-      draw->AddCircle(hub, r - ringPixels * 0.5f, colour, 0, 1.5f);
-      draw->AddCircle(hub, r + ringPixels * 0.5f, colour, 0, 1.5f);
-    }
+    draw->AddCircle(hub, r, colour, 0, std::max(1.5f, ringPixels + 0.5f));
   };
   if (detail_.quarterTrack >= 0) outline(detail_.quarterTrack, accent(0.95f));
 
