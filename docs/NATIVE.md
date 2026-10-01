@@ -406,6 +406,16 @@ The app is meant to feel like a Mac app rather than an ImGui tool:
   ImGui control in a window stands out at once.
 - **SF Pro** for the interface and **SF Mono** for figures.
 - A dock area holding one window hides its tab, so the screen has none.
+- **The pointer is read from macOS every frame** (`reportHoveredViewport`
+  in `main.mm`): its position and which of ImGui's windows is under it, as
+  macOS stacks them (`ImGuiBackendFlags_HasMouseHoveredViewport`). macOS
+  sends movement only to the key window, so ImGui otherwise went on
+  believing the pointer was where it last saw it, and a first click in a
+  window just opened landed there instead (the SmartPort window's Insert
+  did nothing until something else had been clicked); and it guessed which
+  of two overlapping windows was on top from which was focused last.
+- **Closing the main window quits**, since the windows ImGui makes are
+  windows too and the last window never closed while any was open.
 - **A window's dialogs open over it** (`ui::DialogAnchor`): each window
   notes its centre every frame it is drawn, and its confirmations and
   errors are placed there; one asked for while the window is shut (an eject

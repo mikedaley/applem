@@ -118,6 +118,7 @@ private:
   void insertImage(int device, const std::string &filename, const std::vector<uint8_t> &data,
                    bool remember);
   void requestEject(int device);
+  void saveThenEject(int device);
   void eject(int device);
   void notice(const std::string &message);
   void reportError(const std::string &message);
@@ -149,6 +150,9 @@ private:
   double noticeUntil_ = 0;
   std::string error_;
   bool openError_ = false;
+  // A changed image waiting for Save, Don't Save or Cancel before ejecting.
+  int askEject_ = 0;
+  bool openAskEject_ = false;
   // Where this window's dialogs open: over it.
   ui::DialogAnchor dialogs_;
 };

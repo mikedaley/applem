@@ -28,6 +28,7 @@ namespace a2e::native {
 namespace {
 
 constexpr const char *ERROR_POPUP = "SmartPort Error";
+constexpr const char *EJECT_POPUP = "Eject Hard Drive Image";
 constexpr const char *NOT_INSTALLED =
     "There is no SmartPort to take an image. Fit a SmartPort card in the Expansion Slots "
     "window first.";
@@ -279,16 +280,28 @@ int HardDrives::dropTarget() const {
   return 0;
 }
 
+// An image the machine changed is asked about first: save it, eject it
+// without saving, or keep it in. Asking was missing, and the save panel's
+// Cancel kept the image in, so there was no way to eject without saving.
 void HardDrives::requestEject(int device) {
+  const bool changed = emulation_.withMachine([&](host::MachineHost &host) { return host.isBlockImageModified(device); });
+  if (!changed) {
+    eject(device);
+    return;
+  }
+  askEject_ = device;
+  openAskEject_ = true;
+}
+
+void HardDrives::saveThenEject(int device) {
   std::vector<uint8_t> data;
   emulation_.withMachine([&](host::MachineHost &host) {
-    if (!host.isBlockImageModified(device)) return;
     size_t size = 0;
     const uint8_t *bytes = host.exportBlockImage(device, &size);
     if (bytes && size) data.assign(bytes, bytes + size);
   });
   if (data.empty()) {
-    eject(device);
+    reportError("The image in SmartPort device " + std::to_string(device + 1) + " could not be read back.");
     return;
   }
   std::string name = devices_[device].filename.value_or("harddrive" + std::to_string(device + 1) + ".hdv");
@@ -714,6 +727,33 @@ void HardDrives::draw(bool *open) {
       drawDevice(1);
     }
     ImGui::End();
+  }
+
+  if (openAskEject_) {
+    ImGui::OpenPopup(EJECT_POPUP);
+    openAskEject_ = false;
+  }
+  dialogs_.placeNext();
+  if (ImGui::BeginPopupModal(EJECT_POPUP, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    const int device = askEject_;
+    const std::string name = devices_[device].filename.value_or("the image");
+    ImGui::Text("The image in SmartPort device %d has changed.", device + 1);
+    ImGui::TextDisabled("Save %s before ejecting it?", name.c_str());
+    ImGui::Spacing();
+    if (ui::Button("Save\u2026", ImVec2(110, 0), ui::ButtonKind::Primary)) {
+      ImGui::CloseCurrentPopup();
+      saveThenEject(device);
+    }
+    ImGui::SameLine();
+    if (ui::Button("Don't Save", ImVec2(110, 0))) {
+      ImGui::CloseCurrentPopup();
+      eject(device);
+    }
+    ImGui::SameLine();
+    if (ui::Button("Cancel", ImVec2(110, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+      ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
   }
 
   if (openError_) {

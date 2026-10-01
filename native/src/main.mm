@@ -99,6 +99,48 @@ void createViewportWindow(ImGuiViewport *viewport) {
   [view registerForDraggedTypes:@[ NSPasteboardTypeFileURL ]];
 }
 
+// Where the pointer is and which of ImGui's windows it is over, as macOS
+// stacks them. Left
+// to itself ImGui guesses from which window was focused last, so where two
+// overlap it can send a click to the one underneath: a SmartPort window
+// opened over the Disk Drives window ignored its own Insert button. A window
+// ImGui marks as taking no input (one being dragged, so the window under it
+// can be found) is looked through, and another app's window on top means
+// none of ours.
+void reportHoveredViewport() {
+  ImGuiIO &io = ImGui::GetIO();
+  const NSPoint mouse = NSEvent.mouseLocation;
+  // Where the pointer is, too, every frame. macOS sends movement only to the
+  // key window, so over any other window ImGui went on believing the pointer
+  // was wherever it last saw it, and a first click in a window just opened
+  // (the SmartPort window's Insert) landed there instead. In ImGui's
+  // coordinates: the primary screen's top left, y down.
+  io.AddMousePosEvent(static_cast<float>(mouse.x),
+                      static_cast<float>(NSScreen.screens[0].frame.size.height - mouse.y));
+  ImGuiID hovered = 0;
+  NSInteger below = 0;
+  for (int depth = 0; depth < 8; depth++) {
+    const NSInteger number = [NSWindow windowNumberAtPoint:mouse belowWindowWithWindowNumber:below];
+    if (number <= 0) break;
+    ImGuiViewport *match = nullptr;
+    for (ImGuiViewport *viewport : ImGui::GetPlatformIO().Viewports) {
+      void *handle = viewport->PlatformHandleRaw ? viewport->PlatformHandleRaw : viewport->PlatformHandle;
+      if (handle && ((__bridge NSWindow *)handle).windowNumber == number) {
+        match = viewport;
+        break;
+      }
+    }
+    if (!match) break; // another app's window, or one of ours ImGui does not own
+    if (match->Flags & ImGuiViewportFlags_NoInputs) {
+      below = number;
+      continue;
+    }
+    hovered = match->ID;
+    break;
+  }
+  io.AddMouseViewportEvent(hovered);
+}
+
 // Call once, after the Cocoa backend is initialised.
 void acceptDropsOnViewports() {
   ImGuiPlatformIO &io = ImGui::GetPlatformIO();
@@ -332,6 +374,8 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
   self.mtkView.preferredFramesPerSecond = 60;
   ImGui_ImplOSX_Init(self.view);
   acceptDropsOnViewports();
+  // The app says which window the pointer is over (reportHoveredViewport).
+  ImGui::GetIO().BackendFlags |= ImGuiBackendFlags_HasMouseHoveredViewport;
   g_dropApp = _app.get();
 }
 
@@ -352,6 +396,7 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
   a2e::native::ui::followSystemAppearance();
   ImGui_ImplMetal_NewFrame(pass);
   ImGui_ImplOSX_NewFrame(view);
+  reportHoveredViewport();
   ImGui::NewFrame();
 
   _app->frame();
@@ -445,6 +490,16 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {
   return YES;
+}
+
+// Closing the main window quits. The app also quits after its last window
+// closes, but the windows ImGui makes for windows dragged out of the main
+// one are windows too, so with any of them open closing the main window left
+// them on the screen with nothing behind them.
+- (void)windowWillClose:(NSNotification *)notification {
+  if (notification.object == self.window) {
+    dispatch_async(dispatch_get_main_queue(), ^{ [NSApp terminate:nil]; });
+  }
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
