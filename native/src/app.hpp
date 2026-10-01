@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include "disk_drives.hpp"
 #include "display.hpp"
 #include "emulation.hpp"
 #include "key_mapper.hpp"
@@ -31,6 +32,10 @@ struct Settings {
   bool showDisplaySettings = false;
   bool ukCharacterSet = false;
   bool showStatusBar = true;
+  bool showDiskDrives = true;
+  bool diskSurface = true;
+  bool diskDetails = false;
+  bool driveSounds = true;
   // Per machine, keyed by profile key. Absent means the machine's default:
   // on for a IIgs, whose keyboard is a Mac's, and off for the rest.
   std::map<std::string, bool> commandIsOpenApple;
@@ -66,6 +71,9 @@ public:
   // Stop the machine before the platform goes away.
   void shutdown();
 
+  // Files dropped on the window: a disk goes into the first empty drive.
+  void filesDropped(const std::vector<std::string> &paths);
+
 private:
   void registerSettingsHandler();
   void registerDisplayHandler();
@@ -81,6 +89,7 @@ private:
   void drawScreen();
   void updateScreenSource();
   void drawStatusBar();
+  void drawDiskDrives();
   void drawSwitchConfirmation();
 
   void routeKeyboard();
@@ -97,6 +106,7 @@ private:
   Settings settings_;
   Display display_;
   Emulation emulation_;
+  std::unique_ptr<DiskDrives> drives_;
   bool started_ = false;
 
   // The machine profile currently built, for drawing; refreshed on a switch.

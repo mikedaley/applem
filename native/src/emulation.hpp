@@ -10,6 +10,7 @@
 #include "../../src/host/machine_host.hpp"
 #include "audio_output.hpp"
 #include "audio_ring.hpp"
+#include "drive_sounds.hpp"
 #include "frame_queue.hpp"
 
 #include <atomic>
@@ -75,6 +76,8 @@ public:
   void setMuted(bool muted);
 
   bool audioRunning() const { return audio_.running(); }
+  // The drives' own sounds, mixed in at the main volume.
+  DriveSounds &driveSounds() { return driveSounds_; }
   // The machine's clock as measured against the wall, in MHz.
   double measuredMHz() const { return measuredMHz_.load(); }
 
@@ -93,6 +96,7 @@ private:
   AudioRing ring_{SAMPLE_RATE / 2};
   FrameQueue frames_;
   AudioOutput audio_;
+  DriveSounds driveSounds_{SAMPLE_RATE};
   dispatch_semaphore_t wake_;
 
   std::atomic<float> gain_{0.5f};

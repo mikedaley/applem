@@ -50,7 +50,8 @@ App::App(std::string settingsDirectory, Platform platform)
     : settingsDirectory_(std::move(settingsDirectory)),
       iniPath_(settingsDirectory_ + "/layout.ini"),
       platform_(std::move(platform)),
-      display_(settingsDirectory_ + "/display-profiles.ini") {
+      display_(settingsDirectory_ + "/display-profiles.ini"),
+      drives_(std::make_unique<DiskDrives>(emulation_, platform_, settingsDirectory_ + "/Media")) {
   registerSettingsHandler();
   registerDisplayHandler();
 }
@@ -89,6 +90,10 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "ShowScreen=%d", &value) == 1) s.showScreen = value;
     else if (std::sscanf(line, "ShowDisplaySettings=%d", &value) == 1) s.showDisplaySettings = value;
     else if (std::sscanf(line, "UKCharacterSet=%d", &value) == 1) s.ukCharacterSet = value;
+    else if (std::sscanf(line, "ShowDiskDrives=%d", &value) == 1) s.showDiskDrives = value;
+    else if (std::sscanf(line, "DiskSurface=%d", &value) == 1) s.diskSurface = value;
+    else if (std::sscanf(line, "DiskDetails=%d", &value) == 1) s.diskDetails = value;
+    else if (std::sscanf(line, "DriveSounds=%d", &value) == 1) s.driveSounds = value;
     else if (std::sscanf(line, "ShowStatusBar=%d", &value) == 1) s.showStatusBar = value;
     else if (std::sscanf(line, "CommandIsOpenApple.%63[^=]=%d", text, &value) == 2) {
       s.commandIsOpenApple[text] = value;
@@ -105,6 +110,10 @@ void App::registerSettingsHandler() {
     out->appendf("ShowScreen=%d\n", s.showScreen ? 1 : 0);
     out->appendf("ShowDisplaySettings=%d\n", s.showDisplaySettings ? 1 : 0);
     out->appendf("UKCharacterSet=%d\n", s.ukCharacterSet ? 1 : 0);
+    out->appendf("ShowDiskDrives=%d\n", s.showDiskDrives ? 1 : 0);
+    out->appendf("DiskSurface=%d\n", s.diskSurface ? 1 : 0);
+    out->appendf("DiskDetails=%d\n", s.diskDetails ? 1 : 0);
+    out->appendf("DriveSounds=%d\n", s.driveSounds ? 1 : 0);
     out->appendf("ShowStatusBar=%d\n", s.showStatusBar ? 1 : 0);
     for (const auto &[key, on] : s.commandIsOpenApple) {
       out->appendf("CommandIsOpenApple.%s=%d\n", key.c_str(), on ? 1 : 0);
@@ -153,6 +162,10 @@ void App::startEmulation() {
   emulation_.start(wanted->id, static_cast<size_t>(settings_.iigsMemoryKB) * 1024);
   emulation_.setPowered(true);
   started_ = true;
+  drives_->surfaceShown = settings_.diskSurface;
+  drives_->detailsShown = settings_.diskDetails;
+  emulation_.driveSounds().setEnabled(settings_.driveSounds);
+  drives_->restore();
   updateWindowTitle();
 }
 
@@ -160,6 +173,7 @@ void App::frame() {
   if (!started_) startEmulation();
 
   updateScreenSource();
+  drives_->update(ImGui::GetTime());
 
   // The decoder and character set live in the machine's video, which a
   // rebuild replaces, so they are told again whenever they may have gone.
@@ -176,6 +190,7 @@ void App::frame() {
   if (fullPage_) {
     drawFullPage();
     if (settings_.showDisplaySettings) display_.drawWindow(&settings_.showDisplaySettings);
+    drawDiskDrives();
     if (showDemo_) ImGui::ShowDemoWindow(&showDemo_);
     drawSwitchConfirmation();
     handleAppShortcuts();
@@ -188,6 +203,7 @@ void App::frame() {
   drawDockSpace();
   if (settings_.showScreen) drawScreenWindow();
   if (settings_.showDisplaySettings) display_.drawWindow(&settings_.showDisplaySettings);
+  drawDiskDrives();
   if (showDemo_) ImGui::ShowDemoWindow(&showDemo_);
   drawSwitchConfirmation();
 
@@ -219,6 +235,7 @@ void App::drawMenuBar() {
   if (ImGui::BeginMenu("View")) {
     ImGui::MenuItem(SCREEN_WINDOW, nullptr, &settings_.showScreen);
     ImGui::MenuItem("Display Settings", nullptr, &settings_.showDisplaySettings);
+    ImGui::MenuItem("Disk Drives", nullptr, &settings_.showDiskDrives);
     ImGui::MenuItem("Status Bar", nullptr, &settings_.showStatusBar);
     ImGui::Separator();
     if (ImGui::MenuItem("Full Page", "Ctrl+Esc to leave")) {
@@ -338,6 +355,7 @@ void App::switchMachine(MachineId id) {
   profile_ = &machineProfile(id);
   settings_.machine = profile_->key;
   display_.setMachine(*profile_);
+  drives_->machineChanged();
   noSignalStale_ = true;
   ImGui::MarkIniSettingsDirty();
   // The new machine starts as if switched on, as the old one was.
@@ -407,6 +425,30 @@ void App::drawStatusBar() {
     }
   }
   ImGui::End();
+}
+
+// The window draws every frame it is open; its save and error questions are
+// drawn whether it is or not. The options it toggles are remembered.
+void App::drawDiskDrives() {
+  drives_->draw(&settings_.showDiskDrives);
+  const bool sounds = emulation_.driveSounds().enabled();
+  if (drives_->surfaceShown != settings_.diskSurface || drives_->detailsShown != settings_.diskDetails ||
+      sounds != settings_.driveSounds) {
+    settings_.diskSurface = drives_->surfaceShown;
+    settings_.diskDetails = drives_->detailsShown;
+    settings_.driveSounds = sounds;
+    ImGui::MarkIniSettingsDirty();
+  }
+}
+
+void App::filesDropped(const std::vector<std::string> &paths) {
+  if (!started_) return;
+  for (const std::string &path : paths) {
+    if (DiskDrives::isFloppyImage(path)) {
+      drives_->insertFile(drives_->dropTarget(), path);
+      return;
+    }
+  }
 }
 
 // The machine's frames, or while it is switched off the no-signal picture,

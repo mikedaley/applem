@@ -52,6 +52,20 @@ struct Platform {
   std::function<void(const std::string &)> setWindowTitle;
   // Enter or leave macOS full screen for the main window.
   std::function<void()> toggleFullScreen;
+
+  // The open and save panels. Both return at once; `done` runs later on the
+  // main thread, between frames, with the chosen path or an empty string if
+  // the user cancelled. Extensions are without the dot.
+  using FileChosen = std::function<void(const std::string &path)>;
+  std::function<void(const std::string &title, const std::vector<std::string> &extensions,
+                     FileChosen done)>
+      openFile;
+  std::function<void(const std::string &title, const std::string &suggestedName,
+                     const std::vector<std::string> &extensions, FileChosen done)>
+      saveFile;
+
+  // The bundle's Resources, where the disk library is.
+  std::string resourceDirectory;
 };
 
 } // namespace a2e::native

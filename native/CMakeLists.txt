@@ -33,10 +33,13 @@ set(NATIVE_SOURCES
     src/main.mm
     src/app.cpp
     src/audio_output.mm
+    src/disk_drives.cpp
     src/display.cpp
+    src/drive_sounds.cpp
     src/display_settings.cpp
     src/emulation.cpp
     src/key_mapper.cpp
+    src/media_store.cpp
     src/no_signal_frame.cpp
     src/platform_paths.mm
     src/screen_renderer_metal.mm
@@ -61,6 +64,15 @@ set_source_files_properties(${CRT_SHADER} PROPERTIES
     MACOSX_PACKAGE_LOCATION Resources
     HEADER_FILE_ONLY TRUE)
 
+# The browser build's disk library, offered under Recent.
+file(GLOB DISK_LIBRARY ${CMAKE_SOURCE_DIR}/public/disks/*)
+foreach(disk ${DISK_LIBRARY})
+    target_sources(ApplEmNative PRIVATE ${disk})
+    set_source_files_properties(${disk} PROPERTIES
+        MACOSX_PACKAGE_LOCATION Resources/disks
+        HEADER_FILE_ONLY TRUE)
+endforeach()
+
 # The Tauri build's icon is the app's icon.
 set(APP_ICON ${CMAKE_SOURCE_DIR}/src-tauri/icons/icon.icns)
 if(EXISTS ${APP_ICON})
@@ -78,6 +90,7 @@ target_compile_options(ApplEmNative PRIVATE
 target_link_libraries(ApplEmNative PRIVATE
     a2e_core
     imgui
+    "-framework UniformTypeIdentifiers"
     "-framework AudioToolbox"
     "-framework CoreAudio"
 )
@@ -122,4 +135,24 @@ target_include_directories(test_native_display PRIVATE
 target_compile_options(test_native_display PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(test_native_display PRIVATE a2e_core)
 add_test(NAME test_native_display COMMAND test_native_display
+         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+# The media store, the save naming rules and the seek click.
+add_executable(test_native_media
+    tests/test_native_media.cpp
+    src/disk_drives.cpp
+    src/drive_sounds.cpp
+    src/media_store.cpp
+    src/audio_output.mm
+    src/emulation.cpp
+)
+target_include_directories(test_native_media PRIVATE
+    ${CMAKE_SOURCE_DIR}/tests/catch2
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_compile_options(test_native_media PRIVATE -Wall -Wextra -Wno-unused-parameter
+    $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
+target_link_libraries(test_native_media PRIVATE a2e_core imgui
+    "-framework AudioToolbox" "-framework CoreAudio")
+add_test(NAME test_native_media COMMAND test_native_media
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

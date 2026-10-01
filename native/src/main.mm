@@ -13,6 +13,7 @@
 #import <Cocoa/Cocoa.h>
 #import <Metal/Metal.h>
 #import <MetalKit/MetalKit.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 #include "app.hpp"
 #include "platform_paths.hpp"
@@ -26,11 +27,54 @@
 
 using a2e::native::App;
 
+// The Metal view, taking files dropped on the window.
+@interface ApplEmView : MTKView
+@property(nonatomic, copy) void (^onDrop)(NSArray<NSString *> *paths);
+@end
+
+@implementation ApplEmView
+
+- (instancetype)initWithFrame:(NSRect)frame {
+  self = [super initWithFrame:frame];
+  if (self) [self registerForDraggedTypes:@[ NSPasteboardTypeFileURL ]];
+  return self;
+}
+
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
+  return NSDragOperationCopy;
+}
+
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
+  NSArray<NSURL *> *urls = [sender.draggingPasteboard
+      readObjectsForClasses:@[ NSURL.class ]
+                    options:@{NSPasteboardURLReadingFileURLsOnlyKey : @YES}];
+  NSMutableArray<NSString *> *paths = [NSMutableArray array];
+  for (NSURL *url in urls) [paths addObject:url.path];
+  if (paths.count && self.onDrop) self.onDrop(paths);
+  return paths.count > 0;
+}
+
+@end
+
+namespace {
+
+NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
+  NSMutableArray<UTType *> *types = [NSMutableArray array];
+  for (const std::string &extension : extensions) {
+    UTType *type = [UTType typeWithFilenameExtension:@(extension.c_str())];
+    if (type) [types addObject:type];
+  }
+  return types;
+}
+
+} // namespace
+
 @interface AppViewController : NSViewController <MTKViewDelegate>
 @property(nonatomic, strong) id<MTLDevice> device;
 @property(nonatomic, strong) id<MTLCommandQueue> commandQueue;
 - (void)shutdown;
 - (void)releaseKeys;
+- (void)filesDropped:(const std::vector<std::string> &)paths;
 @end
 
 @implementation AppViewController {
@@ -88,6 +132,31 @@ using a2e::native::App;
     weakSelf.view.window.title = [NSString stringWithUTF8String:title.c_str()];
   };
   platform.toggleFullScreen = [weakSelf] { [weakSelf.view.window toggleFullScreen:nil]; };
+  // The panels run on their own, and answer on the main thread between
+  // frames: a modal loop inside a frame would re-enter ImGui.
+  platform.openFile = [](const std::string &title, const std::vector<std::string> &extensions,
+                         a2e::native::Platform::FileChosen done) {
+    NSOpenPanel *panel = [NSOpenPanel openPanel];
+    panel.message = @(title.c_str());
+    panel.allowedContentTypes = contentTypes(extensions);
+    panel.allowsMultipleSelection = NO;
+    [panel beginWithCompletionHandler:^(NSModalResponse result) {
+      done(result == NSModalResponseOK ? std::string(panel.URL.path.UTF8String) : std::string());
+    }];
+  };
+  platform.saveFile = [](const std::string &title, const std::string &suggestedName,
+                         const std::vector<std::string> &extensions,
+                         a2e::native::Platform::FileChosen done) {
+    NSSavePanel *panel = [NSSavePanel savePanel];
+    panel.message = @(title.c_str());
+    panel.nameFieldStringValue = @(suggestedName.c_str());
+    panel.allowedContentTypes = contentTypes(extensions);
+    panel.allowsOtherFileTypes = YES;
+    [panel beginWithCompletionHandler:^(NSModalResponse result) {
+      done(result == NSModalResponseOK ? std::string(panel.URL.path.UTF8String) : std::string());
+    }];
+  };
+  platform.resourceDirectory = NSBundle.mainBundle.resourcePath.UTF8String;
   _app = std::make_unique<App>(a2e::native::appSupportDirectory(), std::move(platform));
   io.IniFilename = _app->iniPath();
 
@@ -100,7 +169,14 @@ using a2e::native::App;
 }
 
 - (void)loadView {
-  self.view = [[MTKView alloc] initWithFrame:NSMakeRect(0, 0, 1280, 860)];
+  ApplEmView *view = [[ApplEmView alloc] initWithFrame:NSMakeRect(0, 0, 1280, 860)];
+  __weak AppViewController *weakSelf = self;
+  view.onDrop = ^(NSArray<NSString *> *paths) {
+    std::vector<std::string> files;
+    for (NSString *path in paths) files.push_back(path.UTF8String);
+    [weakSelf filesDropped:files];
+  };
+  self.view = view;
 }
 
 - (void)viewDidLoad {
@@ -149,6 +225,10 @@ using a2e::native::App;
 }
 
 - (void)mtkView:(MTKView *)view drawableSizeWillChange:(CGSize)size {
+}
+
+- (void)filesDropped:(const std::vector<std::string> &)paths {
+  if (_app) _app->filesDropped(paths);
 }
 
 // Another app took the keyboard: key-ups for anything held will never come.

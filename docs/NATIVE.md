@@ -126,6 +126,38 @@ browser's) is uploaded as the source and goes through the same chain. View
 > Full Page fills the main window with the picture (Ctrl+Esc, or the
 right-click menu, to leave); View > Full Screen is macOS's.
 
+## Disk drives
+
+View > Disk Drives is the browser's window and its rules
+(`disk_drives.*`, `media_store.*`, `drive_sounds.*`):
+
+- **A drive remembers the image as it was inserted**, in
+  `Media/floppy/` under Application Support, and puts it back at startup;
+  what the machine writes afterwards is not kept. Each drive keeps ten
+  recent images, newest first, one per name, with the bytes copied in. A
+  blank disk (an unformatted WOZ) is neither remembered nor recent.
+- **Ejecting asks to save only when the disk really changed.** The core
+  saying it was written to is not enough, since software rewrites sectors
+  with the same bytes; the image is fingerprinted at insert and again at
+  eject. The save offers DOS order, ProDOS order and WOZ, defaulting to the
+  disk's own format, with the impossible ones shown but disabled. Unlike the
+  browser, Cancel (in the question or the save panel) keeps the disk in the
+  drive rather than ejecting it unsaved.
+- **A machine switch empties the drives and forgets them**, as the switch
+  confirmation says; the browser kept them in storage, so they reappeared
+  on the next reload.
+- **The seek click** is the browser's synthesis, rendered once with its
+  6kHz low pass and mixed into the output by the audio callback through a
+  counter, without locking. It plays when an active drive crosses a whole
+  track.
+- The surface is the browser's canvas drawing in ImGui: the platter spins
+  while the drive is active and coasts down with a 600ms half life, tracks
+  warm with use and cool every 100ms, and the label colour comes from the
+  same hash of the filename (pinned against the browser's own in
+  `test_native_media`).
+- Files dropped on the window go to the first empty drive. The browser's
+  `public/disks` library is bundled and offered under Recent.
+
 ## Typeface
 
 The UI is set in SF Mono at 13pt (`uiFontPath()` in `platform_paths.mm`),
@@ -151,8 +183,8 @@ different things.
 1. Core as a library and the shared host layer. Done.
 2. Scaffolding: window, docking, multi-viewport, menu bar. Done.
 3. A machine running on screen, machine selection, keyboard, audio. Done.
-4. Media and configuration: disk drives, SmartPort, expansion slots, save
-   states, IIgs battery RAM, game port.
+4. Media and configuration: disk drives (done), SmartPort, expansion slots,
+   save states, IIgs battery RAM, game port.
 5. Display fidelity: the CRT shaders in Metal, display settings and profiles. Done.
 6. Debugger: CPU, memory, stack, zero page, soft switches, trace.
 7. The remaining debug views, including the Disk Inspector.
