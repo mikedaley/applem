@@ -18,6 +18,17 @@ build-macos/native/test_native_input
 `native:build` configures the top-level CMake with `-DA2E_BUILD_NATIVE=ON`.
 The ROMs are embedded exactly as for the browser build.
 
+**A release** is `npm run native:release` (`scripts/build-native-mac.sh`):
+a Release build in its own `build-macos-release/`, stamped with the version
+in `src/js/config/version.js`, signed with the Developer ID certificate
+found in the keychain (hardened runtime, secure timestamp, no entitlements
+needed), packed into `build-macos-release/dist/ApplEm-Native-<version>.dmg`
+with a link to Applications, notarised, stapled and checked with Gatekeeper.
+The prerequisites and the notary profile are the Tauri build's
+(`scripts/build-desktop-mac.sh`): `NOTARY_PROFILE` names the profile, a
+profile stored for the same Apple ID is used when there is no
+`applem-notary`, and `NOTARIZE=0` signs without notarising.
+
 ## Layers
 
 ```

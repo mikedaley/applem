@@ -2,6 +2,7 @@
 build/
 build-native/
 build-macos/
+build-macos-release/
 dist/
 Testing/
 public/a2e.js
