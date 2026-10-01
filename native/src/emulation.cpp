@@ -11,6 +11,7 @@
 #include "cards/disk_controller.hpp"
 
 #include <algorithm>
+#include <pthread/qos.h>
 #include <vector>
 
 namespace a2e::native {
@@ -61,6 +62,13 @@ void Emulation::stop() {
 }
 
 void Emulation::run() {
+  // The thread the picture and the sound wait on, so it is scheduled as the
+  // UI is. Left at the default class, macOS may put it on an efficiency
+  // core: one 8x frame then took 8.6ms on an M5's (2.1ms on a performance
+  // core) and more than the 16.7ms a frame lasts on an M1's, which ran the
+  // machine at 95% of 8x and let the sound run dry between frames.
+  pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+
   std::vector<float> scratch(SAMPLES_PER_FRAME * 2);
   auto last = std::chrono::steady_clock::now();
   double owed = 0.0; // free-run samples not yet generated
