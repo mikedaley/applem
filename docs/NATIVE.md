@@ -364,6 +364,32 @@ would let go of an Apple key the keyboard holds. A rebuilt machine starts
 on an Apple joystick and is told the device again. A stored deadzone of 0
 stays 0 (the browser read it back as 0.1).
 
+## Debug views
+
+The Debug menu holds the debug views, each offered only when the machine
+has what it shows, as the browser's menus follow the machine; with none to
+offer the menu is not there at all.
+
+Debug > Mockingboard (`mockingboard_window.*`) is the browser's window: a
+card per AY-3-8910 with a row per channel (a mute button, the note and its
+frequency, tone and noise as the mixer enables them, the level in fifteen
+steps or ENV, and the channel's next five milliseconds as a trace), the
+envelope's shape drawn from its four control bits, its ramp and the noise
+rate, and the 6522 in front of the chip: the bus function its port B is
+asking for, the write count and the last write, the ports, ACR, IFR and IER,
+and Timer 1 with its rate. It is offered whenever `MachineHost::mockingboard()`
+finds a card, on a IIgs as on a //e.
+
+The card is read once a frame under one lock into a snapshot, and the
+traces are generated from copies of the chips taken in it, outside the
+lock: drawing neither holds up the emulation thread nor disturbs the chip
+that is playing. Frequencies are the core's counters: a tone is the clock
+over 16 TP (the browser's window said 8, an octave high, and now says 16
+too), noise the clock over 16 NP, and an envelope ramp sixteen steps of
+EP ticks of the clock over 8. The mutes are kept in the settings and put
+back on any card that is new, since a rebuilt machine or a refitted slot
+starts with every channel on.
+
 ## IIgs battery RAM
 
 The 256 bytes are kept in `iigs-battery-ram.bin`, written when the core
@@ -476,6 +502,6 @@ different things.
    IIgs battery RAM, save states, CPU speed and the game port. Done.
 5. Display fidelity: the CRT shaders in Metal, display settings and profiles. Done.
 6. Debugger: CPU, memory, stack, zero page, soft switches, trace.
-7. The remaining debug views, including the Disk Inspector.
+7. The remaining debug views. The Disk Inspector and the Mockingboard are done.
 8. The tools that are JavaScript today: printers, editors, file explorer.
 9. Signing, notarisation and CI.

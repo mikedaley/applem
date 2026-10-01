@@ -16,6 +16,7 @@
 #include "expansion_slots.hpp"
 #include "key_mapper.hpp"
 #include "menu_model.hpp"
+#include "mockingboard_window.hpp"
 #include "platform.hpp"
 
 #include <functional>
@@ -47,6 +48,8 @@ struct Settings {
   bool autosave = false;
   int speed = 1; // 1, 2, 4 or 8 times the machine's clock
   bool showJoystick = false;
+  bool showMockingboard = false;
+  int mockingboardMutes = 0; // a bit a channel, PSG 1's A B C then PSG 2's
   int gamePort = 0; // 0 the Apple joystick, 1 the Joyport
   bool cursorKeys = false;
   bool gamepads = true;
@@ -133,6 +136,8 @@ private:
   void runMenuActions();
   MenuItem machineMenu();
   MenuItem viewMenu();
+  // Absent when the machine has nothing to debug through it yet.
+  std::optional<MenuItem> debugMenu();
   void drawDockSpace();
   void drawScreenWindow();
   void drawFullPage();
@@ -146,6 +151,7 @@ private:
   void drawStatusBar();
   void drawDiskDrives();
   void drawJoystick();
+  void drawMockingboard();
   void drawSwitchConfirmation();
 
   void routeKeyboard();
@@ -171,6 +177,7 @@ private:
   ExpansionSlots slots_{emulation_};
   std::unique_ptr<SaveStates> states_;
   Joystick joystick_{emulation_};
+  MockingboardWindow mockingboard_{emulation_};
   bool started_ = false;
 
   // The machine profile currently built, for drawing; refreshed on a switch.

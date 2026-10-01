@@ -47,6 +47,7 @@ set(NATIVE_SOURCES
     src/key_mapper.cpp
     src/media_store.cpp
     src/menu_model.cpp
+    src/mockingboard_window.cpp
     src/native_menu.mm
     src/native_toolbar.mm
     src/no_signal_frame.cpp

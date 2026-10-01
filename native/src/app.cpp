@@ -128,6 +128,8 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "Appearance=%d", &value) == 1) s.appearance = std::clamp(value, 0, 2);
     else if (std::sscanf(line, "WindowDocking=%d", &value) == 1) s.windowDocking = value;
     else if (std::sscanf(line, "ShowJoystick=%d", &value) == 1) s.showJoystick = value;
+    else if (std::sscanf(line, "ShowMockingboard=%d", &value) == 1) s.showMockingboard = value;
+    else if (std::sscanf(line, "MockingboardMutes=%d", &value) == 1) s.mockingboardMutes = value & 0x3F;
     else if (std::sscanf(line, "GamePort=%d", &value) == 1) s.gamePort = value == 1 ? 1 : 0;
     else if (std::sscanf(line, "CursorKeys=%d", &value) == 1) s.cursorKeys = value;
     else if (std::sscanf(line, "Gamepads=%d", &value) == 1) s.gamepads = value;
@@ -162,6 +164,8 @@ void App::registerSettingsHandler() {
     out->appendf("Appearance=%d\n", s.appearance);
     out->appendf("WindowDocking=%d\n", s.windowDocking ? 1 : 0);
     out->appendf("ShowJoystick=%d\n", s.showJoystick ? 1 : 0);
+    out->appendf("ShowMockingboard=%d\n", s.showMockingboard ? 1 : 0);
+    out->appendf("MockingboardMutes=%d\n", s.mockingboardMutes);
     out->appendf("GamePort=%d\n", s.gamePort);
     out->appendf("CursorKeys=%d\n", s.cursorKeys ? 1 : 0);
     out->appendf("Gamepads=%d\n", s.gamepads ? 1 : 0);
@@ -252,6 +256,7 @@ void App::startEmulation() {
   joystick_.gamepadEnabled = settings_.gamepads;
   joystick_.deadzone = settings_.deadzone;
   joystick_.machineRebuilt();
+  mockingboard_.mutes = settings_.mockingboardMutes;
   applySpeed();
   emulation_.setPowered(true);
   started_ = true;
@@ -269,6 +274,7 @@ void App::frame() {
   states_->update(ImGui::GetTime());
   joystick_.update(screenHadKeyboard_);
   hardDrives_->update();
+  mockingboard_.update();
 
   // The decoder and character set live in the machine's video, which a
   // rebuild replaces, so they are told again whenever they may have gone.
@@ -398,6 +404,7 @@ void App::buildMenus() {
   });
 
   menuBar_ = {file, edit, machineMenu(), viewMenu()};
+  if (std::optional<MenuItem> debug = debugMenu()) menuBar_.push_back(*debug);
 
   // The toolbar: the same actions, and the machine choices from the menu.
   toolbar_.powered = emulation_.powered();
@@ -569,6 +576,21 @@ MenuItem App::viewMenu() {
   items.push_back(MenuItem::separatorItem());
   items.push_back(item(a, "view.imguidemo", "Dear ImGui Demo", [this] { showDemo_ = !showDemo_; }, "", 0, showDemo_));
   return submenu("View", items);
+}
+
+// The debug views, each offered only when the machine has what it shows, as
+// the browser's menus follow the machine (machine-availability.js).
+std::optional<MenuItem> App::debugMenu() {
+  auto &a = menuActions_;
+  std::vector<MenuItem> items;
+  if (mockingboard_.available()) {
+    items.push_back(item(a, "debug.mockingboard", "Mockingboard", [this] {
+                           settings_.showMockingboard = !settings_.showMockingboard;
+                           ImGui::MarkIniSettingsDirty();
+                         }, "", 0, settings_.showMockingboard));
+  }
+  if (items.empty()) return std::nullopt;
+  return submenu("Debug", items);
 }
 
 // Switching is destructive, so it asks first, as the browser build's machine
@@ -757,8 +779,19 @@ void App::drawJoystick() {
   }
 }
 
+// Its mutes are the user's, and are kept whenever they change.
+void App::drawMockingboard() {
+  firstPosition(420, 80);
+  mockingboard_.draw(&settings_.showMockingboard);
+  if (mockingboard_.mutes != settings_.mockingboardMutes) {
+    settings_.mockingboardMutes = mockingboard_.mutes;
+    ImGui::MarkIniSettingsDirty();
+  }
+}
+
 void App::drawDiskDrives() {
   drawJoystick();
+  drawMockingboard();
   firstPosition(80, 60);
   states_->draw(&settings_.showSaveStates);
   if (states_->autosave != settings_.autosave) {
