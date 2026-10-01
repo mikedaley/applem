@@ -273,6 +273,14 @@ The app is meant to feel like a Mac app rather than an ImGui tool:
   the current appearance, the user's accent colour for checks, sliders,
   selection and tabs, reapplied when either changes. View > Appearance
   offers System, Light or Dark.
+- **AppKit's controls, drawn** (`ui_controls.*`): capsule push buttons
+  (Primary in the accent colour for the action a window is for), rounded
+  checkboxes with a tick, switches with a sliding knob, sliders with a round
+  knob over a thin track, segmented controls, pop-up buttons with small up
+  and down chevrons, and a turning chevron for a disclosure. Each is an
+  ordinary ImGui item, so keyboard focus and IDs work as ImGui's own do.
+  Window code calls `ui::` rather than `ImGui::` for any of these; a stock
+  ImGui control in a window stands out at once.
 - **SF Pro** for the interface and **SF Mono** for figures.
 - A dock area holding one window hides its tab, so the screen has none.
 - The status bar is indicators: the drives' lights, which key is Open Apple,

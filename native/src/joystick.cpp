@@ -6,6 +6,7 @@
  */
 
 #include "joystick.hpp"
+#include "ui_controls.hpp"
 
 #include "emulation.hpp"
 #include "ui_theme.hpp"
@@ -150,7 +151,7 @@ void Joystick::drawAppleJoystick() {
     if (buttons_[i]) ImGui::PushStyleColor(ImGuiCol_Button, LIT);
     char label[16];
     std::snprintf(label, sizeof(label), "Button %d", i);
-    ImGui::Button(label, ImVec2(100, 0));
+    ui::Button(label, ImVec2(100, 0));
     screenButtons_[i] = ImGui::IsItemActive();
     if (buttons_[i]) ImGui::PopStyleColor();
     ImGui::PopID();
@@ -177,7 +178,7 @@ void Joystick::drawJoyport() {
     lamp(73, 40, mask & SWITCH_RIGHT, LIT);
     lamp(110, 40, mask & SWITCH_FIRE, FIRE);
     ImGui::Dummy(ImVec2(125, 82));
-    ImGui::Button("Fire", ImVec2(110, 0));
+    ui::Button("Fire", ImVec2(110, 0));
     screenButtons_[stick] = ImGui::IsItemActive();
     ImGui::EndGroup();
     ImGui::PopID();
@@ -194,23 +195,21 @@ void Joystick::draw(bool *open) {
   }
   if (ImGui::Begin("Joystick", open, ImGuiWindowFlags_AlwaysAutoResize)) {
     ImGui::TextUnformatted("Game port device");
-    ImGui::RadioButton("Apple Joystick", &device, 0);
-    ImGui::SameLine();
-    ImGui::RadioButton("Sirius Joyport", &device, 1);
+    ui::SegmentedControl("##device", &device, {"Apple Joystick", "Sirius Joyport"}, 300.0f);
     ImGui::Separator();
 
     if (device == 0) drawAppleJoystick();
     else drawJoyport();
 
     ImGui::Separator();
-    ImGui::Checkbox("Cursor keys drive the joystick", &cursorKeys);
+    ui::Switch("Cursor keys drive the joystick", &cursorKeys);
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
       ImGui::SetTooltip("The arrows still reach the machine's keyboard as well.");
     }
-    ImGui::Checkbox("Use gamepads", &gamepadEnabled);
+    ui::Switch("Use gamepads", &gamepadEnabled);
     ImGui::BeginDisabled(!gamepadEnabled);
     ImGui::SetNextItemWidth(160);
-    ImGui::SliderFloat("Deadzone", &deadzone, 0.0f, MAX_DEADZONE, "%.2f");
+    ui::SliderFloat("Deadzone", &deadzone, 0.0f, MAX_DEADZONE, "%.2f");
     ImGui::EndDisabled();
     if (gamepadEnabled) {
       if (pads_.empty()) {

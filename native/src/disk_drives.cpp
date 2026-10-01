@@ -6,6 +6,7 @@
  */
 
 #include "disk_drives.hpp"
+#include "ui_controls.hpp"
 
 #include "emulation.hpp"
 #include "ui_theme.hpp"
@@ -551,17 +552,17 @@ void DiskDrives::drawDrive(int index) {
   if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) ImGui::SetTooltip("Current track");
 
   // Controls.
-  if (ImGui::Button("Insert")) chooseDisk(index);
+  if (ui::Button("Insert")) chooseDisk(index);
   ImGui::SameLine();
   const std::string recentId = "##recent" + std::to_string(index);
-  if (ImGui::Button("Recent")) ImGui::OpenPopup(recentId.c_str());
+  if (ui::Button("Recent")) ImGui::OpenPopup(recentId.c_str());
   drawRecentPopup(index);
   ImGui::SameLine();
-  if (ImGui::Button("Blank")) insertBlank(index);
+  if (ui::Button("Blank")) insertBlank(index);
   if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) ImGui::SetTooltip("Insert a blank disk");
   ImGui::SameLine();
   ImGui::BeginDisabled(!d.filename);
-  if (ImGui::Button("Eject")) requestEject(index);
+  if (ui::Button("Eject")) requestEject(index);
   ImGui::EndDisabled();
 
   if (detailsShown) {
@@ -619,7 +620,7 @@ void DiskDrives::drawSavePopup() {
     ImGui::BeginDisabled(!save_.available[format]);
     std::string label = std::string(spec.label) + "  " +
                         (save_.available[format] ? spec.hint : "not possible for this disk");
-    if (ImGui::RadioButton(label.c_str(), save_.format == format)) {
+    if (ui::RadioButton(label.c_str(), save_.format == format)) {
       save_.format = format;
       const std::string renamed = nameForFormat(save_.name, format);
       std::snprintf(save_.name, sizeof(save_.name), "%s", renamed.c_str());
@@ -631,7 +632,7 @@ void DiskDrives::drawSavePopup() {
   ImGui::InputText("##name", save_.name, sizeof(save_.name));
   ImGui::Spacing();
 
-  if (ImGui::Button("Save…", ImVec2(110, 0))) {
+  if (ui::Button("Save…", ImVec2(110, 0), ui::ButtonKind::Primary)) {
     std::vector<uint8_t> data;
     emulation_.withMachine([&](host::MachineHost &host) {
       size_t size = 0;
@@ -646,12 +647,12 @@ void DiskDrives::drawSavePopup() {
     }
   }
   ImGui::SameLine();
-  if (ImGui::Button("Don't Save", ImVec2(110, 0))) {
+  if (ui::Button("Don't Save", ImVec2(110, 0))) {
     eject(save_.drive);
     ImGui::CloseCurrentPopup();
   }
   ImGui::SameLine();
-  if (ImGui::Button("Cancel", ImVec2(110, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+  if (ui::Button("Cancel", ImVec2(110, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
     ImGui::CloseCurrentPopup();
   }
   ImGui::EndPopup();
@@ -665,7 +666,7 @@ void DiskDrives::drawErrorPopup() {
   ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
   if (!ImGui::BeginPopupModal(ERROR_POPUP, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
   ImGui::TextUnformatted(error_.c_str());
-  if (ImGui::Button("OK", ImVec2(110, 0)) || ImGui::IsKeyPressed(ImGuiKey_Enter) ||
+  if (ui::Button("OK", ImVec2(110, 0)) || ImGui::IsKeyPressed(ImGuiKey_Enter) ||
       ImGui::IsKeyPressed(ImGuiKey_Escape)) {
     ImGui::CloseCurrentPopup();
   }
@@ -675,12 +676,12 @@ void DiskDrives::drawErrorPopup() {
 void DiskDrives::draw(bool *open) {
   if (open && *open) {
     if (ImGui::Begin("Disk Drives", open, ImGuiWindowFlags_AlwaysAutoResize)) {
-      ImGui::Checkbox("Surface", &surfaceShown);
+      ui::Checkbox("Surface", &surfaceShown);
       ImGui::SameLine();
-      ImGui::Checkbox("Details", &detailsShown);
+      ui::Checkbox("Details", &detailsShown);
       ImGui::SameLine();
       bool sounds = emulation_.driveSounds().enabled();
-      if (ImGui::Checkbox("Drive Sounds", &sounds)) emulation_.driveSounds().setEnabled(sounds);
+      if (ui::Checkbox("Drive Sounds", &sounds)) emulation_.driveSounds().setEnabled(sounds);
       ImGui::Separator();
       drawDrive(0);
       ImGui::SameLine(0, 16);

@@ -92,7 +92,7 @@ void apply() {
   style.FrameBorderSize = 0;
   style.TabBorderSize = 0;
   style.SeparatorTextBorderSize = 1;
-  style.SeparatorTextPadding = ImVec2(10, 4);
+  style.SeparatorTextPadding = ImVec2(0, 4); // a title then its rule, no stub before it
   style.WindowTitleAlign = ImVec2(0.5f, 0.5f); // centred, as macOS titles are
   style.WindowMenuButtonPosition = ImGuiDir_None;
   style.DockingSeparatorSize = 1;

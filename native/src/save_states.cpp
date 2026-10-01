@@ -6,6 +6,7 @@
  */
 
 #include "save_states.hpp"
+#include "ui_controls.hpp"
 
 #include "emulation.hpp"
 #include "media_store.hpp"
@@ -213,25 +214,25 @@ void SaveStates::drawRow(const char *label, const std::string &id, bool isAutosa
   // What can be done with it.
   ImGui::TableNextColumn();
   if (!isAutosave) {
-    if (ImGui::Button("Save")) {
+    if (ui::Button("Save")) {
       saveTo(id);
       notice(std::string("Saved to ") + label + ".");
     }
     ImGui::SameLine();
   }
   ImGui::BeginDisabled(!row.record);
-  if (ImGui::Button("Load")) {
+  if (ui::Button("Load")) {
     if (auto data = store_.load(id)) loadBytes(*data, label);
   }
   if (!isAutosave) {
     ImGui::SameLine();
-    if (ImGui::Button("Clear")) {
+    if (ui::Button("Clear")) {
       store_.clear(id);
       stale_ = true;
     }
   }
   ImGui::SameLine();
-  if (ImGui::Button("Export")) {
+  if (ui::Button("Export")) {
     const std::string machine = row.record ? row.record->machine : "state";
     exportRecord(id, machine + (isAutosave ? "-autosave" : "-" + id) + ".a2state");
   }
@@ -261,7 +262,7 @@ void SaveStates::draw(bool *open) {
         ImGui::EndTable();
       }
       ImGui::Spacing();
-      if (ImGui::Button("Load from File…")) {
+      if (ui::Button("Load from File…")) {
         platform_.openFile("Load a save state", {"a2state"}, [this](const std::string &path) {
           if (path.empty()) return;
           if (auto data = readFile(path)) loadBytes(*data, baseName(path));
@@ -269,7 +270,7 @@ void SaveStates::draw(bool *open) {
         });
       }
       ImGui::SameLine();
-      ImGui::Checkbox("Autosave every 5 seconds", &autosave);
+      ui::Switch("Autosave every 5 seconds", &autosave);
       if (ImGui::GetTime() < noticeUntil_) ImGui::TextColored(GREEN, "%s", notice_.c_str());
     }
     ImGui::End();
@@ -287,7 +288,7 @@ void SaveStates::draw(bool *open) {
     ImGui::Text("%s was saved on the %s.", pendingWhat_.c_str(), pendingMachineName_.c_str());
     ImGui::TextDisabled("Switching rebuilds the machine; disks and memory now in it are lost.");
     ImGui::Spacing();
-    if (ImGui::Button("Switch and Load", ImVec2(150, 0))) {
+    if (ui::Button("Switch and Load", ImVec2(150, 0), ui::ButtonKind::Primary)) {
       ImGui::CloseCurrentPopup();
       const std::vector<uint8_t> data = std::move(pendingLoad_);
       if (hooks_.switchTo(static_cast<MachineId>(pendingMachine_))) {
@@ -299,7 +300,7 @@ void SaveStates::draw(bool *open) {
       pendingLoad_.clear();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Cancel", ImVec2(110, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+    if (ui::Button("Cancel", ImVec2(110, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
       pendingLoad_.clear();
       ImGui::CloseCurrentPopup();
     }
@@ -315,7 +316,7 @@ void SaveStates::draw(bool *open) {
     ImGui::PushTextWrapPos(ImGui::GetFontSize() * 32);
     ImGui::TextUnformatted(error_.c_str());
     ImGui::PopTextWrapPos();
-    if (ImGui::Button("OK", ImVec2(110, 0)) || ImGui::IsKeyPressed(ImGuiKey_Enter) ||
+    if (ui::Button("OK", ImVec2(110, 0)) || ImGui::IsKeyPressed(ImGuiKey_Enter) ||
         ImGui::IsKeyPressed(ImGuiKey_Escape)) {
       ImGui::CloseCurrentPopup();
     }

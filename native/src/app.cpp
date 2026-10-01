@@ -6,6 +6,7 @@
  */
 
 #include "app.hpp"
+#include "ui_controls.hpp"
 
 #include "no_signal_frame.hpp"
 #include "ui_theme.hpp"
@@ -567,13 +568,13 @@ void App::drawSwitchConfirmation() {
   ImGui::Text("Switch to the %s?", target.name);
   ImGui::TextDisabled("The machine is rebuilt. Disks and anything in memory are lost.");
   ImGui::Spacing();
-  if (ImGui::Button("Switch", ImVec2(120, 0))) {
+  if (ui::Button("Switch", ImVec2(120, 0), ui::ButtonKind::Primary)) {
     switchMachine(*pendingMachine_);
     pendingMachine_.reset();
     ImGui::CloseCurrentPopup();
   }
   ImGui::SameLine();
-  if (ImGui::Button("Cancel", ImVec2(120, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+  if (ui::Button("Cancel", ImVec2(120, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
     pendingMachine_.reset();
     ImGui::CloseCurrentPopup();
   }

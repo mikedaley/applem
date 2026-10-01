@@ -53,6 +53,7 @@ set(NATIVE_SOURCES
     src/screen_renderer_metal.mm
     src/slot_layout.cpp
     src/state_store.cpp
+    src/ui_controls.cpp
     src/ui_theme.mm
 )
 
@@ -160,6 +161,9 @@ add_executable(test_native_media
     src/media_store.cpp
     src/audio_output.mm
     src/emulation.cpp
+    src/ui_controls.cpp
+    src/ui_theme.mm
+    src/platform_paths.mm
 )
 target_include_directories(test_native_media PRIVATE
     ${CMAKE_SOURCE_DIR}/tests/catch2

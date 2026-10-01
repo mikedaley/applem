@@ -6,6 +6,7 @@
  */
 
 #include "hard_drives.hpp"
+#include "ui_controls.hpp"
 
 #include "emulation.hpp"
 
@@ -275,7 +276,7 @@ void HardDrives::drawDevice(int index) {
     ImGui::TextDisabled("%s", size.c_str());
   }
 
-  if (ImGui::Button("Insert")) {
+  if (ui::Button("Insert")) {
     if (!available_) {
       reportError(NOT_INSTALLED);
     } else {
@@ -287,14 +288,14 @@ void HardDrives::drawDevice(int index) {
   }
   ImGui::SameLine();
   const std::string recentId = "##hdrecent" + std::to_string(index);
-  if (ImGui::Button("Recent")) {
+  if (ui::Button("Recent")) {
     if (!available_) reportError(NOT_INSTALLED);
     else ImGui::OpenPopup(recentId.c_str());
   }
   drawRecentPopup(index);
   ImGui::SameLine();
   ImGui::BeginDisabled(!d.filename);
-  if (ImGui::Button("Eject")) requestEject(index);
+  if (ui::Button("Eject")) requestEject(index);
   ImGui::EndDisabled();
   ImGui::Dummy(ImVec2(width, 0));
 
@@ -325,7 +326,7 @@ void HardDrives::draw(bool *open) {
     ImGui::PushTextWrapPos(ImGui::GetFontSize() * 32);
     ImGui::TextUnformatted(error_.c_str());
     ImGui::PopTextWrapPos();
-    if (ImGui::Button("OK", ImVec2(110, 0)) || ImGui::IsKeyPressed(ImGuiKey_Enter) ||
+    if (ui::Button("OK", ImVec2(110, 0)) || ImGui::IsKeyPressed(ImGuiKey_Enter) ||
         ImGui::IsKeyPressed(ImGuiKey_Escape)) {
       ImGui::CloseCurrentPopup();
     }

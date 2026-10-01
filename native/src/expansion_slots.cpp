@@ -6,6 +6,7 @@
  */
 
 #include "expansion_slots.hpp"
+#include "ui_controls.hpp"
 
 #include "emulation.hpp"
 
@@ -127,7 +128,7 @@ void ExpansionSlots::draw(bool *open) {
         const CardInfo *info = findCard(current);
         const char *label = info ? info->name : "Empty";
         ImGui::SetNextItemWidth(-1);
-        if (ImGui::BeginCombo("##card", label)) {
+        if (ui::BeginPopUpButton("##card", label)) {
           if (ImGui::Selectable("Empty", current == "empty")) {
             dirty_ |= current != "empty";
             current = "empty";
@@ -147,7 +148,7 @@ void ExpansionSlots::draw(bool *open) {
               current = id;
             }
           }
-          ImGui::EndCombo();
+          ui::EndPopUpButton();
         }
       }
 
@@ -159,7 +160,7 @@ void ExpansionSlots::draw(bool *open) {
           const char *choices[] = {builtIn->c_str(), "Your Card"};
           int choice = internal ? 0 : 1;
           ImGui::SetNextItemWidth(-1);
-          if (ImGui::Combo("##answers", &choice, choices, 2)) {
+          if (ui::PopUpButton("##answers", &choice, choices, 2)) {
             emulation_.withMachine([&](host::MachineHost &host) { host.setSlotInternal(slot, choice == 0); });
           }
         } else {
@@ -173,7 +174,7 @@ void ExpansionSlots::draw(bool *open) {
 
   if (!iigs && machine_->caps.hasExpansionSlots) {
     ImGui::Spacing();
-    if (ImGui::Checkbox("No-Slot Clock (DS1215)", &noSlotClock)) {
+    if (ui::Switch("No-Slot Clock (DS1215)", &noSlotClock)) {
       emulation_.withMachine([&](host::MachineHost &host) { host.setNoSlotClock(noSlotClock); });
       ImGui::MarkIniSettingsDirty();
     }
@@ -186,9 +187,9 @@ void ExpansionSlots::draw(bool *open) {
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::BeginDisabled(!dirty_);
-    if (ImGui::Button("Apply & Reset")) applyAndReset();
+    if (ui::Button("Apply & Reset", ImVec2(0, 0), ui::ButtonKind::Primary)) applyAndReset();
     ImGui::SameLine();
-    if (ImGui::Button("Revert")) refreshFromMachine();
+    if (ui::Button("Revert")) refreshFromMachine();
     ImGui::EndDisabled();
     if (dirty_) {
       ImGui::SameLine();

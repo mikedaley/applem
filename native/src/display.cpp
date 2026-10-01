@@ -6,6 +6,7 @@
  */
 
 #include "display.hpp"
+#include "ui_controls.hpp"
 
 #include "platform.hpp"
 
@@ -176,7 +177,7 @@ bool Display::sliderRow(const char *label, const char *key, const char *tooltip)
   const SettingField *field = findSettingField(key);
   int &value = current().settings.*(field->member);
   ImGui::SetNextItemWidth(-90.0f);
-  const bool edited = ImGui::SliderInt(label, &value, 0, 100, "%d%%", ImGuiSliderFlags_AlwaysClamp);
+  const bool edited = ui::SliderInt(label, &value, 0, 100, "%d%%");
   if (tooltip && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) ImGui::SetTooltip("%s", tooltip);
   if (edited) changed(key);
   return edited;
@@ -195,7 +196,7 @@ void Display::drawPresetControls() {
 
   ImGui::SeparatorText("Monitor");
   ImGui::SetNextItemWidth(-1.0f);
-  if (ImGui::BeginCombo("##monitor", label.c_str())) {
+  if (ui::BeginPopUpButton("##monitor", label.c_str())) {
     for (const MonitorPreset &preset : monitorPresets()) {
       if (ImGui::Selectable(preset.label, state.preset == preset.id)) {
         state.applyPreset(preset.id, profiles_);
@@ -230,7 +231,7 @@ void Display::drawPresetControls() {
       saved_[machineKey_] = true;
       ImGui::MarkIniSettingsDirty();
     }
-    ImGui::EndCombo();
+    ui::EndPopUpButton();
   }
 
   // The description, or a brief confirmation of what was just done.
@@ -247,7 +248,7 @@ void Display::drawPresetControls() {
   // there is something to write; Delete only when a profile is selected.
   const DisplayProfile *selected = findProfile(profiles_, state.preset);
   ImGui::BeginDisabled(!selected || !state.profileDirty);
-  if (ImGui::Button("Save") && selected) {
+  if (ui::Button("Save") && selected) {
     const std::string name = selected->name;
     upsertProfile(profiles_, name, captureValues(state.settings));
     saveProfiles();
@@ -258,7 +259,7 @@ void Display::drawPresetControls() {
   }
   ImGui::EndDisabled();
   ImGui::SameLine();
-  if (ImGui::Button("Save As\u2026")) {
+  if (ui::Button("Save As\u2026")) {
     std::snprintf(nameBuffer_, sizeof(nameBuffer_), "%s", selected ? selected->name.c_str() : "");
     nameError_.clear();
     pendingReplace_.clear();
@@ -266,7 +267,7 @@ void Display::drawPresetControls() {
   }
   ImGui::SameLine();
   ImGui::BeginDisabled(!selected);
-  if (ImGui::Button("Delete")) openDelete_ = true;
+  if (ui::Button("Delete")) openDelete_ = true;
   ImGui::EndDisabled();
 }
 
@@ -289,7 +290,7 @@ void Display::drawSaveAsPopup() {
     const bool submitted = ImGui::InputText("##name", nameBuffer_, sizeof(nameBuffer_),
                                             ImGuiInputTextFlags_EnterReturnsTrue);
     if (!nameError_.empty()) ImGui::TextColored(ImVec4(0.88f, 0.23f, 0.24f, 1.0f), "%s", nameError_.c_str());
-    if (ImGui::Button("Save", ImVec2(100, 0)) || submitted) {
+    if (ui::Button("Save", ImVec2(100, 0), ui::ButtonKind::Primary) || submitted) {
       const NameCheck check = validateProfileName(nameBuffer_);
       if (!check.ok) {
         nameError_ = check.error;
@@ -307,14 +308,14 @@ void Display::drawSaveAsPopup() {
       }
     }
     ImGui::SameLine();
-    if (ImGui::Button("Cancel", ImVec2(100, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+    if (ui::Button("Cancel", ImVec2(100, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
       ImGui::CloseCurrentPopup();
     }
   } else {
     const DisplayProfile *existing = findProfile(profiles_, profileId(pendingReplace_));
     ImGui::Text("A profile called \"%s\" already exists. Replace it?",
                 existing ? existing->name.c_str() : pendingReplace_.c_str());
-    if (ImGui::Button("Replace", ImVec2(100, 0))) {
+    if (ui::Button("Replace", ImVec2(100, 0), ui::ButtonKind::Primary)) {
       const ProfileUpsert result = upsertProfile(profiles_, pendingReplace_, captureValues(state.settings));
       saveProfiles();
       state.preset = result.profile.id;
@@ -326,7 +327,7 @@ void Display::drawSaveAsPopup() {
       ImGui::CloseCurrentPopup();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Cancel", ImVec2(100, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+    if (ui::Button("Cancel", ImVec2(100, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
       pendingReplace_.clear();
     }
   }
@@ -351,7 +352,7 @@ void Display::drawDeletePopup() {
     return;
   }
   ImGui::Text("Delete the profile \"%s\"? The current picture will not change.", profile->name.c_str());
-  if (ImGui::Button("Delete", ImVec2(100, 0))) {
+  if (ui::Button("Delete", ImVec2(100, 0))) {
     deleteProfile(profiles_, profile->id);
     saveProfiles();
     state.preset = CUSTOM_PRESET;
@@ -361,7 +362,7 @@ void Display::drawDeletePopup() {
     ImGui::CloseCurrentPopup();
   }
   ImGui::SameLine();
-  if (ImGui::Button("Cancel", ImVec2(100, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+  if (ui::Button("Cancel", ImVec2(100, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
     ImGui::CloseCurrentPopup();
   }
   ImGui::EndPopup();
@@ -389,7 +390,7 @@ void Display::drawWindow(bool *open) {
     sliderRow("Saturation", "saturation");
 
     ImGui::Spacing();
-    if (ImGui::CollapsingHeader("Advanced")) {
+    if (ui::Disclosure("Advanced")) {
       ImGui::SeparatorText("CRT Effects");
       sliderRow("Screen Curvature", "curvature");
       sliderRow("Screen Border", "overscan");
@@ -426,15 +427,15 @@ void Display::drawWindow(bool *open) {
       }
 
       ImGui::SeparatorText("Rendering");
-      if (ImGui::Combo("Mask Type", &state.settings.maskType, MASK_TYPES, IM_ARRAYSIZE(MASK_TYPES))) {
+      if (ui::PopUpButton("Mask Type", &state.settings.maskType, MASK_TYPES, IM_ARRAYSIZE(MASK_TYPES))) {
         changed("maskType");
       }
-      if (ImGui::Combo("Display Mode", &state.settings.monochromeMode, MONOCHROME_MODES,
+      if (ui::PopUpButton("Display Mode", &state.settings.monochromeMode, MONOCHROME_MODES,
                        IM_ARRAYSIZE(MONOCHROME_MODES))) {
         changed("monochromeMode");
       }
       bool sharp = state.settings.sharpPixels != 0;
-      if (ImGui::Checkbox("Sharp Pixels", &sharp)) {
+      if (ui::Switch("Sharp Pixels", &sharp)) {
         state.settings.sharpPixels = sharp ? 1 : 0;
         changed("sharpPixels");
       }
@@ -450,7 +451,7 @@ void Display::drawWindow(bool *open) {
 
     ImGui::Spacing();
     ImGui::Separator();
-    if (ImGui::Button("Reset to Defaults")) {
+    if (ui::Button("Reset to Defaults")) {
       // The running machine's own defaults; saved profiles are kept.
       state = DisplayState{};
       state.settings = machine_ ? defaultsFor(*machine_) : DisplaySettings{};
