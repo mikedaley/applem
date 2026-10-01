@@ -66,6 +66,7 @@ App::~App() { shutdown(); }
 void App::shutdown() {
   if (!started_) return;
   releaseKeys();
+  saveBatteryRamIfChanged(-1);
   emulation_.stop();
   started_ = false;
 }
@@ -197,6 +198,7 @@ void App::startEmulation() {
   // by the scan, so a //e left with a hard drive started without it.
   slots_.setMachine(*wanted);
   slots_.apply();
+  restoreBatteryRam();
   drives_->surfaceShown = settings_.diskSurface;
   drives_->detailsShown = settings_.diskDetails;
   emulation_.driveSounds().setEnabled(settings_.driveSounds);
@@ -215,6 +217,7 @@ void App::frame() {
 
   updateScreenSource();
   drives_->update(ImGui::GetTime());
+  saveBatteryRamIfChanged(ImGui::GetTime());
   hardDrives_->update();
 
   // The decoder and character set live in the machine's video, which a
@@ -360,9 +363,11 @@ void App::drawMachineMenu() {
         settings_.iigsMemoryKB = size.kb;
         ImGui::MarkIniSettingsDirty();
         releaseKeys();
+        saveBatteryRamIfChanged(-1);
         emulation_.setIIgsFastRam(static_cast<size_t>(size.kb) * 1024);
         display_.machineRebuilt();
         slots_.apply();
+        restoreBatteryRam();
       }
     }
     ImGui::EndMenu();
@@ -402,12 +407,14 @@ void App::drawSwitchConfirmation() {
 
 void App::switchMachine(MachineId id) {
   releaseKeys();
+  saveBatteryRamIfChanged(-1);
   if (!emulation_.setMachine(id)) return;
   profile_ = &machineProfile(id);
   settings_.machine = profile_->key;
   display_.setMachine(*profile_);
   slots_.setMachine(*profile_);
   slots_.apply();
+  restoreBatteryRam();
   drives_->machineChanged();
   hardDrives_->machineChanged();
   noSignalStale_ = true;
@@ -541,6 +548,32 @@ void App::updateScreenSource() {
   const std::vector<uint8_t> picture = buildNoSignalFrame(
       display.pixelWidth, display.pixelHeight, noSignalMachineName(profile_->name));
   platform_.screen->upload(picture.data(), display.pixelWidth, display.pixelHeight);
+}
+
+// The 256 bytes go out and come back exactly as the firmware wrote them,
+// checksum included: the firmware checks it before trusting the contents,
+// and alters nothing as long as nothing else does. They are put back after
+// the IIgs is built and before it is powered on, because its firmware reads
+// them as it starts; restored any later, it has already written its own
+// defaults, which the next save then keeps.
+void App::restoreBatteryRam() {
+  auto bytes = readFile(settingsDirectory_ + "/iigs-battery-ram.bin");
+  if (!bytes || bytes->size() != 256) return;
+  emulation_.withMachine([&](host::MachineHost &host) { host.setBatteryRam(*bytes); });
+}
+
+// Checked every two seconds, as the browser does, and whenever the machine
+// is about to be replaced (now < 0).
+void App::saveBatteryRamIfChanged(double now) {
+  if (now >= 0 && now - batteryCheckedAt_ < 2.0) return;
+  batteryCheckedAt_ = std::max(now, 0.0);
+  std::vector<uint8_t> bytes;
+  emulation_.withMachine([&](host::MachineHost &host) {
+    if (host.takeBatteryRamChanged()) bytes = host.batteryRam();
+  });
+  if (bytes.size() == 256) {
+    writeFile(settingsDirectory_ + "/iigs-battery-ram.bin", bytes.data(), bytes.size());
+  }
 }
 
 // The video settings that live in the machine rather than in the shader.

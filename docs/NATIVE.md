@@ -183,6 +183,17 @@ startup order is the cards, then the floppies, then the hard drive images
 (fitting a layout can rebuild the SmartPort and take its images), then the
 power, so the boot scan finds what the machine was left with.
 
+## IIgs battery RAM
+
+The 256 bytes are kept in `iigs-battery-ram.bin`, written when the core
+says they changed (checked every two seconds, and before the machine is
+quit or replaced) and put back exactly as written, checksum included. They
+go back after the IIgs is built and before it is powered on, because the
+firmware reads them as it starts. Verified by starting twice: the second
+start leaves the file byte for byte as the first wrote it. The browser
+restores them before it rebuilds a remembered IIgs, so its firmware writes
+defaults; the native order avoids that.
+
 ## Typeface
 
 The UI is set in SF Mono at 13pt (`uiFontPath()` in `platform_paths.mm`),
@@ -209,7 +220,7 @@ different things.
 2. Scaffolding: window, docking, multi-viewport, menu bar. Done.
 3. A machine running on screen, machine selection, keyboard, audio. Done.
 4. Media and configuration: disk drives, SmartPort and expansion slots
-   (done); save states, IIgs battery RAM, game port.
+   and IIgs battery RAM (done); save states, game port, CPU speed.
 5. Display fidelity: the CRT shaders in Metal, display settings and profiles. Done.
 6. Debugger: CPU, memory, stack, zero page, soft switches, trace.
 7. The remaining debug views, including the Disk Inspector.

@@ -104,6 +104,9 @@ private:
   bool commandIsOpenApple() const;
   void updateWindowTitle();
   void applyMachineDisplay();
+  // A IIgs's battery-backed settings, kept as a real battery keeps them.
+  void restoreBatteryRam();
+  void saveBatteryRamIfChanged(double now);
 
   std::string settingsDirectory_;
   std::string iniPath_;
@@ -130,6 +133,7 @@ private:
   // machine chosen while off.
   bool noSignalStale_ = true;
   bool wasPowered_ = false;
+  double batteryCheckedAt_ = 0;
   bool quitRequested_ = false;
   bool layoutChecked_ = false;
 
