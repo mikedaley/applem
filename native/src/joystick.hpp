@@ -9,7 +9,10 @@
 
 #include "game_port.hpp"
 
+#include "imgui.h"
+
 #include <array>
+#include <deque>
 #include <functional>
 #include <vector>
 
@@ -49,9 +52,14 @@ public:
   float deadzone = DEFAULT_DEADZONE;
 
 private:
+  // What is driving the stick this frame, for the window to say.
+  enum class Source { None, Mouse, Keys, Gamepad };
+
   void sendDevice();
   void drawAppleJoystick();
   void drawJoyport();
+  void drawCX40(int stick, ImVec2 origin, float size);
+  void drawInputs();
 
   Emulation &emulation_;
   std::function<std::vector<Pad>()> gamepads_;
@@ -62,6 +70,12 @@ private:
   float knobY_ = 0.5f;
   bool dragging_ = false;
   std::array<bool, 3> screenButtons_{};
+  // Where the knob has been lately, for a trail that fades behind it.
+  std::deque<std::pair<ImVec2, double>> trail_;
+  // A Joyport stick pushed with the mouse: its direction switches.
+  std::array<int, 2> screenSticks_{};
+  Source source_ = Source::None;
+  std::array<Source, 2> stickSources_{{Source::None, Source::None}};
 
   // What the core was last told, so only changes are sent.
   int sentDevice_ = -1;

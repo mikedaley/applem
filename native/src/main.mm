@@ -289,6 +289,7 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
       pad.buttons[1] = gamepad.buttonB.isPressed;
       pad.buttons[2] = gamepad.buttonX.isPressed;
       pad.buttons[3] = gamepad.buttonY.isPressed;
+      pad.name = controller.vendorName ? controller.vendorName.UTF8String : "Gamepad";
       pad.buttons[12] = gamepad.dpad.up.isPressed;
       pad.buttons[13] = gamepad.dpad.down.isPressed;
       pad.buttons[14] = gamepad.dpad.left.isPressed;

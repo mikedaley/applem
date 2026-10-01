@@ -295,6 +295,17 @@ browser's numbers: a deadzone that rescales the rest of the range, a
 switch closing past half travel, the D-pad on 12 to 15, fire on A or B,
 an impossible pair dropped, and one pad driving both Joyport sticks.
 
+The window draws the device rather than describing it. An Apple joystick
+is its beige case, a recessed gate as square as the paddles' 0 to 255, and
+a ball-top stick that leaves a fading trail; beside it each paddle's value,
+its address and how long the PREAD timer runs for it (eleven cycles a
+count), and the three pushbuttons as round buttons that light, held with
+the mouse. A Joyport is two CX40s, each stick leaning toward the switches
+that are closed and pushed with the mouse eight ways, its red button fire.
+What is driving each (mouse, cursor keys, gamepad) is shown, and every
+connected gamepad is listed by the system's name with its stick and
+buttons live and what it drives.
+
 Sources are merged each frame and only a change is sent, because the
 pushbutton lines are also the Apple keys: sending "not pressed" every frame
 would let go of an Apple key the keyboard holds. A rebuilt machine starts

@@ -9,6 +9,7 @@
 
 #include <array>
 #include <cstdint>
+#include <string>
 
 namespace a2e::native {
 
@@ -29,6 +30,7 @@ constexpr float MAX_DEADZONE = 0.5f;
 struct Pad {
   std::array<float, 4> axes{};
   std::array<bool, 17> buttons{};
+  std::string name; // as the system names it, for the window
 };
 enum PadButton { PAD_A = 0, PAD_B = 1, PAD_UP = 12, PAD_DOWN = 13, PAD_LEFT = 14, PAD_RIGHT = 15 };
 
