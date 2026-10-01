@@ -193,6 +193,23 @@ void DiskDrives::machineChanged() {
   }
 }
 
+// The baseline is taken afresh, so a disk is asked about on eject only if it
+// changes after the state was loaded.
+void DiskDrives::syncWithMachine() {
+  for (int drive = 0; drive < DRIVES; drive++) {
+    std::optional<std::string> name;
+    emulation_.withMachine([&](host::MachineHost &host) {
+      if (!host.isDiskInserted(drive)) return;
+      const char *filename = host.diskFilename(drive);
+      name = filename && *filename ? filename : "Restored Disk";
+    });
+    Drive &d = drives_[drive];
+    resetVisuals(d);
+    d.filename = name;
+    d.baseline = name ? currentFingerprint(drive) : std::nullopt;
+  }
+}
+
 int DiskDrives::dropTarget() const {
   if (!drives_[0].filename) return 0;
   if (!drives_[1].filename) return 1;

@@ -14,6 +14,8 @@
 #include "../src/hard_drives.hpp"
 #include "../src/media_store.hpp"
 #include "../src/slot_layout.hpp"
+#include "../src/state_store.hpp"
+#include "../../src/host/machine_host.hpp"
 #include "machine/machine_profile.hpp"
 
 #include <filesystem>
@@ -185,4 +187,55 @@ TEST_CASE("Slot lines are read back and nonsense is refused", "[slots]") {
   REQUIRE_FALSE(parseSlotLine("Slot9=mouse", slot, card));
   REQUIRE_FALSE(parseSlotLine("Slot4=toaster", slot, card));
   REQUIRE(cardsInUse({{4, "mouse"}, {5, "empty"}, {7, "smartport"}}, 7) == std::vector<std::string>{"mouse"});
+}
+
+TEST_CASE("A state names the machine that wrote it", "[states]") {
+  a2e::host::MachineHost host;
+  host.build();
+  size_t size = 0;
+  const uint8_t *state = host.exportState(&size);
+  const auto header = readStateHeader(state, size);
+  REQUIRE(header);
+  REQUIRE(header->machineId == static_cast<uint32_t>(a2e::MachineId::AppleIIe));
+  // Anything else is refused.
+  const uint8_t junk[16] = {'n', 'o', 'p', 'e'};
+  REQUIRE_FALSE(readStateHeader(junk, sizeof(junk)));
+  REQUIRE_FALSE(readStateHeader(state, 8));
+}
+
+TEST_CASE("A thumbnail is the whole frame, shrunk", "[states]") {
+  // Left half white, right half black, at a IIgs's size.
+  const int width = 736;
+  const int height = 448;
+  std::vector<uint8_t> frame(static_cast<size_t>(width) * height * 4, 0);
+  for (int y = 0; y < height; y++) {
+    for (int x = 0; x < width / 2; x++) {
+      uint8_t *p = &frame[(static_cast<size_t>(y) * width + x) * 4];
+      p[0] = p[1] = p[2] = 255;
+    }
+  }
+  const auto thumb = makeThumbnail(frame.data(), width, height);
+  REQUIRE(thumb.size() == static_cast<size_t>(THUMB_WIDTH) * THUMB_HEIGHT * 4);
+  REQUIRE(thumb[0] == 255);                                   // top left white
+  REQUIRE(thumb[(THUMB_WIDTH - 1) * 4] == 0);                 // top right black
+  REQUIRE(thumb[3] == 255);                                   // opaque
+}
+
+TEST_CASE("Save states are kept by id and say who wrote them", "[states]") {
+  TempDir dir;
+  StateStore store(dir.path.string());
+  REQUIRE_FALSE(store.info(StateStore::slotId(1)));
+  const std::vector<uint8_t> state = bytes(42, 1000);
+  const std::vector<uint8_t> thumb(static_cast<size_t>(THUMB_WIDTH) * THUMB_HEIGHT * 4, 9);
+  REQUIRE(store.save(StateStore::slotId(1), "apple2gs", state, thumb));
+  auto info = store.info(StateStore::slotId(1));
+  REQUIRE(info);
+  REQUIRE(info->machine == "apple2gs");
+  REQUIRE(info->savedAt > 0);
+  REQUIRE(info->thumbnail == thumb);
+  REQUIRE(*store.load(StateStore::slotId(1)) == state);
+  // Each machine's autosave is its own.
+  REQUIRE(StateStore::autosaveId("apple2e") != StateStore::autosaveId("apple2c"));
+  store.clear(StateStore::slotId(1));
+  REQUIRE_FALSE(store.info(StateStore::slotId(1)));
 }

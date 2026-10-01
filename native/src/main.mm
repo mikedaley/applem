@@ -157,6 +157,25 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
     }];
   };
   platform.resourceDirectory = NSBundle.mainBundle.resourcePath.UTF8String;
+  id<MTLDevice> device = _device;
+  platform.makeTexture = [device](const uint8_t *rgba, int width, int height) -> ImTextureID {
+    MTLTextureDescriptor *descriptor =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                           width:width
+                                                          height:height
+                                                       mipmapped:NO];
+    descriptor.usage = MTLTextureUsageShaderRead;
+    id<MTLTexture> texture = [device newTextureWithDescriptor:descriptor];
+    [texture replaceRegion:MTLRegionMake2D(0, 0, width, height)
+               mipmapLevel:0
+                 withBytes:rgba
+               bytesPerRow:width * 4];
+    // Held until releaseTexture, which hands the reference back to ARC.
+    return (ImTextureID)(intptr_t)CFBridgingRetain(texture);
+  };
+  platform.releaseTexture = [](ImTextureID texture) {
+    if (texture != ImTextureID_Invalid) CFBridgingRelease((void *)(intptr_t)texture);
+  };
   _app = std::make_unique<App>(a2e::native::appSupportDirectory(), std::move(platform));
   io.IniFilename = _app->iniPath();
 

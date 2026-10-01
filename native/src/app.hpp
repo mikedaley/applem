@@ -10,6 +10,7 @@
 #include "disk_drives.hpp"
 #include "display.hpp"
 #include "hard_drives.hpp"
+#include "save_states.hpp"
 #include "emulation.hpp"
 #include "expansion_slots.hpp"
 #include "key_mapper.hpp"
@@ -40,6 +41,8 @@ struct Settings {
   bool driveSounds = true;
   bool showHardDrives = false;
   bool showExpansionSlots = false;
+  bool showSaveStates = false;
+  bool autosave = false;
   // Per machine, keyed by profile key. Absent means the machine's default:
   // on for a IIgs, whose keyboard is a Mac's, and off for the rest.
   std::map<std::string, bool> commandIsOpenApple;
@@ -100,7 +103,7 @@ private:
   void routeKeyboard();
   void handleAppShortcuts();
   void paste();
-  void switchMachine(MachineId id);
+  bool switchMachine(MachineId id);
   bool commandIsOpenApple() const;
   void updateWindowTitle();
   void applyMachineDisplay();
@@ -117,6 +120,7 @@ private:
   std::unique_ptr<DiskDrives> drives_;
   std::unique_ptr<HardDrives> hardDrives_;
   ExpansionSlots slots_{emulation_};
+  std::unique_ptr<SaveStates> states_;
   bool started_ = false;
 
   // The machine profile currently built, for drawing; refreshed on a switch.

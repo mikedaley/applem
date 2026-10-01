@@ -46,6 +46,8 @@ public:
   // The machine was rebuilt: its drives are empty, and nothing is restored
   // into them again.
   void machineChanged();
+  // A save state went in: the drives hold what it held.
+  void syncWithMachine();
 
   // Every frame, shown or not: follows the drives for the seek click and
   // the surface's track heat.

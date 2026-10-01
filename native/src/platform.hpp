@@ -66,6 +66,11 @@ struct Platform {
 
   // The bundle's Resources, where the disk library is.
   std::string resourceDirectory;
+
+  // A small RGBA texture ImGui can draw (a save state's thumbnail), and
+  // letting one go.
+  std::function<ImTextureID(const uint8_t *rgba, int width, int height)> makeTexture;
+  std::function<void(ImTextureID)> releaseTexture;
 };
 
 } // namespace a2e::native

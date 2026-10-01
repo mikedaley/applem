@@ -183,6 +183,26 @@ startup order is the cards, then the floppies, then the hard drive images
 (fitting a layout can rebuild the SmartPort and take its images), then the
 power, so the boot scan finds what the machine was left with.
 
+## Save states
+
+File > Save States (`save_states.*`, `state_store.*`) is the browser's
+window: an autosave row and five slots, each with a thumbnail (140x96, box
+filtered from the frame, so a IIgs's comes out whole), the machine that
+wrote it and when, and Save, Load, Clear and Export; plus Load from File.
+States are kept in `States/` as `<id>.a2state` with `.meta` and `.thumb`
+beside them. The five slots are shared by every machine; the autosave is
+one per machine, written every five seconds while the machine runs when
+turned on (off by default, as in the browser), and before quitting or
+switching machine.
+
+A state starts with the browser's twelve-byte header (magic `A2ES`,
+version, machine id). One from another machine asks first, switches to
+that machine, then loads, because a state is a whole machine and restores
+only into its own kind. A machine that is off is switched on first. After
+a load the drive windows take what the drives hold from the core, and each
+floppy's fingerprint is taken afresh, so eject asks about changes made
+after the load.
+
 ## IIgs battery RAM
 
 The 256 bytes are kept in `iigs-battery-ram.bin`, written when the core
@@ -220,7 +240,7 @@ different things.
 2. Scaffolding: window, docking, multi-viewport, menu bar. Done.
 3. A machine running on screen, machine selection, keyboard, audio. Done.
 4. Media and configuration: disk drives, SmartPort and expansion slots
-   and IIgs battery RAM (done); save states, game port, CPU speed.
+   IIgs battery RAM and save states (done); game port, CPU speed.
 5. Display fidelity: the CRT shaders in Metal, display settings and profiles. Done.
 6. Debugger: CPU, memory, stack, zero page, soft switches, trace.
 7. The remaining debug views, including the Disk Inspector.

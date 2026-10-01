@@ -40,6 +40,13 @@ constexpr MemorySize IIGS_MEMORY_SIZES[] = {
     {2048, "2M"},               {4096, "4M"},  {8192, "8M"},
 };
 
+// Where a window first appears, until it has been moved: staggered across
+// the main window rather than all on top of one another.
+void firstPosition(float x, float y) {
+  const ImGuiViewport *viewport = ImGui::GetMainViewport();
+  ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + x, viewport->WorkPos.y + y), ImGuiCond_FirstUseEver);
+}
+
 bool isModifier(int keyCode) {
   return keyCode == KEY_SHIFT || keyCode == KEY_CONTROL || keyCode == KEY_ALT ||
          keyCode == KEY_META_LEFT || keyCode == KEY_META_RIGHT;
@@ -59,6 +66,15 @@ App::App(std::string settingsDirectory, Platform platform)
   registerSlotsHandler();
   // Refitting can rebuild the SmartPort, and its images with it.
   slots_.setAppliedCallback([this] { hardDrives_->syncWithMachine(); });
+
+  SaveStates::Hooks hooks;
+  hooks.machine = [this] { return profile_; };
+  hooks.switchTo = [this](MachineId id) { return switchMachine(id); };
+  hooks.loaded = [this] {
+    drives_->syncWithMachine();
+    hardDrives_->syncWithMachine();
+  };
+  states_ = std::make_unique<SaveStates>(emulation_, platform_, settingsDirectory_ + "/States", std::move(hooks));
 }
 
 App::~App() { shutdown(); }
@@ -66,6 +82,7 @@ App::~App() { shutdown(); }
 void App::shutdown() {
   if (!started_) return;
   releaseKeys();
+  states_->autosaveNow();
   saveBatteryRamIfChanged(-1);
   emulation_.stop();
   started_ = false;
@@ -103,6 +120,8 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "DriveSounds=%d", &value) == 1) s.driveSounds = value;
     else if (std::sscanf(line, "ShowHardDrives=%d", &value) == 1) s.showHardDrives = value;
     else if (std::sscanf(line, "ShowExpansionSlots=%d", &value) == 1) s.showExpansionSlots = value;
+    else if (std::sscanf(line, "ShowSaveStates=%d", &value) == 1) s.showSaveStates = value;
+    else if (std::sscanf(line, "Autosave=%d", &value) == 1) s.autosave = value;
     else if (std::sscanf(line, "NoSlotClock=%d", &value) == 1) app->slots_.noSlotClock = value;
     else if (std::sscanf(line, "ShowStatusBar=%d", &value) == 1) s.showStatusBar = value;
     else if (std::sscanf(line, "CommandIsOpenApple.%63[^=]=%d", text, &value) == 2) {
@@ -127,6 +146,8 @@ void App::registerSettingsHandler() {
     out->appendf("DriveSounds=%d\n", s.driveSounds ? 1 : 0);
     out->appendf("ShowHardDrives=%d\n", s.showHardDrives ? 1 : 0);
     out->appendf("ShowExpansionSlots=%d\n", s.showExpansionSlots ? 1 : 0);
+    out->appendf("ShowSaveStates=%d\n", s.showSaveStates ? 1 : 0);
+    out->appendf("Autosave=%d\n", app->states_ && app->states_->autosave ? 1 : 0);
     out->appendf("NoSlotClock=%d\n", app->slots_.noSlotClock ? 1 : 0);
     out->appendf("ShowStatusBar=%d\n", s.showStatusBar ? 1 : 0);
     for (const auto &[key, on] : s.commandIsOpenApple) {
@@ -207,6 +228,7 @@ void App::startEmulation() {
   // image with it.
   hardDrives_->update();
   hardDrives_->restore();
+  states_->autosave = settings_.autosave;
   emulation_.setPowered(true);
   started_ = true;
   updateWindowTitle();
@@ -218,6 +240,7 @@ void App::frame() {
   updateScreenSource();
   drives_->update(ImGui::GetTime());
   saveBatteryRamIfChanged(ImGui::GetTime());
+  states_->update(ImGui::GetTime());
   hardDrives_->update();
 
   // The decoder and character set live in the machine's video, which a
@@ -247,7 +270,10 @@ void App::frame() {
   if (settings_.showStatusBar) drawStatusBar();
   drawDockSpace();
   if (settings_.showScreen) drawScreenWindow();
-  if (settings_.showDisplaySettings) display_.drawWindow(&settings_.showDisplaySettings);
+  if (settings_.showDisplaySettings) {
+    firstPosition(320, 40);
+    display_.drawWindow(&settings_.showDisplaySettings);
+  }
   drawDiskDrives();
   if (showDemo_) ImGui::ShowDemoWindow(&showDemo_);
   drawSwitchConfirmation();
@@ -264,6 +290,8 @@ void App::drawMenuBar() {
   if (!ImGui::BeginMainMenuBar()) return;
 
   if (ImGui::BeginMenu("File")) {
+    ImGui::MenuItem("Save States", nullptr, &settings_.showSaveStates);
+    ImGui::Separator();
     if (ImGui::MenuItem("Quit", "Cmd+Q")) quitRequested_ = true;
     ImGui::EndMenu();
   }
@@ -405,10 +433,11 @@ void App::drawSwitchConfirmation() {
   ImGui::EndPopup();
 }
 
-void App::switchMachine(MachineId id) {
+bool App::switchMachine(MachineId id) {
   releaseKeys();
   saveBatteryRamIfChanged(-1);
-  if (!emulation_.setMachine(id)) return;
+  states_->autosaveNow();
+  if (!emulation_.setMachine(id)) return false;
   profile_ = &machineProfile(id);
   settings_.machine = profile_->key;
   display_.setMachine(*profile_);
@@ -424,6 +453,7 @@ void App::switchMachine(MachineId id) {
     emulation_.withMachine([](host::MachineHost &host) { host.reset(); });
   }
   updateWindowTitle();
+  return true;
 }
 
 void App::updateWindowTitle() {
@@ -491,10 +521,19 @@ void App::drawStatusBar() {
 // The window draws every frame it is open; its save and error questions are
 // drawn whether it is or not. The options it toggles are remembered.
 void App::drawDiskDrives() {
+  firstPosition(80, 60);
+  states_->draw(&settings_.showSaveStates);
+  if (states_->autosave != settings_.autosave) {
+    settings_.autosave = states_->autosave;
+    ImGui::MarkIniSettingsDirty();
+  }
   bool showSlots = settings_.showExpansionSlots && profile_ && profile_->caps.hasExpansionSlots;
+  firstPosition(140, 100);
   slots_.draw(&showSlots);
   if (profile_ && profile_->caps.hasExpansionSlots) settings_.showExpansionSlots = showSlots;
+  firstPosition(200, 380);
   drives_->draw(&settings_.showDiskDrives);
+  firstPosition(260, 160);
   bool showHard = settings_.showHardDrives && hardDrives_->available();
   hardDrives_->draw(&showHard);
   if (hardDrives_->available()) settings_.showHardDrives = showHard;
