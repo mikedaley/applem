@@ -16,6 +16,7 @@
 
 #include "app.hpp"
 #include "platform_paths.hpp"
+#include "screen_surface_metal.hpp"
 
 #include "imgui.h"
 #include "imgui_impl_metal.h"
@@ -28,6 +29,8 @@ using a2e::native::App;
 @interface AppViewController : NSViewController <MTKViewDelegate>
 @property(nonatomic, strong) id<MTLDevice> device;
 @property(nonatomic, strong) id<MTLCommandQueue> commandQueue;
+- (void)shutdown;
+- (void)releaseKeys;
 @end
 
 @implementation AppViewController {
@@ -48,7 +51,8 @@ using a2e::native::App;
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
   ImGuiIO &io = ImGui::GetIO();
-  io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+  // No keyboard navigation: with it, Option alone moves focus to the menu
+  // bar, and Option is an Apple key while the machine has the keyboard.
   io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
   io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
 
@@ -59,7 +63,20 @@ using a2e::native::App;
   style.WindowRounding = 0.0f;
   style.Colors[ImGuiCol_WindowBg].w = 1.0f;
 
-  _app = std::make_unique<App>(a2e::native::appSupportDirectory());
+  // Key repeat at the rate the user set for the system, not ImGui's own.
+  io.KeyRepeatDelay = static_cast<float>(NSEvent.keyRepeatDelay);
+  io.KeyRepeatRate = static_cast<float>(NSEvent.keyRepeatInterval);
+
+  a2e::native::Platform platform;
+  platform.screen = a2e::native::makeMetalScreenSurface((__bridge void *)_device);
+  platform.capsLockOn = [] {
+    return (NSEvent.modifierFlags & NSEventModifierFlagCapsLock) != 0;
+  };
+  __weak AppViewController *weakSelf = self;
+  platform.setWindowTitle = [weakSelf](const std::string &title) {
+    weakSelf.view.window.title = [NSString stringWithUTF8String:title.c_str()];
+  };
+  _app = std::make_unique<App>(a2e::native::appSupportDirectory(), std::move(platform));
   io.IniFilename = _app->iniPath();
 
   ImGui_ImplMetal_Init(_device);
@@ -122,8 +139,14 @@ using a2e::native::App;
 - (void)mtkView:(MTKView *)view drawableSizeWillChange:(CGSize)size {
 }
 
+// Another app took the keyboard: key-ups for anything held will never come.
+- (void)releaseKeys {
+  if (_app) _app->releaseKeys();
+}
+
 - (void)shutdown {
   if (!_app) return;
+  _app->shutdown();
   // Written before the context goes, while the settings handler can still
   // reach the App.
   ImGui::SaveIniSettingsToDisk(_app->iniPath());
@@ -164,6 +187,10 @@ using a2e::native::App;
   [self.window setFrameAutosaveName:@"ApplEmMainWindow"];
   [self.window makeKeyAndOrderFront:nil];
   [NSApp activateIgnoringOtherApps:YES];
+}
+
+- (void)applicationDidResignActive:(NSNotification *)notification {
+  [self.controller releaseKeys];
 }
 
 - (void)applicationWillTerminate:(NSNotification *)notification {

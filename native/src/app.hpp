@@ -7,19 +7,41 @@
 
 #pragma once
 
+#include "emulation.hpp"
+#include "key_mapper.hpp"
+#include "platform.hpp"
+
+#include <map>
+#include <optional>
+#include <set>
 #include <string>
 
 namespace a2e::native {
 
+// What the app remembers between runs. It is written into the same file as
+// ImGui's layout, so the windows, where they are and what they show come back
+// together.
+struct Settings {
+  std::string machine = "apple2e";
+  int iigsMemoryKB = 1024;
+  float volume = 0.5f;
+  bool muted = false;
+  bool sharpPixels = false;
+  bool showScreen = true;
+  bool showStatusBar = true;
+  // Per machine, keyed by profile key. Absent means the machine's default:
+  // on for a IIgs, whose keyboard is a Mac's, and off for the rest.
+  std::map<std::string, bool> commandIsOpenApple;
+};
+
 // Everything drawn each frame: the menu bar, the dock space and the windows.
 //
 // This is plain C++ over Dear ImGui and knows nothing about Cocoa or Metal;
-// main.mm owns those and calls frame() between NewFrame and Render. Anything
-// the UI needs from the platform comes through a narrow interface rather
-// than an #import, so the UI can be read without the platform in mind.
+// main.mm owns those and calls frame() between NewFrame and Render. What the
+// UI needs from the platform comes through `Platform`.
 class App {
 public:
-  explicit App(std::string settingsDirectory);
+  App(std::string settingsDirectory, Platform platform);
   ~App();
 
   App(const App &) = delete;
@@ -35,21 +57,52 @@ public:
   // which is why the App owns the string.
   const char *iniPath() const { return iniPath_.c_str(); }
 
+  // The app lost the keyboard to another one: let go of every key the
+  // machine thinks is held, because their key-ups will never arrive.
+  void releaseKeys();
+
+  // Stop the machine before the platform goes away.
+  void shutdown();
+
 private:
   void registerSettingsHandler();
+  void startEmulation();
+
   void drawMenuBar();
+  void drawMachineMenu();
   void drawDockSpace();
   void drawScreenWindow();
+  void drawStatusBar();
+  void drawSwitchConfirmation();
+
+  void routeKeyboard();
+  void handleAppShortcuts();
+  void paste();
+  void switchMachine(MachineId id);
+  bool commandIsOpenApple() const;
+  void updateWindowTitle();
 
   std::string settingsDirectory_;
   std::string iniPath_;
+  Platform platform_;
+  Settings settings_;
+  Emulation emulation_;
+  bool started_ = false;
 
-  bool showScreen_ = true;
+  // The machine profile currently built, for drawing; refreshed on a switch.
+  const MachineProfile *profile_ = nullptr;
+
   bool showDemo_ = false;
   bool quitRequested_ = false;
-  // The dock space is laid out once, the first time it is seen with nothing
-  // docked in it; after that the user's layout comes back from the ini.
   bool layoutChecked_ = false;
+
+  // Whether the screen had the keyboard last frame, and the keys it sent down
+  // that have not come up, so losing the keyboard can release them.
+  bool screenHadKeyboard_ = false;
+  std::set<int> keysDown_; // ImGuiKey values
+
+  // A machine switch waiting for the user to confirm it.
+  std::optional<MachineId> pendingMachine_;
 };
 
 } // namespace a2e::native

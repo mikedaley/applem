@@ -32,7 +32,11 @@ target_link_libraries(imgui PUBLIC
 set(NATIVE_SOURCES
     src/main.mm
     src/app.cpp
+    src/audio_output.mm
+    src/emulation.cpp
+    src/key_mapper.cpp
     src/platform_paths.mm
+    src/screen_surface_metal.mm
 )
 
 add_executable(ApplEmNative MACOSX_BUNDLE ${NATIVE_SOURCES})
@@ -54,8 +58,10 @@ if(EXISTS ${APP_ICON})
 endif()
 
 target_include_directories(ApplEmNative PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+# The core's headers name parameters an interface's default ignores, which
+# -Wextra reports in every file that includes them.
 target_compile_options(ApplEmNative PRIVATE
-    -Wall -Wextra
+    -Wall -Wextra -Wno-unused-parameter
     $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>
 )
 target_link_libraries(ApplEmNative PRIVATE
@@ -64,3 +70,17 @@ target_link_libraries(ApplEmNative PRIVATE
     "-framework AudioToolbox"
     "-framework CoreAudio"
 )
+
+# The keyboard mapping and the emulation thread's queues, without a window.
+add_executable(test_native_input
+    tests/test_native_input.cpp
+    src/key_mapper.cpp
+)
+target_include_directories(test_native_input PRIVATE
+    ${CMAKE_SOURCE_DIR}/tests/catch2
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_compile_options(test_native_input PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(test_native_input PRIVATE a2e_core imgui)
+add_test(NAME test_native_input COMMAND test_native_input
+         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
