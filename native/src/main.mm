@@ -16,7 +16,7 @@
 
 #include "app.hpp"
 #include "platform_paths.hpp"
-#include "screen_surface_metal.hpp"
+#include "screen_renderer_metal.hpp"
 
 #include "imgui.h"
 #include "imgui_impl_metal.h"
@@ -68,7 +68,8 @@ using a2e::native::App;
   io.KeyRepeatRate = static_cast<float>(NSEvent.keyRepeatInterval);
 
   a2e::native::Platform platform;
-  platform.screen = a2e::native::makeMetalScreenSurface((__bridge void *)_device);
+  platform.screen = a2e::native::makeMetalScreenRenderer((__bridge void *)_device,
+                                                         (__bridge void *)_commandQueue);
   platform.capsLockOn = [] {
     return (NSEvent.modifierFlags & NSEventModifierFlagCapsLock) != 0;
   };
@@ -76,6 +77,7 @@ using a2e::native::App;
   platform.setWindowTitle = [weakSelf](const std::string &title) {
     weakSelf.view.window.title = [NSString stringWithUTF8String:title.c_str()];
   };
+  platform.toggleFullScreen = [weakSelf] { [weakSelf.view.window toggleFullScreen:nil]; };
   _app = std::make_unique<App>(a2e::native::appSupportDirectory(), std::move(platform));
   io.IniFilename = _app->iniPath();
 
@@ -185,6 +187,7 @@ using a2e::native::App;
   self.window.title = @"ApplEm";
   [self.window center];
   [self.window setFrameAutosaveName:@"ApplEmMainWindow"];
+  self.window.collectionBehavior |= NSWindowCollectionBehaviorFullScreenPrimary;
   [self.window makeKeyAndOrderFront:nil];
   [NSApp activateIgnoringOtherApps:YES];
 }

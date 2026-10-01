@@ -7,10 +7,15 @@
 
 #include "app.hpp"
 
+#include "no_signal_frame.hpp"
+
 #include "imgui.h"
 #include "imgui_internal.h" // DockBuilder, the status bar's viewport side bar
 
+#include "video/video.hpp"
+
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -19,6 +24,7 @@ namespace a2e::native {
 namespace {
 
 constexpr const char *SCREEN_WINDOW = "Screen";
+constexpr const char *FULL_PAGE_WINDOW = "##FullPage";
 constexpr const char *DOCKSPACE_ID = "ApplEmDockSpace";
 constexpr const char *SWITCH_POPUP = "Switch machine?";
 
@@ -43,8 +49,10 @@ bool isModifier(int keyCode) {
 App::App(std::string settingsDirectory, Platform platform)
     : settingsDirectory_(std::move(settingsDirectory)),
       iniPath_(settingsDirectory_ + "/layout.ini"),
-      platform_(std::move(platform)) {
+      platform_(std::move(platform)),
+      display_(settingsDirectory_ + "/display-profiles.ini") {
   registerSettingsHandler();
+  registerDisplayHandler();
 }
 
 App::~App() { shutdown(); }
@@ -78,8 +86,9 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "IIgsMemoryKB=%d", &value) == 1) s.iigsMemoryKB = value;
     else if (std::sscanf(line, "Volume=%f", &number) == 1) s.volume = number;
     else if (std::sscanf(line, "Muted=%d", &value) == 1) s.muted = value;
-    else if (std::sscanf(line, "SharpPixels=%d", &value) == 1) s.sharpPixels = value;
     else if (std::sscanf(line, "ShowScreen=%d", &value) == 1) s.showScreen = value;
+    else if (std::sscanf(line, "ShowDisplaySettings=%d", &value) == 1) s.showDisplaySettings = value;
+    else if (std::sscanf(line, "UKCharacterSet=%d", &value) == 1) s.ukCharacterSet = value;
     else if (std::sscanf(line, "ShowStatusBar=%d", &value) == 1) s.showStatusBar = value;
     else if (std::sscanf(line, "CommandIsOpenApple.%63[^=]=%d", text, &value) == 2) {
       s.commandIsOpenApple[text] = value;
@@ -93,13 +102,35 @@ void App::registerSettingsHandler() {
     out->appendf("IIgsMemoryKB=%d\n", s.iigsMemoryKB);
     out->appendf("Volume=%.3f\n", s.volume);
     out->appendf("Muted=%d\n", s.muted ? 1 : 0);
-    out->appendf("SharpPixels=%d\n", s.sharpPixels ? 1 : 0);
     out->appendf("ShowScreen=%d\n", s.showScreen ? 1 : 0);
+    out->appendf("ShowDisplaySettings=%d\n", s.showDisplaySettings ? 1 : 0);
+    out->appendf("UKCharacterSet=%d\n", s.ukCharacterSet ? 1 : 0);
     out->appendf("ShowStatusBar=%d\n", s.showStatusBar ? 1 : 0);
     for (const auto &[key, on] : s.commandIsOpenApple) {
       out->appendf("CommandIsOpenApple.%s=%d\n", key.c_str(), on ? 1 : 0);
     }
     out->append("\n");
+  };
+  ImGui::AddSettingsHandler(&handler);
+}
+
+// Each machine's display settings, under [ApplEmDisplay][<machine key>].
+void App::registerDisplayHandler() {
+  ImGuiSettingsHandler handler;
+  handler.TypeName = "ApplEmDisplay";
+  handler.TypeHash = ImHashStr("ApplEmDisplay");
+  handler.UserData = &display_;
+  handler.ReadOpenFn = [](ImGuiContext *, ImGuiSettingsHandler *h, const char *name) -> void * {
+    return static_cast<Display *>(h->UserData)->openSection(name);
+  };
+  handler.ReadLineFn = [](ImGuiContext *, ImGuiSettingsHandler *h, void *entry, const char *line) {
+    static_cast<Display *>(h->UserData)->readLine(static_cast<DisplayState *>(entry), line);
+  };
+  handler.ApplyAllFn = [](ImGuiContext *, ImGuiSettingsHandler *h) {
+    static_cast<Display *>(h->UserData)->finishLoading();
+  };
+  handler.WriteAllFn = [](ImGuiContext *, ImGuiSettingsHandler *h, ImGuiTextBuffer *out) {
+    static_cast<const Display *>(h->UserData)->writeAll(out, h->TypeName);
   };
   ImGui::AddSettingsHandler(&handler);
 }
@@ -115,6 +146,7 @@ void App::startEmulation() {
   }
   settings_.machine = wanted->key;
   profile_ = wanted;
+  display_.setMachine(*wanted);
 
   emulation_.setVolume(settings_.volume);
   emulation_.setMuted(settings_.muted);
@@ -127,16 +159,35 @@ void App::startEmulation() {
 void App::frame() {
   if (!started_) startEmulation();
 
-  // Drain the queue every frame, shown or not, so the emulation thread never
-  // finds it full.
-  if (const FrameQueue::Frame *frame = emulation_.takeFrame()) {
-    platform_.screen->upload(frame->pixels.data(), frame->width, frame->height);
+  updateScreenSource();
+
+  // The decoder and character set live in the machine's video, which a
+  // rebuild replaces, so they are told again whenever they may have gone.
+  if (display_.takeMachineChange()) applyMachineDisplay();
+  display_.applyToRenderer(*platform_.screen);
+
+  // Ctrl+Escape leaves Full Page, as in the browser.
+  if (fullPage_ && ImGui::IsKeyPressed(ImGuiKey_Escape, false) &&
+      heldModifiers(ImGui::GetIO().ConfigMacOSXBehaviors).control) {
+    fullPage_ = false;
+  }
+
+  screenWindowName_ = nullptr;
+  if (fullPage_) {
+    drawFullPage();
+    if (settings_.showDisplaySettings) display_.drawWindow(&settings_.showDisplaySettings);
+    if (showDemo_) ImGui::ShowDemoWindow(&showDemo_);
+    drawSwitchConfirmation();
+    handleAppShortcuts();
+    routeKeyboard();
+    return;
   }
 
   drawMenuBar();
   if (settings_.showStatusBar) drawStatusBar();
   drawDockSpace();
   if (settings_.showScreen) drawScreenWindow();
+  if (settings_.showDisplaySettings) display_.drawWindow(&settings_.showDisplaySettings);
   if (showDemo_) ImGui::ShowDemoWindow(&showDemo_);
   drawSwitchConfirmation();
 
@@ -167,10 +218,18 @@ void App::drawMenuBar() {
 
   if (ImGui::BeginMenu("View")) {
     ImGui::MenuItem(SCREEN_WINDOW, nullptr, &settings_.showScreen);
+    ImGui::MenuItem("Display Settings", nullptr, &settings_.showDisplaySettings);
     ImGui::MenuItem("Status Bar", nullptr, &settings_.showStatusBar);
     ImGui::Separator();
-    if (ImGui::MenuItem("Sharp Pixels", nullptr, settings_.sharpPixels)) {
-      settings_.sharpPixels = !settings_.sharpPixels;
+    if (ImGui::MenuItem("Full Page", "Ctrl+Esc to leave")) {
+      fullPage_ = true;
+      enterFullPage_ = true;
+    }
+    if (ImGui::MenuItem("Full Screen") && platform_.toggleFullScreen) platform_.toggleFullScreen();
+    ImGui::Separator();
+    if (profile_ && profile_->caps.hasUkCharSet &&
+        ImGui::MenuItem("UK Character Set", nullptr, &settings_.ukCharacterSet)) {
+      applyMachineDisplay();
       ImGui::MarkIniSettingsDirty();
     }
     bool command = commandIsOpenApple();
@@ -235,6 +294,7 @@ void App::drawMachineMenu() {
         ImGui::MarkIniSettingsDirty();
         releaseKeys();
         emulation_.setIIgsFastRam(static_cast<size_t>(size.kb) * 1024);
+        display_.machineRebuilt();
       }
     }
     ImGui::EndMenu();
@@ -277,6 +337,8 @@ void App::switchMachine(MachineId id) {
   if (!emulation_.setMachine(id)) return;
   profile_ = &machineProfile(id);
   settings_.machine = profile_->key;
+  display_.setMachine(*profile_);
+  noSignalStale_ = true;
   ImGui::MarkIniSettingsDirty();
   // The new machine starts as if switched on, as the old one was.
   if (emulation_.powered()) {
@@ -347,19 +409,45 @@ void App::drawStatusBar() {
   ImGui::End();
 }
 
-// The picture at the shape the machine's monitor shows it (the profile's
-// aspect), as large as the window allows, centred on black.
-void App::drawScreenWindow() {
-  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-  const bool visible = ImGui::Begin(
-      SCREEN_WINDOW, &settings_.showScreen,
-      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-  ImGui::PopStyleVar();
-  if (!visible) {
-    ImGui::End();
-    return;
+// The machine's frames, or while it is switched off the no-signal picture,
+// which goes through the same CRT chain as its video does.
+void App::updateScreenSource() {
+  const bool powered = emulation_.powered();
+  if (powered != wasPowered_) {
+    wasPowered_ = powered;
+    noSignalStale_ = true;
   }
 
+  // Drain the queue every frame, shown or not, so the emulation thread never
+  // finds it full. A frame that arrives just after switching off must not
+  // land on top of the no-signal picture.
+  const FrameQueue::Frame *frame = emulation_.takeFrame();
+  if (powered) {
+    if (frame) platform_.screen->upload(frame->pixels.data(), frame->width, frame->height);
+    return;
+  }
+  if (!noSignalStale_ || !profile_) return;
+  noSignalStale_ = false;
+  const auto &display = profile_->display;
+  const std::vector<uint8_t> picture = buildNoSignalFrame(
+      display.pixelWidth, display.pixelHeight, noSignalMachineName(profile_->name));
+  platform_.screen->upload(picture.data(), display.pixelWidth, display.pixelHeight);
+}
+
+// The video settings that live in the machine rather than in the shader.
+void App::applyMachineDisplay() {
+  const bool uk = settings_.ukCharacterSet && profile_ && profile_->caps.hasUkCharSet;
+  emulation_.withMachine([&](host::MachineHost &host) {
+    display_.applyToMachine(host);
+    if (Video *video = host.video()) video->setUKCharacterSet(uk);
+  });
+}
+
+// The picture at the shape the machine's monitor shows it (the profile's
+// aspect), as large as the space allows, on black. The CRT chain renders it
+// at exactly the pixels it will cover, at the density of the display the
+// window is on, and it is drawn one to one.
+void App::drawScreen() {
   const ImVec2 origin = ImGui::GetCursorScreenPos();
   const ImVec2 avail = ImGui::GetContentRegionAvail();
   ImDrawList *draw = ImGui::GetWindowDrawList();
@@ -375,29 +463,80 @@ void App::drawScreenWindow() {
     height = avail.y;
     width = height * aspect;
   }
-  const ImVec2 p0(origin.x + (avail.x - width) * 0.5f,
-                  origin.y + (avail.y - height) * 0.5f);
+
+  // Whole device pixels, and the rectangle in points that covers exactly
+  // those, so nothing is resampled on the way to the glass.
+  const float scale = ImGui::GetWindowViewport()->FramebufferScale.x > 0
+                          ? ImGui::GetWindowViewport()->FramebufferScale.x
+                          : 1.0f;
+  const int pixelWidth = static_cast<int>(width * scale);
+  const int pixelHeight = static_cast<int>(height * scale);
+  width = pixelWidth / scale;
+  height = pixelHeight / scale;
+  const ImVec2 p0(std::floor(origin.x + (avail.x - width) * 0.5f),
+                  std::floor(origin.y + (avail.y - height) * 0.5f));
   const ImVec2 p1(p0.x + width, p0.y + height);
 
-  const ImTextureID texture = platform_.screen->texture();
-  if (emulation_.powered() && texture != ImTextureID_Invalid) {
+  const ImTextureID texture = platform_.screen->render(pixelWidth, pixelHeight, scale);
+  if (texture != ImTextureID_Invalid) {
     const ImGuiPlatformIO &pio = ImGui::GetPlatformIO();
-    const bool sharp = settings_.sharpPixels && pio.DrawCallback_SetSamplerNearest;
-    if (sharp) draw->AddCallback(pio.DrawCallback_SetSamplerNearest, nullptr);
+    if (pio.DrawCallback_SetSamplerNearest) draw->AddCallback(pio.DrawCallback_SetSamplerNearest, nullptr);
     draw->AddImage(ImTextureRef(texture), p0, p1);
-    if (sharp) draw->AddCallback(pio.DrawCallback_SetSamplerLinear, nullptr);
-  } else {
-    const char *text = "No signal";
-    const ImVec2 size = ImGui::CalcTextSize(text);
-    draw->AddText(ImVec2(origin.x + (avail.x - size.x) * 0.5f,
-                         origin.y + (avail.y - size.y) * 0.5f),
-                  IM_COL32(110, 110, 110, 255), text);
+    if (pio.DrawCallback_SetSamplerLinear) draw->AddCallback(pio.DrawCallback_SetSamplerLinear, nullptr);
+  }
+  const std::string error = platform_.screen->error();
+  if (!error.empty()) {
+    draw->AddText(ImVec2(origin.x + 8, origin.y + 8), IM_COL32(224, 58, 62, 255), error.c_str());
   }
 
   // Takes the clicks, so a click on the picture focuses the window rather
   // than starting to drag it.
   ImGui::InvisibleButton("##screen", ImVec2(std::max(avail.x, 1.0f), std::max(avail.y, 1.0f)));
+}
+
+void App::drawScreenWindow() {
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+  const bool visible = ImGui::Begin(
+      SCREEN_WINDOW, &settings_.showScreen,
+      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+  ImGui::PopStyleVar();
+  if (visible) {
+    screenWindowName_ = SCREEN_WINDOW;
+    drawScreen();
+  }
   ImGui::End();
+}
+
+// The picture over the whole of the main window, with no menu bar, status
+// bar or dock space. Windows that have been dragged out stay where they are.
+void App::drawFullPage() {
+  const ImGuiViewport *viewport = ImGui::GetMainViewport();
+  ImGui::SetNextWindowPos(viewport->Pos);
+  ImGui::SetNextWindowSize(viewport->Size);
+  ImGui::SetNextWindowViewport(viewport->ID);
+  if (enterFullPage_) {
+    ImGui::SetNextWindowFocus();
+    enterFullPage_ = false;
+  }
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+  const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                                 ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings |
+                                 ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoBringToFrontOnFocus |
+                                 ImGuiWindowFlags_NoScrollWithMouse;
+  if (ImGui::Begin(FULL_PAGE_WINDOW, nullptr, flags)) {
+    screenWindowName_ = FULL_PAGE_WINDOW;
+    drawScreen();
+    // Right-click for the way out, since the menu bar has gone.
+    if (ImGui::BeginPopupContextWindow("##FullPageMenu")) {
+      if (ImGui::MenuItem("Leave Full Page", "Ctrl+Esc")) fullPage_ = false;
+      ImGui::MenuItem("Display Settings", nullptr, &settings_.showDisplaySettings);
+      ImGui::EndPopup();
+    }
+  }
+  ImGui::End();
+  ImGui::PopStyleVar(3);
 }
 
 // ---------------------------------------------------------------------------
@@ -439,11 +578,11 @@ void App::handleAppShortcuts() {
 // browser keycode, so the core's own translation does the rest exactly as it
 // does in the browser. Key repeat is ImGui's, at the system's rate.
 void App::routeKeyboard() {
-  ImGuiWindow *screen = ImGui::FindWindowByName(SCREEN_WINDOW);
+  ImGuiWindow *screen = screenWindowName_ ? ImGui::FindWindowByName(screenWindowName_) : nullptr;
   const ImGuiContext &g = *ImGui::GetCurrentContext();
   const bool focused = screen && g.NavWindow == screen;
-  const bool keyboard = started_ && emulation_.powered() && settings_.showScreen &&
-                        focused && !ImGui::GetIO().WantTextInput;
+  const bool keyboard = started_ && emulation_.powered() && focused &&
+                        !ImGui::GetIO().WantTextInput;
 
   if (!keyboard) {
     if (screenHadKeyboard_) releaseKeys();
@@ -451,6 +590,9 @@ void App::routeKeyboard() {
     return;
   }
   screenHadKeyboard_ = true;
+  // Claim the keyboard, or ImGui's Cocoa backend hands every key it did not
+  // use back to macOS, which finds no text field to type into and beeps.
+  ImGui::SetNextFrameWantCaptureKeyboard(true);
 
   const bool swap = ImGui::GetIO().ConfigMacOSXBehaviors;
   const HeldModifiers held = heldModifiers(swap);

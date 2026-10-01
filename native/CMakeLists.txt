@@ -33,10 +33,13 @@ set(NATIVE_SOURCES
     src/main.mm
     src/app.cpp
     src/audio_output.mm
+    src/display.cpp
+    src/display_settings.cpp
     src/emulation.cpp
     src/key_mapper.cpp
+    src/no_signal_frame.cpp
     src/platform_paths.mm
-    src/screen_surface_metal.mm
+    src/screen_renderer_metal.mm
 )
 
 add_executable(ApplEmNative MACOSX_BUNDLE ${NATIVE_SOURCES})
@@ -49,6 +52,14 @@ set_target_properties(ApplEmNative PROPERTIES
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
     MACOSX_BUNDLE_ICON_FILE "icon.icns"
 )
+
+# The CRT shader is compiled when the app starts, from the bundle's copy, so
+# building needs no Metal toolchain.
+set(CRT_SHADER ${CMAKE_CURRENT_SOURCE_DIR}/shaders/crt.metal)
+target_sources(ApplEmNative PRIVATE ${CRT_SHADER})
+set_source_files_properties(${CRT_SHADER} PROPERTIES
+    MACOSX_PACKAGE_LOCATION Resources
+    HEADER_FILE_ONLY TRUE)
 
 # The Tauri build's icon is the app's icon.
 set(APP_ICON ${CMAKE_SOURCE_DIR}/src-tauri/icons/icon.icns)
@@ -83,4 +94,32 @@ target_include_directories(test_native_input PRIVATE
 target_compile_options(test_native_input PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(test_native_input PRIVATE a2e_core imgui)
 add_test(NAME test_native_input COMMAND test_native_input
+         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+# Renders test pictures through the CRT chain for scripts/compare-crt.mjs,
+# which puts the same pictures through the browser's renderer and compares.
+add_executable(crt_render
+    tools/crt_render.mm
+    src/display_settings.cpp
+    src/no_signal_frame.cpp
+    src/screen_renderer_metal.mm
+)
+target_include_directories(crt_render PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(crt_render PRIVATE -Wall -Wextra -Wno-unused-parameter
+    $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
+target_link_libraries(crt_render PRIVATE a2e_core imgui)
+
+# The display settings' rules: presets, profiles, storage, the shader scales.
+add_executable(test_native_display
+    tests/test_native_display.cpp
+    src/display_settings.cpp
+    src/no_signal_frame.cpp
+)
+target_include_directories(test_native_display PRIVATE
+    ${CMAKE_SOURCE_DIR}/tests/catch2
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_compile_options(test_native_display PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(test_native_display PRIVATE a2e_core)
+add_test(NAME test_native_display COMMAND test_native_display
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

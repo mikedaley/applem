@@ -10,34 +10,48 @@
 
 #pragma once
 
+#include "crt_params.hpp"
 #include "imgui.h"
 
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace a2e::native {
 
-// A texture the screen is drawn from, refilled with each finished frame.
-class ScreenSurface {
+// The machine's picture, drawn through the CRT chain (crt.metal) into a
+// texture ImGui can show.
+class ScreenRenderer {
 public:
-  virtual ~ScreenSurface() = default;
-  // Replace the picture with an RGBA frame.
+  virtual ~ScreenRenderer() = default;
+
+  // A new frame from the machine, RGBA. Taken at the next render().
   virtual void upload(const uint8_t *rgba, int width, int height) = 0;
-  // The texture as ImGui draws it, or ImTextureID_Invalid before the first
-  // upload.
-  virtual ImTextureID texture() const = 0;
-  virtual int width() const = 0;
-  virtual int height() const = 0;
+  virtual void setParams(const CrtParams &params) = 0;
+  // Draw the picture at exactly this many pixels and return the texture it
+  // is in, or ImTextureID_Invalid before anything has been uploaded.
+  // `pixelRatio` is the display's pixels per point, which the shadow mask's
+  // pitch is measured in. Call at most once a frame.
+  virtual ImTextureID render(int pixelWidth, int pixelHeight, float pixelRatio) = 0;
+  // Forget the phosphor's afterimage, as a tube left off would.
+  virtual void clearPersistence() = 0;
+  // Why the shader could not be built, or empty.
+  virtual std::string error() const = 0;
+  // The last picture render() drew, as RGBA rows from the top. Waits for the
+  // GPU, so it is for screenshots and tests, not for every frame.
+  virtual bool readPixels(std::vector<uint8_t> &rgba, int &width, int &height) = 0;
 };
 
 struct Platform {
-  std::unique_ptr<ScreenSurface> screen;
+  std::unique_ptr<ScreenRenderer> screen;
   // Whether Caps Lock is on. It is a toggle, not a held key, so it comes from
   // the system rather than from ImGui's key state.
   std::function<bool()> capsLockOn;
   std::function<void(const std::string &)> setWindowTitle;
+  // Enter or leave macOS full screen for the main window.
+  std::function<void()> toggleFullScreen;
 };
 
 } // namespace a2e::native
