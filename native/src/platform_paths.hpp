@@ -16,4 +16,10 @@ namespace a2e::native {
 // different shapes, and neither should read the other's.
 std::string appSupportDirectory();
 
+// The UI's typeface: SF Mono, from the copy Terminal ships with (static
+// cuts, on every Mac), else the system's variable SFNSMono. Empty if neither
+// is there, and ImGui keeps its own font. The fonts are read where they are
+// installed, never copied into the app.
+std::string uiFontPath();
+
 } // namespace a2e::native

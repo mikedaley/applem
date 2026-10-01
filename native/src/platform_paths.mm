@@ -26,4 +26,17 @@ std::string appSupportDirectory() {
   }
 }
 
+std::string uiFontPath() {
+  const char *candidates[] = {
+      "/System/Applications/Utilities/Terminal.app/Contents/Resources/Fonts/SF-Mono-Regular.otf",
+      "/Applications/Utilities/Terminal.app/Contents/Resources/Fonts/SF-Mono-Regular.otf",
+      "/Library/Fonts/SF-Mono-Regular.otf",
+      "/System/Library/Fonts/SFNSMono.ttf",
+  };
+  for (const char *path : candidates) {
+    if ([NSFileManager.defaultManager fileExistsAtPath:@(path)]) return path;
+  }
+  return "";
+}
+
 } // namespace a2e::native

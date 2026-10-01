@@ -56,6 +56,16 @@ using a2e::native::App;
   io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
   io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
 
+  // SF Mono at a size that reads like the rest of macOS. ImGui rasterises
+  // it at each viewport's own density, so it stays sharp on a Retina
+  // display and on a second monitor that is not.
+  const std::string font = a2e::native::uiFontPath();
+  if (!font.empty()) {
+    ImFontConfig config;
+    config.OversampleH = 2;
+    io.Fonts->AddFontFromFileTTF(font.c_str(), 13.0f, &config);
+  }
+
   ImGui::StyleColorsDark();
   // A window that has left the main one is a real OS window, so it is drawn
   // square and opaque like one.

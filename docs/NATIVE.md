@@ -126,6 +126,16 @@ browser's) is uploaded as the source and goes through the same chain. View
 > Full Page fills the main window with the picture (Ctrl+Esc, or the
 right-click menu, to leave); View > Full Screen is macOS's.
 
+## Typeface
+
+The UI is set in SF Mono at 13pt (`uiFontPath()` in `platform_paths.mm`),
+read from the copy Terminal ships with, which has the static cuts on every
+Mac, else from the system's variable SFNSMono. Neither is copied into the
+app. ImGui 1.92's dynamic atlas rasterises it at each viewport's density, so
+it is sharp on Retina and on a second monitor that is not, and glyphs beyond
+ASCII (an ellipsis, curly quotes) load as they are needed. With neither file
+present ImGui keeps its own font.
+
 ## Settings
 
 `~/Library/Application Support/ApplEm Native/layout.ini` holds ImGui's layout

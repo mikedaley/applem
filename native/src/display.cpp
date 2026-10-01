@@ -254,11 +254,11 @@ void Display::drawPresetControls() {
     state.profileDirty = false;
     saved_[machineKey_] = true;
     ImGui::MarkIniSettingsDirty();
-    flashStatus("Saved to \"" + name + "\".");
+    flashStatus("Saved to \u201c" + name + "\u201d.");
   }
   ImGui::EndDisabled();
   ImGui::SameLine();
-  if (ImGui::Button("Save As...")) {
+  if (ImGui::Button("Save As\u2026")) {
     std::snprintf(nameBuffer_, sizeof(nameBuffer_), "%s", selected ? selected->name.c_str() : "");
     nameError_.clear();
     pendingReplace_.clear();
@@ -302,7 +302,7 @@ void Display::drawSaveAsPopup() {
         state.profileDirty = false;
         saved_[machineKey_] = true;
         ImGui::MarkIniSettingsDirty();
-        flashStatus("Saved as \"" + result.profile.name + "\".");
+        flashStatus("Saved as \u201c" + result.profile.name + "\u201d.");
         ImGui::CloseCurrentPopup();
       }
     }
@@ -321,7 +321,7 @@ void Display::drawSaveAsPopup() {
       state.profileDirty = false;
       saved_[machineKey_] = true;
       ImGui::MarkIniSettingsDirty();
-      flashStatus("Replaced \"" + result.profile.name + "\".");
+      flashStatus("Replaced \u201c" + result.profile.name + "\u201d.");
       pendingReplace_.clear();
       ImGui::CloseCurrentPopup();
     }
