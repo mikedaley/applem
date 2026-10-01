@@ -118,7 +118,9 @@ only once they have been changed, so from the first change on, that choice
 is what the machine starts with.
 
 **The settings are the browser's** (`display_settings.*`, unit-tested in
-`test_native_display`): the same presets with the same values, the same
+`test_native_display`): the same presets with the same values except
+that every one is flat (the browser's RGB Monitor and monochrome presets
+curve the screen; here curve and bezel are for the user to add), the same
 0-100 scales, presets that never touch calibration or the bezel, Custom on
 editing anything a preset claims, saved profiles that keep everything and
 are marked modified rather than dropped, settings kept per machine with a

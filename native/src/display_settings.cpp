@@ -100,7 +100,9 @@ SettingValues captureValues(const DisplaySettings &settings) {
 // Each names a real thing a //e was plugged into and sets the whole picture
 // in one go. None touches brightness, contrast, saturation, the bezel or the
 // screen border: those are the user's calibration and framing, not
-// properties of the monitor being imitated.
+// properties of the monitor being imitated. Every one is flat, with no
+// curve, the bezel having none to begin with: both are there for the user
+// to add, not imposed by a preset.
 const std::vector<MonitorPreset> &monitorPresets() {
   static const std::vector<MonitorPreset> presets = {
       {"flat", "Pixel Exact", "No CRT simulation: sharp square pixels.",
@@ -121,7 +123,7 @@ const std::vector<MonitorPreset> &monitorPresets() {
        }},
       {"rgb", "RGB Monitor", "Separate colour signals: sharp, no composite artefacts.",
        {
-           {"curvature", 10},    {"scanlines", 22},  {"beamBloom", 45},
+           {"curvature", 0},     {"scanlines", 22},  {"beamBloom", 45},
            {"shadowMask", 22},   {"maskType", 0},    {"phosphorGlow", 8},
            {"vignette", 12},     {"rgbOffset", 0},   {"flicker", 0},
            {"staticNoise", 0},   {"jitter", 0},      {"horizontalSync", 0},
@@ -131,7 +133,7 @@ const std::vector<MonitorPreset> &monitorPresets() {
        }},
       {"green", "Monochrome Green", "P1 phosphor: long persistence, no mask.",
        {
-           {"curvature", 20},    {"scanlines", 32},  {"beamBloom", 70},
+           {"curvature", 0},     {"scanlines", 32},  {"beamBloom", 70},
            {"shadowMask", 0},    {"maskType", 0},    {"phosphorGlow", 28},
            {"vignette", 25},     {"rgbOffset", 0},   {"flicker", 0},
            {"staticNoise", 0},   {"jitter", 0},      {"horizontalSync", 0},
@@ -141,7 +143,7 @@ const std::vector<MonitorPreset> &monitorPresets() {
        }},
       {"amber", "Monochrome Amber", "P3 phosphor: the warmer of the two mono tubes.",
        {
-           {"curvature", 20},    {"scanlines", 32},  {"beamBloom", 70},
+           {"curvature", 0},     {"scanlines", 32},  {"beamBloom", 70},
            {"shadowMask", 0},    {"maskType", 0},    {"phosphorGlow", 25},
            {"vignette", 25},     {"rgbOffset", 0},   {"flicker", 0},
            {"staticNoise", 0},   {"jitter", 0},      {"horizontalSync", 0},

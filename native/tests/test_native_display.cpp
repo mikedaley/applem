@@ -72,6 +72,19 @@ TEST_CASE("Presets set the picture, never the user's calibration", "[display][pr
   REQUIRE(findPreset("composite")->values.at("colorMode") == COLOR_COMPOSITE);
 }
 
+TEST_CASE("Every preset is flat and has no bezel", "[display][presets]") {
+  for (const MonitorPreset &preset : monitorPresets()) {
+    INFO(preset.id);
+    REQUIRE(preset.values.at("curvature") == 0);
+    DisplaySettings settings;
+    applyValues(settings, preset.values);
+    REQUIRE(settings.curvature == 0);
+    REQUIRE(settings.screenInset == 0);
+  }
+  REQUIRE(DisplaySettings{}.curvature == 0);
+  REQUIRE(DisplaySettings{}.screenInset == 0);
+}
+
 TEST_CASE("Editing what a preset owns relabels it Custom", "[display][presets]") {
   std::vector<DisplayProfile> none;
   DisplayState state;
