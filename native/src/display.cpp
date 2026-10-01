@@ -7,6 +7,7 @@
 
 #include "display.hpp"
 #include "ui_controls.hpp"
+#include "ui_theme.hpp"
 
 #include "platform.hpp"
 
@@ -16,6 +17,7 @@
 #include "imgui.h"
 #include "imgui_internal.h" // MarkIniSettingsDirty
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -169,106 +171,304 @@ void Display::flashStatus(const std::string &message) {
   statusUntil_ = ImGui::GetTime() + 1.8;
 }
 
+namespace {
+
+// The window, in points.
+constexpr float WINDOW_WIDTH = 540;
+constexpr float TILE_GAP = 10;
+constexpr int TILES_PER_ROW = 4;
+constexpr float GROUP_ROUNDING = 10;
+constexpr float LABEL_WIDTH = 170;
+
+ImU32 withAlpha(ImU32 colour, float alpha) {
+  const int a = static_cast<int>(((colour >> IM_COL32_A_SHIFT) & 0xFF) * std::clamp(alpha, 0.0f, 1.0f));
+  return (colour & ~IM_COL32_A_MASK) | (static_cast<ImU32>(a) << IM_COL32_A_SHIFT);
+}
+ImU32 rgb(uint32_t c, float alpha = 1.0f) {
+  return IM_COL32((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF, static_cast<int>(255 * alpha));
+}
+ImU32 text(float alpha = 1.0f) { return ImGui::GetColorU32(ImGuiCol_Text, alpha); }
+ImU32 secondary() { return ImGui::GetColorU32(ImGuiCol_TextDisabled); }
+ImU32 accent(float alpha = 1.0f) { return ImGui::GetColorU32(ImGuiCol_CheckMark, alpha); }
+
+int valueOf(const SettingValues &values, const char *key, int fallback) {
+  auto it = values.find(key);
+  return it == values.end() ? fallback : it->second;
+}
+
+void caption(ImDrawList *draw, ImVec2 at, const char *label) {
+  ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.78f);
+  draw->AddText(at, secondary(), label);
+  ImGui::PopFont();
+}
+
+// A small monitor showing a look: the six stripes of Apple's logo in colour
+// (soft where the signal is composite), or lines of glowing text on a
+// monochrome tube, with scanlines where the look has them and the glass
+// over it all.
+void drawMonitor(ImDrawList *draw, ImVec2 at, ImVec2 size, const SettingValues &values) {
+  const ImVec2 end(at.x + size.x, at.y + size.y);
+  draw->AddRectFilled(ImVec2(at.x, at.y + 3), ImVec2(end.x, end.y + 3), IM_COL32(0, 0, 0, 60), 9.0f);
+  draw->AddRectFilled(at, end, IM_COL32(0x2a, 0x2a, 0x2d, 255), 9.0f);
+  draw->AddRect(at, end, IM_COL32(255, 255, 255, 26), 9.0f);
+  const float inset = 7;
+  const ImVec2 screen(at.x + inset, at.y + inset);
+  const ImVec2 screenEnd(end.x - inset, end.y - inset);
+  const float curve = valueOf(values, "curvature", 0) * 0.08f;
+  const float rounding = 3.0f + curve;
+  draw->AddRectFilled(screen, screenEnd, IM_COL32(0x06, 0x06, 0x07, 255), rounding);
+  draw->PushClipRect(ImVec2(screen.x + 1, screen.y + 1), ImVec2(screenEnd.x - 1, screenEnd.y - 1), true);
+
+  const int colorMode = valueOf(values, "colorMode", COLOR_SOLID);
+  const int phosphor = valueOf(values, "monochromeMode", 0);
+  const ImVec2 inner(screenEnd.x - screen.x, screenEnd.y - screen.y);
+  if (colorMode == COLOR_MONOCHROME || phosphor != 0) {
+    static const uint32_t phosphors[] = {0x33ff66, 0x33ff66, 0xffb000, 0xe8e8e8};
+    const ImU32 ink = rgb(phosphors[std::clamp(phosphor, 0, 3)]);
+    // A prompt and a few lines of text, as blocks of glyphs, with a glow.
+    static const int lines[][6] = {{5, 3, 6, 0, 0, 0}, {4, 7, 2, 5, 0, 0}, {6, 4, 0, 0, 0, 0}, {3, 5, 4, 0, 0, 0}};
+    const float row = inner.y / 6.0f;
+    const float glyph = inner.x / 26.0f;
+    for (int l = 0; l < 4; l++) {
+      float x = screen.x + glyph * 1.5f;
+      const float y = screen.y + row * (l + 0.8f);
+      for (int w = 0; w < 6 && lines[l][w]; w++) {
+        const ImVec2 a(x, y);
+        const ImVec2 b(x + lines[l][w] * glyph, y + row * 0.5f);
+        draw->AddRectFilled(ImVec2(a.x - 1.5f, a.y - 1.5f), ImVec2(b.x + 1.5f, b.y + 1.5f), withAlpha(ink, 0.18f), 2.0f);
+        draw->AddRectFilled(a, b, withAlpha(ink, 0.85f), 1.0f);
+        x = b.x + glyph;
+      }
+    }
+    const float y = screen.y + row * 4.8f;
+    draw->AddRectFilled(ImVec2(screen.x + glyph * 1.5f, y), ImVec2(screen.x + glyph * 2.5f, y + row * 0.5f), ink);
+    draw->AddRectFilled(ImVec2(screen.x + glyph * 3.0f, y), ImVec2(screen.x + glyph * 4.0f, y + row * 0.5f), ink);
+  } else {
+    static const uint32_t stripes[] = {0x61bb46, 0xfdb827, 0xf5821f, 0xe03a3e, 0x963d97, 0x009ddc};
+    const float band = inner.y / 6.0f;
+    const bool soft = colorMode == COLOR_COMPOSITE;
+    for (int i = 0; i < 6; i++) {
+      const float y0 = screen.y + band * i;
+      draw->AddRectFilled(ImVec2(screen.x, y0), ImVec2(screenEnd.x, y0 + band + 0.5f), rgb(stripes[i]));
+      // Composite colour bleeds into the next stripe.
+      if (soft && i < 5) {
+        draw->AddRectFilledMultiColor(ImVec2(screen.x, y0 + band * 0.6f), ImVec2(screenEnd.x, y0 + band * 1.4f),
+                                      rgb(stripes[i], 0.0f), rgb(stripes[i], 0.0f), rgb(stripes[i + 1], 0.8f),
+                                      rgb(stripes[i + 1], 0.8f));
+      }
+    }
+    // Pixel Exact and Solid Colour are the picture's own pixels: show the grid.
+    if (colorMode == COLOR_PIXEL_EXACT || colorMode == COLOR_SOLID) {
+      for (float x = screen.x + 6; x < screenEnd.x; x += 6) {
+        draw->AddLine(ImVec2(x, screen.y), ImVec2(x, screenEnd.y), IM_COL32(0, 0, 0, 40));
+      }
+    }
+  }
+  const int scanlines = valueOf(values, "scanlines", 0);
+  if (scanlines > 0) {
+    const ImU32 line = IM_COL32(0, 0, 0, static_cast<int>(40 + scanlines * 2.2f));
+    for (float y = screen.y + 1; y < screenEnd.y; y += 2.5f) draw->AddLine(ImVec2(screen.x, y), ImVec2(screenEnd.x, y), line);
+  }
+  const int vignette = valueOf(values, "vignette", 0);
+  if (vignette > 0) {
+    const ImU32 dark = IM_COL32(0, 0, 0, static_cast<int>(vignette * 3));
+    draw->AddRectFilledMultiColor(screen, ImVec2(screen.x + inner.x * 0.25f, screenEnd.y), dark, IM_COL32(0, 0, 0, 0),
+                                  IM_COL32(0, 0, 0, 0), dark);
+    draw->AddRectFilledMultiColor(ImVec2(screenEnd.x - inner.x * 0.25f, screen.y), screenEnd, IM_COL32(0, 0, 0, 0), dark,
+                                  dark, IM_COL32(0, 0, 0, 0));
+  }
+  draw->PopClipRect();
+  // The glass.
+  draw->AddRectFilledMultiColor(ImVec2(screen.x + 1, screen.y + 1), ImVec2(screenEnd.x - 1, screen.y + inner.y * 0.45f),
+                                IM_COL32(255, 255, 255, 30), IM_COL32(255, 255, 255, 30), IM_COL32(255, 255, 255, 0),
+                                IM_COL32(255, 255, 255, 0));
+  draw->AddRect(screen, screenEnd, IM_COL32(0, 0, 0, 160), rounding, 0, 1.0f);
+}
+
+} // namespace
+
 // ---------------------------------------------------------------------------
 // The window
 // ---------------------------------------------------------------------------
 
+void Display::beginGroup(const char *title, float width) {
+  ImDrawList *draw = ImGui::GetWindowDrawList();
+  const ImVec2 at = ImGui::GetCursorScreenPos();
+  caption(draw, ImVec2(at.x + 4, at.y), title);
+  ImGui::Dummy(ImVec2(width, ImGui::GetFontSize() * 0.78f + 6));
+  groupStart_ = ImGui::GetCursorScreenPos();
+  groupWidth_ = width;
+  groupHasRow_ = false;
+  // The panel goes behind its rows, but its height is known only after
+  // them: draw the rows on top and the panel underneath at the end.
+  draw->ChannelsSplit(2);
+  draw->ChannelsSetCurrent(1);
+}
+
+void Display::rowLabel(const char *label, const char *tooltip) {
+  ImDrawList *draw = ImGui::GetWindowDrawList();
+  const ImVec2 top = ImGui::GetCursorScreenPos();
+  if (groupHasRow_) {
+    draw->AddLine(ImVec2(groupStart_.x + 14, top.y), ImVec2(groupStart_.x + groupWidth_ - 14, top.y), text(0.08f));
+  }
+  groupHasRow_ = true;
+  const float height = ImGui::GetFrameHeight();
+  rowTop_ = top.y;
+  const ImVec2 labelAt(groupStart_.x + 14, top.y + 7 + (height - ImGui::GetTextLineHeight()) * 0.5f);
+  draw->AddText(labelAt, text(), label);
+  if (tooltip && ImGui::IsMouseHoveringRect(labelAt, ImVec2(labelAt.x + LABEL_WIDTH - 20, labelAt.y + height)) &&
+      ImGui::IsWindowHovered()) {
+    ImGui::SetTooltip("%s", tooltip);
+  }
+  ImGui::SetCursorScreenPos(ImVec2(groupStart_.x + LABEL_WIDTH, top.y + 7));
+}
+
+void Display::endRow() {
+  ImGui::SetCursorScreenPos(ImVec2(groupStart_.x, rowTop_ + ImGui::GetFrameHeight() + 14));
+  ImGui::Dummy(ImVec2(groupWidth_, 0));
+}
+
+void Display::endGroup() {
+  ImDrawList *draw = ImGui::GetWindowDrawList();
+  const float bottom = ImGui::GetCursorScreenPos().y - ImGui::GetStyle().ItemSpacing.y;
+  draw->ChannelsSetCurrent(0);
+  const ImVec2 end(groupStart_.x + groupWidth_, bottom);
+  draw->AddRectFilled(groupStart_, end, ui::isDark() ? IM_COL32(255, 255, 255, 10) : IM_COL32(0, 0, 0, 8), GROUP_ROUNDING);
+  draw->AddRect(groupStart_, end, ImGui::GetColorU32(ImGuiCol_Border), GROUP_ROUNDING);
+  draw->ChannelsMerge();
+  ImGui::Dummy(ImVec2(0, 8));
+}
+
 bool Display::sliderRow(const char *label, const char *key, const char *tooltip) {
   const SettingField *field = findSettingField(key);
   int &value = current().settings.*(field->member);
-  ImGui::SetNextItemWidth(-90.0f);
-  const bool edited = ui::SliderInt(label, &value, 0, 100, "%d%%");
-  if (tooltip && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) ImGui::SetTooltip("%s", tooltip);
+  rowLabel(label, tooltip);
+  ImGui::SetNextItemWidth(groupStart_.x + groupWidth_ - 14 - ImGui::GetCursorScreenPos().x);
+  const std::string id = std::string("##") + key;
+  const bool edited = ui::SliderInt(id.c_str(), &value, 0, 100, "%d%%");
   if (edited) changed(key);
+  endRow();
   return edited;
+}
+
+bool Display::drawTile(const char *id, const std::string &name, const SettingValues &values, bool selected,
+                       ImVec2 at, ImVec2 size) {
+  ImDrawList *draw = ImGui::GetWindowDrawList();
+  const ImVec2 end(at.x + size.x, at.y + size.y);
+  ImGui::SetCursorScreenPos(at);
+  ImGui::PushID(id);
+  const bool clicked = ImGui::InvisibleButton("##tile", size);
+  const bool hovered = ImGui::IsItemHovered();
+  ImGui::PopID();
+  const bool dark = ui::isDark();
+  draw->AddRectFilled(at, end, selected ? accent(0.12f) : dark ? IM_COL32(255, 255, 255, hovered ? 18 : 8)
+                                                               : IM_COL32(0, 0, 0, hovered ? 14 : 6),
+                      GROUP_ROUNDING);
+  if (selected) {
+    draw->AddRect(at, end, accent(), GROUP_ROUNDING, 0, 2.0f);
+  } else {
+    draw->AddRect(at, end, ImGui::GetColorU32(ImGuiCol_Border), GROUP_ROUNDING);
+  }
+  const float monitorWidth = size.x - 24;
+  const ImVec2 monitor(at.x + 12, at.y + 12);
+  drawMonitor(draw, monitor, ImVec2(monitorWidth, monitorWidth * 0.7f), values);
+  // The name, and a tick on the one in use.
+  const ImVec2 nameSize = ImGui::CalcTextSize(name.c_str());
+  const float nameY = monitor.y + monitorWidth * 0.7f + 9;
+  draw->PushClipRect(ImVec2(at.x + 6, nameY), ImVec2(end.x - 6, end.y), true);
+  draw->AddText(ImVec2(at.x + (size.x - nameSize.x) * 0.5f, nameY), selected ? accent() : text(), name.c_str());
+  draw->PopClipRect();
+  if (selected) {
+    const ImVec2 badge(end.x - 14, at.y + 14);
+    draw->AddCircleFilled(badge, 9.0f, accent());
+    const ImVec2 tick[3] = {ImVec2(badge.x - 4, badge.y), ImVec2(badge.x - 1, badge.y + 3), ImVec2(badge.x + 4, badge.y - 3)};
+    draw->AddPolyline(tick, 3, IM_COL32_WHITE, ImDrawFlags_None, 1.8f);
+  }
+  return clicked;
+}
+
+void Display::drawGallery(float width) {
+  DisplayState &state = current();
+  const ImVec2 start = ImGui::GetCursorScreenPos();
+  const float tileWidth = (width - TILE_GAP * (TILES_PER_ROW - 1)) / TILES_PER_ROW;
+  const ImVec2 tile(tileWidth, 12 + (tileWidth - 24) * 0.7f + 9 + ImGui::GetTextLineHeight() + 10);
+  int index = 0;
+  auto place = [&]() {
+    const ImVec2 at(start.x + (index % TILES_PER_ROW) * (tileWidth + TILE_GAP),
+                    start.y + (index / TILES_PER_ROW) * (tile.y + TILE_GAP));
+    index++;
+    return at;
+  };
+  auto choose = [&](const std::string &id) {
+    state.applyPreset(id, profiles_);
+    saved_[machineKey_] = true;
+    machineDirty_ = true;
+    ImGui::MarkIniSettingsDirty();
+  };
+  for (const MonitorPreset &preset : monitorPresets()) {
+    if (drawTile(preset.id, preset.label, preset.values, state.preset == preset.id, place(), tile)) choose(preset.id);
+  }
+  // The user's own after the built-ins: "Composite Color" is a claim about
+  // real hardware, a saved profile is not.
+  for (const DisplayProfile &profile : profiles_) {
+    const std::string name = profile.name + (state.preset == profile.id && state.profileDirty ? " •" : "");
+    if (drawTile(profile.id.c_str(), name, profile.values, state.preset == profile.id, place(), tile)) choose(profile.id);
+  }
+  // Custom is where editing a built-in lands, shown only once it has.
+  if (state.preset == CUSTOM_PRESET) {
+    drawTile(CUSTOM_PRESET, "Custom", captureValues(state.settings), true, place(), tile);
+  }
+  const int rows = (index + TILES_PER_ROW - 1) / TILES_PER_ROW;
+  ImGui::SetCursorScreenPos(start);
+  ImGui::Dummy(ImVec2(width, rows * tile.y + (rows - 1) * TILE_GAP));
 }
 
 void Display::drawPresetControls() {
   DisplayState &state = current();
+  const float width = WINDOW_WIDTH;
+  drawGallery(width);
 
-  // The selection's label: a built-in, one of the user's, or Custom.
-  std::string label = "Custom";
-  if (const DisplayProfile *profile = findProfile(profiles_, state.preset)) {
-    label = profile->name + (state.profileDirty ? " (modified)" : "");
-  } else if (const MonitorPreset *preset = findPreset(state.preset)) {
-    label = preset->label;
-  }
-
-  ImGui::SeparatorText("Monitor");
-  ImGui::SetNextItemWidth(-1.0f);
-  if (ui::BeginPopUpButton("##monitor", label.c_str())) {
-    for (const MonitorPreset &preset : monitorPresets()) {
-      if (ImGui::Selectable(preset.label, state.preset == preset.id)) {
-        state.applyPreset(preset.id, profiles_);
-        saved_[machineKey_] = true;
-        machineDirty_ = true;
-        ImGui::MarkIniSettingsDirty();
-      }
-    }
-    // The user's own get their own group: "Composite Color" is a claim
-    // about real hardware, a saved profile is not, and the difference is
-    // worth keeping visible.
-    if (!profiles_.empty()) {
-      ImGui::SeparatorText("My Profiles");
-      for (const DisplayProfile &profile : profiles_) {
-        ImGui::PushID(profile.id.c_str());
-        if (ImGui::Selectable(profile.name.c_str(), state.preset == profile.id)) {
-          state.applyPreset(profile.id, profiles_);
-          saved_[machineKey_] = true;
-          machineDirty_ = true;
-          ImGui::MarkIniSettingsDirty();
-        }
-        ImGui::PopID();
-      }
-      ImGui::Separator();
-    }
-    // Custom keeps the current values: it is where editing lands, not
-    // somewhere that changes anything.
-    if (ImGui::Selectable("Custom", state.preset == CUSTOM_PRESET) &&
-        state.preset != CUSTOM_PRESET) {
-      state.preset = CUSTOM_PRESET;
-      state.profileDirty = false;
-      saved_[machineKey_] = true;
-      ImGui::MarkIniSettingsDirty();
-    }
-    ui::EndPopUpButton();
-  }
-
-  // The description, or a brief confirmation of what was just done.
-  const bool flashing = ImGui::GetTime() < statusUntil_;
-  ImGui::PushTextWrapPos(0.0f);
-  if (flashing) {
+  // What the selection is, or a brief confirmation of what was just done,
+  // then the profile buttons under it at the right.
+  ImGui::Dummy(ImVec2(0, 2));
+  const DisplayProfile *selected = findProfile(profiles_, state.preset);
+  ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + width);
+  if (ImGui::GetTime() < statusUntil_) {
     ImGui::TextColored(ImVec4(0.38f, 0.73f, 0.27f, 1.0f), "%s", status_.c_str());
   } else {
     ImGui::TextDisabled("%s", state.description(profiles_).c_str());
   }
   ImGui::PopTextWrapPos();
+  const ImVec2 at = ImGui::GetCursorScreenPos();
+  const float buttonsWidth = 64 + 6 + 92 + 6 + 72;
 
   // Save writes back to the selected profile, and only means something when
   // there is something to write; Delete only when a profile is selected.
-  const DisplayProfile *selected = findProfile(profiles_, state.preset);
+  ImGui::SetCursorScreenPos(ImVec2(at.x + width - buttonsWidth, at.y));
   ImGui::BeginDisabled(!selected || !state.profileDirty);
-  if (ui::Button("Save") && selected) {
+  if (ui::Button("Save", ImVec2(64, 0)) && selected) {
     const std::string name = selected->name;
     upsertProfile(profiles_, name, captureValues(state.settings));
     saveProfiles();
     state.profileDirty = false;
     saved_[machineKey_] = true;
     ImGui::MarkIniSettingsDirty();
-    flashStatus("Saved to \u201c" + name + "\u201d.");
+    flashStatus("Saved to “" + name + "”.");
   }
   ImGui::EndDisabled();
-  ImGui::SameLine();
-  if (ui::Button("Save As\u2026")) {
+  ImGui::SameLine(0, 6);
+  if (ui::Button("Save As…", ImVec2(92, 0))) {
     std::snprintf(nameBuffer_, sizeof(nameBuffer_), "%s", selected ? selected->name.c_str() : "");
     nameError_.clear();
     pendingReplace_.clear();
     openSaveAs_ = true;
   }
-  ImGui::SameLine();
+  ImGui::SameLine(0, 6);
   ImGui::BeginDisabled(!selected);
-  if (ui::Button("Delete")) openDelete_ = true;
+  if (ui::Button("Delete", ImVec2(72, 0))) openDelete_ = true;
   ImGui::EndDisabled();
+  ImGui::SetCursorScreenPos(ImVec2(at.x, at.y + ImGui::GetFrameHeight() + 12));
+  ImGui::Dummy(ImVec2(width, 0));
 }
 
 // The name is the identity: typing an existing name replaces that profile,
@@ -374,93 +574,125 @@ bool Display::takeMachineChange() {
   return change;
 }
 
-void Display::drawWindow(bool *open) {
-  ImGui::SetNextWindowSize(ImVec2(360, 560), ImGuiCond_FirstUseEver);
-  if (ImGui::Begin("Display Settings", open)) {
-    DisplayState &state = current();
-    ImGui::PushItemWidth(-90.0f);
-
-    drawPresetControls();
-
-    // Calibration, not simulation, and what people reach for most often, so
-    // it stays outside the disclosure.
-    ImGui::SeparatorText("Image");
+// A page of settings, in groups.
+void Display::drawPage(int page) {
+  DisplayState &state = current();
+  const float width = WINDOW_WIDTH;
+  const float control = width - LABEL_WIDTH - 14;
+  switch (page) {
+  case 0:
+    // Calibration, not simulation: what people reach for most often.
+    beginGroup("CALIBRATION", width);
     sliderRow("Brightness", "brightness");
     sliderRow("Contrast", "contrast");
     sliderRow("Saturation", "saturation");
-
-    ImGui::Spacing();
-    if (ui::Disclosure("Advanced")) {
-      ImGui::SeparatorText("CRT Effects");
-      sliderRow("Screen Curvature", "curvature");
-      sliderRow("Screen Border", "overscan");
-      sliderRow("Scanlines", "scanlines");
-      sliderRow("Beam Bloom", "beamBloom",
-                "How much a bright line's beam spot widens over a dark one's. Shows through the scanlines.");
-      sliderRow("Shadow Mask", "shadowMask");
-      sliderRow("Phosphor Glow", "phosphorGlow");
-      sliderRow("Vignette", "vignette");
-      sliderRow("RGB Offset", "rgbOffset");
-      sliderRow("Flicker", "flicker");
-
-      ImGui::SeparatorText("Analog Effects");
-      sliderRow("Static Noise", "staticNoise");
-      sliderRow("Jitter", "jitter");
-      sliderRow("Horizontal Sync", "horizontalSync");
-      sliderRow("Glowing Line", "glowingLine");
-      sliderRow("Ambient Light", "ambientLight");
-      sliderRow("Burn In", "burnIn");
-
-      ImGui::SeparatorText("Bezel");
-      sliderRow("Bezel Width", "screenInset");
+    endGroup();
+    beginGroup("PIXELS", width);
+    rowLabel("Phosphor");
+    ImGui::SetNextItemWidth(control);
+    if (ui::PopUpButton("##phosphor", &state.settings.monochromeMode, MONOCHROME_MODES, IM_ARRAYSIZE(MONOCHROME_MODES))) {
+      changed("monochromeMode");
+    }
+    endRow();
+    rowLabel("Sharp Pixels");
+    {
+      bool sharp = state.settings.sharpPixels != 0;
+      ImGui::SetCursorScreenPos(ImVec2(groupStart_.x + groupWidth_ - 14 - ui::SwitchWidth("##sharp"), ImGui::GetCursorScreenPos().y));
+      if (ui::Switch("##sharp", &sharp)) {
+        state.settings.sharpPixels = sharp ? 1 : 0;
+        changed("sharpPixels");
+      }
+    }
+    endRow();
+    sliderRow("Edge Sharpness", "sharpness",
+              "How hard the seam is between two source dots when the picture is magnified. 0 is plain "
+              "bilinear; 100 keeps each dot flat. Has no effect with Sharp Pixels on.");
+    sliderRow("Color Bleed", "colorBleed", "Colour blending between scanlines, as a tube's phosphors overlap.");
+    endGroup();
+    break;
+  case 1:
+    beginGroup("THE TUBE", width);
+    sliderRow("Screen Curvature", "curvature");
+    sliderRow("Scanlines", "scanlines");
+    sliderRow("Beam Bloom", "beamBloom",
+              "How much a bright line's beam spot widens over a dark one's. Shows through the scanlines.");
+    sliderRow("Phosphor Glow", "phosphorGlow");
+    sliderRow("Vignette", "vignette");
+    sliderRow("Burn In", "burnIn");
+    endGroup();
+    beginGroup("THE MASK", width);
+    sliderRow("Shadow Mask", "shadowMask");
+    rowLabel("Mask Type");
+    ImGui::SetNextItemWidth(control);
+    if (ui::PopUpButton("##masktype", &state.settings.maskType, MASK_TYPES, IM_ARRAYSIZE(MASK_TYPES))) {
+      changed("maskType");
+    }
+    endRow();
+    sliderRow("RGB Offset", "rgbOffset");
+    sliderRow("Flicker", "flicker");
+    endGroup();
+    break;
+  case 2:
+    beginGroup("INTERFERENCE", width);
+    sliderRow("Static Noise", "staticNoise");
+    sliderRow("Jitter", "jitter");
+    sliderRow("Horizontal Sync", "horizontalSync");
+    sliderRow("Glowing Line", "glowingLine");
+    sliderRow("Ambient Light", "ambientLight");
+    endGroup();
+    break;
+  default:
+    beginGroup("AROUND THE PICTURE", width);
+    sliderRow("Screen Border", "overscan");
+    sliderRow("Bezel Width", "screenInset");
+    rowLabel("Bezel Color");
+    {
       float colour[3] = {
           static_cast<float>((state.settings.bezelColor >> 16) & 0xFF) / 255.0f,
           static_cast<float>((state.settings.bezelColor >> 8) & 0xFF) / 255.0f,
           static_cast<float>(state.settings.bezelColor & 0xFF) / 255.0f,
       };
-      if (ImGui::ColorEdit3("Bezel Color", colour, ImGuiColorEditFlags_NoInputs)) {
+      ImGui::SetCursorScreenPos(ImVec2(groupStart_.x + groupWidth_ - 14 - ImGui::GetFrameHeight() * 1.6f,
+                                       ImGui::GetCursorScreenPos().y));
+      ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
+      if (ImGui::ColorEdit3("##bezel", colour, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel)) {
         auto byte = [](float v) { return static_cast<int>(v * 255.0f + 0.5f) & 0xFF; };
         state.settings.bezelColor = (byte(colour[0]) << 16) | (byte(colour[1]) << 8) | byte(colour[2]);
         // No change under a built-in preset, which does not own the bezel,
         // but a saved profile does.
         changed("bezelColor");
       }
-
-      ImGui::SeparatorText("Rendering");
-      if (ui::PopUpButton("Mask Type", &state.settings.maskType, MASK_TYPES, IM_ARRAYSIZE(MASK_TYPES))) {
-        changed("maskType");
-      }
-      if (ui::PopUpButton("Display Mode", &state.settings.monochromeMode, MONOCHROME_MODES,
-                       IM_ARRAYSIZE(MONOCHROME_MODES))) {
-        changed("monochromeMode");
-      }
-      bool sharp = state.settings.sharpPixels != 0;
-      if (ui::Switch("Sharp Pixels", &sharp)) {
-        state.settings.sharpPixels = sharp ? 1 : 0;
-        changed("sharpPixels");
-      }
-      sliderRow("Edge Sharpness", "sharpness",
-                "How hard the seam is between two source dots when the picture is magnified. "
-                "0 is plain bilinear; 100 keeps each dot flat and puts the whole transition in "
-                "one output pixel. Has no effect with Sharp Pixels on, which is already hard.");
-
-      ImGui::SeparatorText("Phosphor");
-      sliderRow("Color Bleed", "colorBleed",
-                "Vertical inter-scanline colour blending (CRT phosphor overlap).");
+      ImGui::PopStyleVar();
     }
+    endRow();
+    endGroup();
+    break;
+  }
+}
 
-    ImGui::Spacing();
-    ImGui::Separator();
+void Display::drawWindow(bool *open) {
+  if (ImGui::Begin("Display Settings", open, ImGuiWindowFlags_AlwaysAutoResize)) {
+    DisplayState &state = current();
+    ImDrawList *draw = ImGui::GetWindowDrawList();
+    caption(draw, ImGui::GetCursorScreenPos(), "MONITOR");
+    ImGui::Dummy(ImVec2(WINDOW_WIDTH, ImGui::GetFontSize() * 0.78f + 4));
+    drawPresetControls();
+
+    // The settings, a page at a time.
+    const float tabs = 360;
+    ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x + (WINDOW_WIDTH - tabs) * 0.5f, ImGui::GetCursorScreenPos().y));
+    ui::SegmentedControl("##page", &page_, {"Picture", "CRT", "Signal", "Frame"}, tabs);
+    ImGui::Dummy(ImVec2(0, 8));
+    drawPage(page_);
+
+    // Back to the machine's own defaults; saved profiles are kept.
     if (ui::Button("Reset to Defaults")) {
-      // The running machine's own defaults; saved profiles are kept.
       state = DisplayState{};
       state.settings = machine_ ? defaultsFor(*machine_) : DisplaySettings{};
       saved_[machineKey_] = true;
       machineDirty_ = true;
       ImGui::MarkIniSettingsDirty();
     }
-
-    ImGui::PopItemWidth();
     drawSaveAsPopup();
     drawDeletePopup();
   }

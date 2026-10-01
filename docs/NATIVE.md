@@ -126,7 +126,13 @@ editing anything a preset claims, saved profiles that keep everything and
 are marked modified rather than dropped, settings kept per machine with a
 IIgs's screen border at zero, and the decoder sent to the core with
 monochrome reached through the phosphor choice. The Display Settings window
-(`display.cpp`) is the browser's window: Monitor, Image, then Advanced.
+(`display.cpp`) has the browser's settings in another shape: the presets,
+the user's profiles and Custom (once it is in use) as tiles, each a small
+drawn monitor showing its look, with the description and Save, Save As and
+Delete under them; then the settings a page at a time (Picture, CRT,
+Signal, Frame), in rounded groups of rows as System Settings draws them.
+A group's panel is drawn after its rows, on a channel underneath, since its
+height is known only then.
 
 Powered off, the no-signal picture (`no_signal_frame.cpp`, a port of the
 browser's) is uploaded as the source and goes through the same chain. View

@@ -9,6 +9,8 @@
 
 #include "display_settings.hpp"
 
+#include "imgui.h"
+
 #include <map>
 #include <string>
 #include <vector>
@@ -73,6 +75,18 @@ private:
 
   bool sliderRow(const char *label, const char *key, const char *tooltip = nullptr);
   void drawPresetControls();
+  // The presets, the user's profiles and Custom as tiles, each a small
+  // monitor showing its look.
+  void drawGallery(float width);
+  bool drawTile(const char *id, const std::string &name, const SettingValues &values, bool selected,
+                ImVec2 at, ImVec2 size);
+  // A group of rows in a rounded panel, System Settings style: begin, then
+  // a label per row and its control, then end.
+  void beginGroup(const char *title, float width);
+  void rowLabel(const char *label, const char *tooltip = nullptr);
+  void endRow();
+  void endGroup();
+  void drawPage(int page);
   void drawSaveAsPopup();
   void drawDeletePopup();
 
@@ -97,6 +111,15 @@ private:
 
   std::string status_;
   double statusUntil_ = 0;
+
+  // Which page of settings shows: Picture, CRT, Signal or Frame.
+  int page_ = 0;
+  // The group being drawn: where it starts, how wide it is, and whether a
+  // row has been drawn in it yet, for the rules between rows.
+  ImVec2 groupStart_{};
+  float groupWidth_ = 0;
+  bool groupHasRow_ = false;
+  float rowTop_ = 0;
 };
 
 } // namespace a2e::native
