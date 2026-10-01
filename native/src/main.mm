@@ -203,6 +203,7 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
   io.IniFilename = _app->iniPath();
 
   ImGui_ImplMetal_Init(_device);
+  a2e::native::ui::roundViewportWindows();
 
   App *app = _app.get();
   _menu = [[NativeMenu alloc] initWithChosen:^(NSString *action) {

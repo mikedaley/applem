@@ -29,4 +29,15 @@ void followSystemAppearance();
 // Whether the current appearance is dark.
 bool isDark();
 
+// The corner radius a macOS window has here, which floating windows match:
+// measured on macOS 27, about 12 points.
+constexpr float WINDOW_RADIUS = 12.0f;
+
+// Round the windows ImGui makes when a window is dragged out of the main
+// one. They are borderless, so the system draws them square; this clips
+// their layer to macOS's continuous corner, draws a hairline edge and keeps
+// the shadow following the shape. Call once, after the Metal backend is
+// initialised.
+void roundViewportWindows();
+
 } // namespace a2e::native::ui

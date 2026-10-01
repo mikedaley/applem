@@ -13,6 +13,11 @@
 
 #include "imgui.h"
 
+#include "imgui_internal.h" // ImGuiViewportP, for the window a viewport holds
+
+#import <QuartzCore/QuartzCore.h>
+
+#include <map>
 #include <string>
 
 namespace a2e::native::ui {
@@ -63,9 +68,10 @@ void apply() {
   ImGuiStyle &style = ImGui::GetStyle();
 
   // Shapes: rounded like AppKit's controls, roomier than ImGui's defaults.
-  // Windows stay square, because a window dragged out of the main one is a
-  // real macOS window and the system draws its corners.
-  style.WindowRounding = 0.0f;
+  // Floating windows match a macOS window's corners. A window that has been
+  // dragged out of the main one is its own macOS window, which ImGui draws
+  // square; roundViewportWindows() rounds that one at the window level.
+  style.WindowRounding = WINDOW_RADIUS;
   style.ChildRounding = 6.0f;
   style.FrameRounding = 5.0f;
   style.PopupRounding = 7.0f;
@@ -194,8 +200,92 @@ void followSystemAppearance() {
   if (key == g_appliedKey) return;
   g_appliedKey = key;
   apply();
+  // The dragged-out windows' edges are the separator colour of the
+  // appearance they were made in; give them this one's.
+  ImGuiPlatformIO &io = ImGui::GetPlatformIO();
+  for (ImGuiViewport *viewport : io.Viewports) {
+    if (viewport == ImGui::GetMainViewport()) continue;
+    void *handle = viewport->PlatformHandleRaw ? viewport->PlatformHandleRaw : viewport->PlatformHandle;
+    NSWindow *window = handle ? (__bridge NSWindow *)handle : nil;
+    CALayer *layer = window.contentView.layer;
+    if (!layer || layer.borderWidth <= 0) continue;
+    [NSApp.effectiveAppearance performAsCurrentDrawingAppearance:^{
+      layer.borderColor = NSColor.separatorColor.CGColor;
+    }];
+  }
 }
 
 bool isDark() { return g_dark; }
+
+namespace {
+
+void (*g_createWindow)(ImGuiViewport *) = nullptr;
+void (*g_renderWindow)(ImGuiViewport *, void *) = nullptr;
+std::map<ImGuiViewport *, int> g_shadowFrames;
+
+NSWindow *windowOf(ImGuiViewport *viewport) {
+  void *handle = viewport->PlatformHandleRaw ? viewport->PlatformHandleRaw : viewport->PlatformHandle;
+  return handle ? (__bridge NSWindow *)handle : nil;
+}
+
+// A popup or tooltip gets the popup radius; anything else a window's.
+float radiusFor(ImGuiViewport *viewport) {
+  ImGuiWindow *window = static_cast<ImGuiViewportP *>(viewport)->Window;
+  if (window && (window->Flags & (ImGuiWindowFlags_Popup | ImGuiWindowFlags_Tooltip))) {
+    return ImGui::GetStyle().PopupRounding;
+  }
+  return WINDOW_RADIUS;
+}
+
+void createWindow(ImGuiViewport *viewport) {
+  g_createWindow(viewport);
+  if (!(viewport->Flags & ImGuiViewportFlags_NoDecoration)) return;
+  NSWindow *window = windowOf(viewport);
+  NSView *view = window.contentView;
+  if (!window || !view.layer) return;
+  // Transparent outside the rounded shape, which the layer clips to.
+  window.opaque = NO;
+  window.backgroundColor = NSColor.clearColor;
+  window.hasShadow = YES;
+  CALayer *layer = view.layer;
+  layer.cornerRadius = radiusFor(viewport);
+  layer.cornerCurve = kCACornerCurveContinuous;
+  layer.masksToBounds = YES;
+  // A hairline edge, as a macOS window has, in the separator colour.
+  layer.borderWidth = 1.0 / std::max<CGFloat>(window.backingScaleFactor, 1.0);
+  [NSApp.effectiveAppearance performAsCurrentDrawingAppearance:^{
+    layer.borderColor = NSColor.separatorColor.CGColor;
+  }];
+  g_shadowFrames[viewport] = 0;
+}
+
+// The shadow follows the window's shape, which it learns only once there is
+// something drawn, and again if the window is resized.
+void renderWindow(ImGuiViewport *viewport, void *arg) {
+  g_renderWindow(viewport, arg);
+  auto it = g_shadowFrames.find(viewport);
+  if (it == g_shadowFrames.end()) return;
+  NSWindow *window = windowOf(viewport);
+  if (!window) return;
+  static std::map<ImGuiViewport *, NSSize> sizes;
+  const NSSize size = window.frame.size;
+  NSSize &last = sizes[viewport];
+  if (it->second < 3 || !NSEqualSizes(last, size)) {
+    [window invalidateShadow];
+    if (it->second < 3) it->second++;
+    last = size;
+  }
+}
+
+} // namespace
+
+void roundViewportWindows() {
+  ImGuiPlatformIO &io = ImGui::GetPlatformIO();
+  if (g_createWindow || !io.Renderer_CreateWindow || !io.Renderer_RenderWindow) return;
+  g_createWindow = io.Renderer_CreateWindow;
+  g_renderWindow = io.Renderer_RenderWindow;
+  io.Renderer_CreateWindow = createWindow;
+  io.Renderer_RenderWindow = renderWindow;
+}
 
 } // namespace a2e::native::ui
