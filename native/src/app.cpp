@@ -122,6 +122,7 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "ShowExpansionSlots=%d", &value) == 1) s.showExpansionSlots = value;
     else if (std::sscanf(line, "ShowSaveStates=%d", &value) == 1) s.showSaveStates = value;
     else if (std::sscanf(line, "Autosave=%d", &value) == 1) s.autosave = value;
+    else if (std::sscanf(line, "Speed=%d", &value) == 1) s.speed = value;
     else if (std::sscanf(line, "NoSlotClock=%d", &value) == 1) app->slots_.noSlotClock = value;
     else if (std::sscanf(line, "ShowStatusBar=%d", &value) == 1) s.showStatusBar = value;
     else if (std::sscanf(line, "CommandIsOpenApple.%63[^=]=%d", text, &value) == 2) {
@@ -148,6 +149,7 @@ void App::registerSettingsHandler() {
     out->appendf("ShowExpansionSlots=%d\n", s.showExpansionSlots ? 1 : 0);
     out->appendf("ShowSaveStates=%d\n", s.showSaveStates ? 1 : 0);
     out->appendf("Autosave=%d\n", app->states_ && app->states_->autosave ? 1 : 0);
+    out->appendf("Speed=%d\n", s.speed);
     out->appendf("NoSlotClock=%d\n", app->slots_.noSlotClock ? 1 : 0);
     out->appendf("ShowStatusBar=%d\n", s.showStatusBar ? 1 : 0);
     for (const auto &[key, on] : s.commandIsOpenApple) {
@@ -229,6 +231,7 @@ void App::startEmulation() {
   hardDrives_->update();
   hardDrives_->restore();
   states_->autosave = settings_.autosave;
+  applySpeed();
   emulation_.setPowered(true);
   started_ = true;
   updateWindowTitle();
@@ -381,6 +384,21 @@ void App::drawMachineMenu() {
     }
   }
 
+  // A IIgs keeps its own speed register, so it is not offered one here.
+  if (profile_ && profile_->family != MachineFamily::AppleIIgs && ImGui::BeginMenu("CPU Speed")) {
+    for (int multiple : {1, 2, 4, 8}) {
+      char label[32];
+      std::snprintf(label, sizeof(label), "%dx  (%.3f MHz)", multiple,
+                    profile_->timing.cpuClockHz * multiple / 1.0e6);
+      if (ImGui::MenuItem(label, nullptr, settings_.speed == multiple)) {
+        settings_.speed = multiple;
+        applySpeed();
+        ImGui::MarkIniSettingsDirty();
+      }
+    }
+    ImGui::EndMenu();
+  }
+
   ImGui::Separator();
   if (ImGui::BeginMenu("IIgs Memory")) {
     for (const MemorySize &size : IIGS_MEMORY_SIZES) {
@@ -444,6 +462,7 @@ bool App::switchMachine(MachineId id) {
   slots_.setMachine(*profile_);
   slots_.apply();
   restoreBatteryRam();
+  applySpeed();
   drives_->machineChanged();
   hardDrives_->machineChanged();
   noSignalStale_ = true;
@@ -498,6 +517,9 @@ void App::drawStatusBar() {
       ImGui::Separator();
       if (emulation_.powered()) {
         ImGui::Text("%.3f MHz", emulation_.measuredMHz());
+        if (settings_.speed > 1 && profile_ && profile_->family != MachineFamily::AppleIIgs) {
+          ImGui::TextColored(ImVec4(0.99f, 0.72f, 0.15f, 1.0f), "%dx", settings_.speed);
+        }
       } else {
         ImGui::TextDisabled("Off");
       }
@@ -613,6 +635,18 @@ void App::saveBatteryRamIfChanged(double now) {
   if (bytes.size() == 256) {
     writeFile(settingsDirectory_ + "/iigs-battery-ram.bin", bytes.data(), bytes.size());
   }
+}
+
+// A host preference, not machine state: a reset keeps it, a rebuilt machine
+// is told again, and a value from an older settings file snaps to the
+// nearest the menu offers.
+void App::applySpeed() {
+  int multiple = 1;
+  for (int option : {1, 2, 4, 8}) {
+    if (std::abs(option - settings_.speed) < std::abs(multiple - settings_.speed)) multiple = option;
+  }
+  settings_.speed = multiple;
+  emulation_.withMachine([&](host::MachineHost &host) { host.setSpeedMultiplier(multiple); });
 }
 
 // The video settings that live in the machine rather than in the shader.

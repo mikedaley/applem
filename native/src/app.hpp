@@ -43,6 +43,7 @@ struct Settings {
   bool showExpansionSlots = false;
   bool showSaveStates = false;
   bool autosave = false;
+  int speed = 1; // 1, 2, 4 or 8 times the machine's clock
   // Per machine, keyed by profile key. Absent means the machine's default:
   // on for a IIgs, whose keyboard is a Mac's, and off for the rest.
   std::map<std::string, bool> commandIsOpenApple;
@@ -107,6 +108,7 @@ private:
   bool commandIsOpenApple() const;
   void updateWindowTitle();
   void applyMachineDisplay();
+  void applySpeed();
   // A IIgs's battery-backed settings, kept as a real battery keeps them.
   void restoreBatteryRam();
   void saveBatteryRamIfChanged(double now);

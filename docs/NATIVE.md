@@ -203,6 +203,15 @@ a load the drive windows take what the drives hold from the core, and each
 floppy's fingerprint is taken afresh, so eject asks about changes made
 after the load.
 
+## CPU speed
+
+Machine > CPU Speed offers 1x, 2x, 4x and 8x of the machine's clock, as the
+browser does, with the same mechanism (the core runs more cycles per audio
+sample, so audio keeps pacing it). It is a preference rather than machine
+state: kept, applied again after a switch, snapped to the nearest offered
+value, and not offered on a IIgs, which has its own speed register. Above
+1x the status bar says so. Measured: 4.105 MHz at 4x.
+
 ## IIgs battery RAM
 
 The 256 bytes are kept in `iigs-battery-ram.bin`, written when the core
@@ -240,7 +249,7 @@ different things.
 2. Scaffolding: window, docking, multi-viewport, menu bar. Done.
 3. A machine running on screen, machine selection, keyboard, audio. Done.
 4. Media and configuration: disk drives, SmartPort and expansion slots
-   IIgs battery RAM and save states (done); game port, CPU speed.
+   IIgs battery RAM, save states and CPU speed (done); game port.
 5. Display fidelity: the CRT shaders in Metal, display settings and profiles. Done.
 6. Debugger: CPU, memory, stack, zero page, soft switches, trace.
 7. The remaining debug views, including the Disk Inspector.
