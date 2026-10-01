@@ -174,11 +174,12 @@ void Display::flashStatus(const std::string &message) {
 namespace {
 
 // The window, in points.
-constexpr float WINDOW_WIDTH = 540;
-constexpr float TILE_GAP = 10;
+constexpr float WINDOW_WIDTH = 440;
+constexpr float TILE_GAP = 8;
 constexpr int TILES_PER_ROW = 4;
-constexpr float GROUP_ROUNDING = 10;
-constexpr float LABEL_WIDTH = 170;
+constexpr float GROUP_ROUNDING = 9;
+constexpr float LABEL_WIDTH = 140;
+constexpr float ROW_PAD = 4; // above and below each row's control
 
 ImU32 withAlpha(ImU32 colour, float alpha) {
   const int a = static_cast<int>(((colour >> IM_COL32_A_SHIFT) & 0xFF) * std::clamp(alpha, 0.0f, 1.0f));
@@ -208,14 +209,14 @@ void caption(ImDrawList *draw, ImVec2 at, const char *label) {
 // over it all.
 void drawMonitor(ImDrawList *draw, ImVec2 at, ImVec2 size, const SettingValues &values) {
   const ImVec2 end(at.x + size.x, at.y + size.y);
-  draw->AddRectFilled(ImVec2(at.x, at.y + 3), ImVec2(end.x, end.y + 3), IM_COL32(0, 0, 0, 60), 9.0f);
-  draw->AddRectFilled(at, end, IM_COL32(0x2a, 0x2a, 0x2d, 255), 9.0f);
-  draw->AddRect(at, end, IM_COL32(255, 255, 255, 26), 9.0f);
-  const float inset = 7;
+  draw->AddRectFilled(ImVec2(at.x, at.y + 2), ImVec2(end.x, end.y + 2), IM_COL32(0, 0, 0, 60), 6.0f);
+  draw->AddRectFilled(at, end, IM_COL32(0x2a, 0x2a, 0x2d, 255), 6.0f);
+  draw->AddRect(at, end, IM_COL32(255, 255, 255, 26), 6.0f);
+  const float inset = std::max(4.0f, size.x * 0.06f);
   const ImVec2 screen(at.x + inset, at.y + inset);
   const ImVec2 screenEnd(end.x - inset, end.y - inset);
   const float curve = valueOf(values, "curvature", 0) * 0.08f;
-  const float rounding = 3.0f + curve;
+  const float rounding = 2.0f + curve * 0.6f;
   draw->AddRectFilled(screen, screenEnd, IM_COL32(0x06, 0x06, 0x07, 255), rounding);
   draw->PushClipRect(ImVec2(screen.x + 1, screen.y + 1), ImVec2(screenEnd.x - 1, screenEnd.y - 1), true);
 
@@ -309,22 +310,22 @@ void Display::rowLabel(const char *label, const char *tooltip) {
   ImDrawList *draw = ImGui::GetWindowDrawList();
   const ImVec2 top = ImGui::GetCursorScreenPos();
   if (groupHasRow_) {
-    draw->AddLine(ImVec2(groupStart_.x + 14, top.y), ImVec2(groupStart_.x + groupWidth_ - 14, top.y), text(0.08f));
+    draw->AddLine(ImVec2(groupStart_.x + 12, top.y), ImVec2(groupStart_.x + groupWidth_ - 12, top.y), text(0.08f));
   }
   groupHasRow_ = true;
   const float height = ImGui::GetFrameHeight();
   rowTop_ = top.y;
-  const ImVec2 labelAt(groupStart_.x + 14, top.y + 7 + (height - ImGui::GetTextLineHeight()) * 0.5f);
+  const ImVec2 labelAt(groupStart_.x + 12, top.y + ROW_PAD + (height - ImGui::GetTextLineHeight()) * 0.5f);
   draw->AddText(labelAt, text(), label);
   if (tooltip && ImGui::IsMouseHoveringRect(labelAt, ImVec2(labelAt.x + LABEL_WIDTH - 20, labelAt.y + height)) &&
       ImGui::IsWindowHovered()) {
     ImGui::SetTooltip("%s", tooltip);
   }
-  ImGui::SetCursorScreenPos(ImVec2(groupStart_.x + LABEL_WIDTH, top.y + 7));
+  ImGui::SetCursorScreenPos(ImVec2(groupStart_.x + LABEL_WIDTH, top.y + ROW_PAD));
 }
 
 void Display::endRow() {
-  ImGui::SetCursorScreenPos(ImVec2(groupStart_.x, rowTop_ + ImGui::GetFrameHeight() + 14));
+  ImGui::SetCursorScreenPos(ImVec2(groupStart_.x, rowTop_ + ImGui::GetFrameHeight() + ROW_PAD * 2));
   ImGui::Dummy(ImVec2(groupWidth_, 0));
 }
 
@@ -336,7 +337,7 @@ void Display::endGroup() {
   draw->AddRectFilled(groupStart_, end, ui::isDark() ? IM_COL32(255, 255, 255, 10) : IM_COL32(0, 0, 0, 8), GROUP_ROUNDING);
   draw->AddRect(groupStart_, end, ImGui::GetColorU32(ImGuiCol_Border), GROUP_ROUNDING);
   draw->ChannelsMerge();
-  ImGui::Dummy(ImVec2(0, 8));
+  ImGui::Dummy(ImVec2(0, 4));
 }
 
 bool Display::sliderRow(const char *label, const char *key, const char *tooltip) {
@@ -369,20 +370,23 @@ bool Display::drawTile(const char *id, const std::string &name, const SettingVal
   } else {
     draw->AddRect(at, end, ImGui::GetColorU32(ImGuiCol_Border), GROUP_ROUNDING);
   }
-  const float monitorWidth = size.x - 24;
-  const ImVec2 monitor(at.x + 12, at.y + 12);
-  drawMonitor(draw, monitor, ImVec2(monitorWidth, monitorWidth * 0.7f), values);
+  const float monitorWidth = size.x - 20;
+  const ImVec2 monitor(at.x + 10, at.y + 8);
+  drawMonitor(draw, monitor, ImVec2(monitorWidth, monitorWidth * 0.68f), values);
   // The name, and a tick on the one in use.
+  ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.8f);
   const ImVec2 nameSize = ImGui::CalcTextSize(name.c_str());
-  const float nameY = monitor.y + monitorWidth * 0.7f + 9;
+  const float nameY = monitor.y + monitorWidth * 0.68f + 5;
   draw->PushClipRect(ImVec2(at.x + 6, nameY), ImVec2(end.x - 6, end.y), true);
-  draw->AddText(ImVec2(at.x + (size.x - nameSize.x) * 0.5f, nameY), selected ? accent() : text(), name.c_str());
+  draw->AddText(ImVec2(std::max(at.x + 6, at.x + (size.x - nameSize.x) * 0.5f), nameY), selected ? accent() : text(),
+                name.c_str());
   draw->PopClipRect();
+  ImGui::PopFont();
   if (selected) {
-    const ImVec2 badge(end.x - 14, at.y + 14);
-    draw->AddCircleFilled(badge, 9.0f, accent());
-    const ImVec2 tick[3] = {ImVec2(badge.x - 4, badge.y), ImVec2(badge.x - 1, badge.y + 3), ImVec2(badge.x + 4, badge.y - 3)};
-    draw->AddPolyline(tick, 3, IM_COL32_WHITE, ImDrawFlags_None, 1.8f);
+    const ImVec2 badge(end.x - 10, at.y + 10);
+    draw->AddCircleFilled(badge, 7.0f, accent());
+    const ImVec2 tick[3] = {ImVec2(badge.x - 3, badge.y), ImVec2(badge.x - 1, badge.y + 2.5f), ImVec2(badge.x + 3, badge.y - 2.5f)};
+    draw->AddPolyline(tick, 3, IM_COL32_WHITE, ImDrawFlags_None, 1.6f);
   }
   return clicked;
 }
@@ -391,7 +395,7 @@ void Display::drawGallery(float width) {
   DisplayState &state = current();
   const ImVec2 start = ImGui::GetCursorScreenPos();
   const float tileWidth = (width - TILE_GAP * (TILES_PER_ROW - 1)) / TILES_PER_ROW;
-  const ImVec2 tile(tileWidth, 12 + (tileWidth - 24) * 0.7f + 9 + ImGui::GetTextLineHeight() + 10);
+  const ImVec2 tile(tileWidth, 8 + (tileWidth - 20) * 0.68f + 5 + ImGui::GetFontSize() * 0.8f + 8);
   int index = 0;
   auto place = [&]() {
     const ImVec2 at(start.x + (index % TILES_PER_ROW) * (tileWidth + TILE_GAP),
@@ -429,18 +433,25 @@ void Display::drawPresetControls() {
   drawGallery(width);
 
   // What the selection is, or a brief confirmation of what was just done,
-  // then the profile buttons under it at the right.
+  // beside the profile buttons when it fits and above them when not.
   ImGui::Dummy(ImVec2(0, 2));
   const DisplayProfile *selected = findProfile(profiles_, state.preset);
-  ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + width);
-  if (ImGui::GetTime() < statusUntil_) {
-    ImGui::TextColored(ImVec4(0.38f, 0.73f, 0.27f, 1.0f), "%s", status_.c_str());
-  } else {
-    ImGui::TextDisabled("%s", state.description(profiles_).c_str());
-  }
-  ImGui::PopTextWrapPos();
-  const ImVec2 at = ImGui::GetCursorScreenPos();
+  const bool flashing = ImGui::GetTime() < statusUntil_;
+  const std::string line = flashing ? status_ : state.description(profiles_);
   const float buttonsWidth = 64 + 6 + 92 + 6 + 72;
+  const ImU32 lineColour = flashing ? IM_COL32(97, 187, 70, 255) : ImGui::GetColorU32(ImGuiCol_TextDisabled);
+  ImVec2 at = ImGui::GetCursorScreenPos();
+  if (ImGui::CalcTextSize(line.c_str()).x + buttonsWidth + 16 <= width) {
+    ImGui::GetWindowDrawList()->AddText(
+        ImVec2(at.x, at.y + (ImGui::GetFrameHeight() - ImGui::GetTextLineHeight()) * 0.5f), lineColour, line.c_str());
+  } else {
+    ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + width);
+    ImGui::PushStyleColor(ImGuiCol_Text, lineColour);
+    ImGui::TextUnformatted(line.c_str());
+    ImGui::PopStyleColor();
+    ImGui::PopTextWrapPos();
+    at = ImGui::GetCursorScreenPos();
+  }
 
   // Save writes back to the selected profile, and only means something when
   // there is something to write; Delete only when a profile is selected.
@@ -467,7 +478,7 @@ void Display::drawPresetControls() {
   ImGui::BeginDisabled(!selected);
   if (ui::Button("Delete", ImVec2(72, 0))) openDelete_ = true;
   ImGui::EndDisabled();
-  ImGui::SetCursorScreenPos(ImVec2(at.x, at.y + ImGui::GetFrameHeight() + 12));
+  ImGui::SetCursorScreenPos(ImVec2(at.x, at.y + ImGui::GetFrameHeight() + 8));
   ImGui::Dummy(ImVec2(width, 0));
 }
 
@@ -679,10 +690,10 @@ void Display::drawWindow(bool *open) {
     drawPresetControls();
 
     // The settings, a page at a time.
-    const float tabs = 360;
+    const float tabs = 320;
     ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x + (WINDOW_WIDTH - tabs) * 0.5f, ImGui::GetCursorScreenPos().y));
     ui::SegmentedControl("##page", &page_, {"Picture", "CRT", "Signal", "Frame"}, tabs);
-    ImGui::Dummy(ImVec2(0, 8));
+    ImGui::Dummy(ImVec2(0, 4));
     drawPage(page_);
 
     // Back to the machine's own defaults; saved profiles are kept.
