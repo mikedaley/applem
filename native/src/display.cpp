@@ -682,6 +682,7 @@ void Display::drawPage(int page) {
 }
 
 void Display::drawWindow(bool *open) {
+  ui::BeforeWindow("Display Settings");
   if (ImGui::Begin("Display Settings", open, ImGuiWindowFlags_AlwaysAutoResize)) {
     DisplayState &state = current();
     ImDrawList *draw = ImGui::GetWindowDrawList();

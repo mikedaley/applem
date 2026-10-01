@@ -526,6 +526,8 @@ void SaveStates::draw(bool *open) {
     wasOpen_ = true;
     if (stale_) refresh();
 
+    ui::BeforeWindow("Save States");
+
     if (ImGui::Begin("Save States", open, ImGuiWindowFlags_AlwaysAutoResize)) {
       const float width = CARD_WIDTH * 3 + COLUMN_GAP * 2;
       drawAutosave(width);

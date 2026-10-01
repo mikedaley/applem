@@ -382,6 +382,12 @@ The app is meant to feel like a Mac app rather than an ImGui tool:
   ImGui control in a window stands out at once.
 - **SF Pro** for the interface and **SF Mono** for figures.
 - A dock area holding one window hides its tab, so the screen has none.
+- **Windows stay windows unless View > Window Docking is on** (off by
+  default, remembered as `WindowDocking`). Docking itself stays on, because
+  the screen is docked to fill the main window; instead each window calls
+  `ui::BeforeWindow` before its Begin, which gives it a docking class of its
+  own that nothing else shares, so it docks into nothing, and takes it out
+  of any dock a saved layout had it in.
 - The status bar is indicators: the drives' lights, which key is Open Apple,
   cursor keys, sound only when muted or missing, and the clock on the right.
 - **The window keeps the picture's shape.** While the picture fills the main

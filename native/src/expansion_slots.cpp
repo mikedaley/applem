@@ -369,6 +369,8 @@ void ExpansionSlots::draw(bool *open) {
   if (!wasOpen_ && !dirty_) refreshFromMachine();
   wasOpen_ = true;
 
+  ui::BeforeWindow("Expansion Slots");
+
   if (!ImGui::Begin("Expansion Slots", open, ImGuiWindowFlags_AlwaysAutoResize)) {
     ImGui::End();
     return;

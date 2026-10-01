@@ -463,6 +463,7 @@ void Joystick::draw(bool *open) {
     dragging_ = false;
     return;
   }
+  ui::BeforeWindow("Joystick");
   if (ImGui::Begin("Joystick", open, ImGuiWindowFlags_AlwaysAutoResize)) {
     ImDrawList *draw = ImGui::GetWindowDrawList();
     const ImVec2 top = ImGui::GetCursorScreenPos();

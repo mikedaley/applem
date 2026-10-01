@@ -60,6 +60,13 @@ bool Disclosure(const char *label, bool *open);
 // How wide Switch draws with this label, for placing one at a right edge.
 float SwitchWidth(const char *label);
 
+// Whether the app's windows may dock into one another and into the main
+// window. When not, call BeforeWindow before each window's Begin: it gives
+// the window a docking class of its own, which nothing else shares, so it
+// stays a window, and takes it out of any dock it is already in.
+void SetWindowDocking(bool allowed);
+void BeforeWindow(const char *name);
+
 bool BeginPopUpButton(const char *label, const char *preview, float width = 0.0f);
 void EndPopUpButton();
 

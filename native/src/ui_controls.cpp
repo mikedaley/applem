@@ -472,4 +472,21 @@ float SwitchWidth(const char *label) {
   return (text > 0 ? text + ImGui::GetStyle().ItemInnerSpacing.x * 2 : 0) + trackWidth;
 }
 
+namespace {
+bool g_windowDocking = false;
+} // namespace
+
+void SetWindowDocking(bool allowed) { g_windowDocking = allowed; }
+
+void BeforeWindow(const char *name) {
+  if (g_windowDocking) return;
+  ImGuiWindowClass own;
+  own.ClassId = ImHashStr(name);
+  own.DockingAllowUnclassed = false;
+  ImGui::SetNextWindowClass(&own);
+  if (ImGuiWindow *window = ImGui::FindWindowByName(name); window && window->DockId != 0) {
+    ImGui::SetNextWindowDockID(0, ImGuiCond_Always);
+  }
+}
+
 } // namespace a2e::native::ui

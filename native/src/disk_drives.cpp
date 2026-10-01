@@ -1705,6 +1705,7 @@ void DiskDrives::drawErrorPopup() {
 void DiskDrives::draw(bool *open) {
   if (open && *open) {
     for (Drive &d : drives_) paintPlatters(d);
+    ui::BeforeWindow("Disk Drives");
     if (ImGui::Begin("Disk Drives", open, ImGuiWindowFlags_AlwaysAutoResize)) {
       const ImVec2 top = ImGui::GetCursorScreenPos();
       ui::Switch("Inspector", &inspectorShown);

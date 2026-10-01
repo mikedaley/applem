@@ -126,6 +126,7 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "Autosave=%d", &value) == 1) s.autosave = value;
     else if (std::sscanf(line, "Speed=%d", &value) == 1) s.speed = value;
     else if (std::sscanf(line, "Appearance=%d", &value) == 1) s.appearance = std::clamp(value, 0, 2);
+    else if (std::sscanf(line, "WindowDocking=%d", &value) == 1) s.windowDocking = value;
     else if (std::sscanf(line, "ShowJoystick=%d", &value) == 1) s.showJoystick = value;
     else if (std::sscanf(line, "GamePort=%d", &value) == 1) s.gamePort = value == 1 ? 1 : 0;
     else if (std::sscanf(line, "CursorKeys=%d", &value) == 1) s.cursorKeys = value;
@@ -159,6 +160,7 @@ void App::registerSettingsHandler() {
     out->appendf("Autosave=%d\n", app->states_ && app->states_->autosave ? 1 : 0);
     out->appendf("Speed=%d\n", s.speed);
     out->appendf("Appearance=%d\n", s.appearance);
+    out->appendf("WindowDocking=%d\n", s.windowDocking ? 1 : 0);
     out->appendf("ShowJoystick=%d\n", s.showJoystick ? 1 : 0);
     out->appendf("GamePort=%d\n", s.gamePort);
     out->appendf("CursorKeys=%d\n", s.cursorKeys ? 1 : 0);
@@ -279,6 +281,7 @@ void App::frame() {
     fullPage_ = false;
   }
 
+  ui::SetWindowDocking(settings_.windowDocking);
   screenWindowName_ = nullptr;
   screenFillsMain_ = liveResize_ && screenFillsMain_;
   if (fullPage_) {
@@ -506,6 +509,12 @@ MenuItem App::viewMenu() {
                                }, "", 0, settings_.appearance == choice));
   }
   items.push_back(submenu("Appearance", appearances));
+  // Off, every window stays a window: none docks into another or into the
+  // main window, and one already docked comes back out.
+  items.push_back(item(a, "view.docking", "Window Docking", [this] {
+                         settings_.windowDocking = !settings_.windowDocking;
+                         ImGui::MarkIniSettingsDirty();
+                       }, "", 0, settings_.windowDocking));
   items.push_back(MenuItem::separatorItem());
   items.push_back(item(a, "view.fullpage", fullPage_ ? "Leave Full Page" : "Full Page", [this] {
                          fullPage_ = !fullPage_;
