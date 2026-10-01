@@ -101,6 +101,7 @@ void Emulation::run() {
 // One video frame of samples: the machine runs for exactly that long, and if
 // it finished a frame in doing so the picture is published.
 void Emulation::refill(float *scratch, bool toDevice) {
+  while (waiting_.load(std::memory_order_relaxed) > 0) std::this_thread::yield();
   std::lock_guard<std::mutex> lock(mutex_);
   host_.generateStereoAudioSamples(scratch, SAMPLES_PER_FRAME);
   if (toDevice) ring_.write(scratch, SAMPLES_PER_FRAME);

@@ -36,8 +36,13 @@ namespace a2e::native {
 // rather than racing to catch up.
 //
 // Everything else that touches the machine goes through withMachine(), which
-// holds the same lock the thread holds for each refill. A refill is about a
-// millisecond, so the UI waits at most that long for a debug view or a key.
+// holds the same lock the thread holds for each refill, and announces itself
+// first so the thread lets it in before the next one. A refill is one frame
+// of the machine, so the UI waits at most that long for a debug view or a
+// key. Without the announcement a machine that cannot keep up (8x on an M1)
+// refills back to back, and since a mutex is not fair the thread took it
+// straight back every time: the UI waited up to eleven seconds for it, and
+// the screen sat on whatever picture it last had.
 class Emulation {
 public:
   static constexpr int SAMPLE_RATE = 48000;
@@ -54,7 +59,9 @@ public:
   void stop();
 
   template <typename F> decltype(auto) withMachine(F &&f) {
+    waiting_.fetch_add(1, std::memory_order_relaxed);
     std::lock_guard<std::mutex> lock(mutex_);
+    waiting_.fetch_sub(1, std::memory_order_relaxed);
     return f(host_);
   }
 
@@ -95,6 +102,8 @@ private:
 
   host::MachineHost host_;
   std::mutex mutex_;
+  // Callers of withMachine() waiting for the lock, which a refill yields to.
+  std::atomic<int> waiting_{0};
   std::thread thread_;
   std::atomic<bool> quit_{false};
   std::atomic<bool> powered_{false};
