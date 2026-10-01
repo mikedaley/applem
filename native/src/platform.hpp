@@ -55,6 +55,11 @@ struct Platform {
   std::function<void(int)> setAppearance;
   // Enter or leave macOS full screen for the main window.
   std::function<void()> toggleFullScreen;
+  // Resize the main window so its content is this size in points, kept on
+  // its screen. Nothing happens in full screen, where the system owns it.
+  std::function<void(float width, float height)> setMainContentSize;
+  // The largest content the main window can have on the screen it is on.
+  std::function<ImVec2()> mainContentLimit;
 
   // The open and save panels. Both return at once; `done` runs later on the
   // main thread, between frames, with the chosen path or an empty string if

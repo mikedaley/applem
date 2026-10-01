@@ -568,7 +568,10 @@ void DiskDrives::drawDrive(int index) {
   if (detailsShown) {
     ImGui::Spacing();
     ImGui::PushFont(ui::monoFont(), 0.0f);
-    if (ImGui::BeginTable("details", 4, ImGuiTableFlags_SizingFixedFit)) {
+    // As wide as the drive above it. A table asks for all the width there is,
+    // and in a window that sizes itself to what it holds that grows the
+    // window a little every frame.
+    if (ImGui::BeginTable("details", 4, ImGuiTableFlags_SizingStretchProp, ImVec2(CANVAS_W, 0))) {
       auto row = [](const char *a, const std::string &av, const ImVec4 *ac, const char *b,
                     const std::string &bv, const ImVec4 *bc) {
         ImGui::TableNextRow();

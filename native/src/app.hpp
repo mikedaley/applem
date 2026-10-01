@@ -102,6 +102,17 @@ public:
   // or an ImGui text field is being typed into.
   bool commandKeysToWindow() const;
 
+  // The picture keeps the machine's shape when the main window is resized.
+  // Given the content size the user is dragging to and the one it has now,
+  // the size that keeps the picture's area at that shape; false when the
+  // picture is not filling the main window, which is then free to take any
+  // size. The edge that moved most leads.
+  bool mainContentSizeFor(float proposedWidth, float proposedHeight, float currentWidth,
+                          float currentHeight, float &width, float &height) const;
+  // The largest content that keeps that shape within `maxWidth` by
+  // `maxHeight`, for the zoom button.
+  bool mainContentSizeWithin(float maxWidth, float maxHeight, float &width, float &height) const;
+
 private:
   void registerSettingsHandler();
   void registerDisplayHandler();
@@ -118,6 +129,9 @@ private:
   // The picture, fitted to the space left in the current window at the
   // machine's aspect, through the CRT chain at the display's own density.
   void drawScreen();
+  // Resizes the main window to the picture's shape when the shape, or what
+  // shares the window with the picture, has changed.
+  void fitMainWindow();
   void updateScreenSource();
   void drawStatusBar();
   void drawDiskDrives();
@@ -159,6 +173,19 @@ private:
   bool enterFullPage_ = false;
   // Which window shows the picture this frame, so the keyboard follows it.
   const char *screenWindowName_ = nullptr;
+  // Where the picture was last drawn: the machine's shape, whether it filled
+  // the main window (docked there, or Full Page), and what of that window it
+  // did not cover, which a resize carries along unchanged.
+  float screenAspect_ = 0;
+  bool screenFillsMain_ = false;
+  ImVec2 screenExtra_{0, 0};
+  // Whether the Screen window was docked, and its size less its picture
+  // (the title bar and border), for its own size constraint when floating.
+  bool screenDocked_ = true;
+  ImVec2 screenChrome_{0, 0};
+  // What the main window was last fitted to, so it is fitted once a change.
+  float fittedAspect_ = 0;
+  ImVec2 fittedExtra_{-1, -1};
   // The powered-off picture needs drawing again: switched off, or another
   // machine chosen while off.
   bool noSignalStale_ = true;

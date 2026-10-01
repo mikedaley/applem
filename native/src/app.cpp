@@ -283,6 +283,7 @@ void App::frame() {
   }
 
   screenWindowName_ = nullptr;
+  screenFillsMain_ = false;
   if (fullPage_) {
     drawFullPage();
     if (settings_.showDisplaySettings) display_.drawWindow(&settings_.showDisplaySettings);
@@ -902,12 +903,109 @@ void App::drawScreen() {
     draw->AddText(ImVec2(origin.x + 8, origin.y + 8), IM_COL32(224, 58, 62, 255), error.c_str());
   }
 
+  screenAspect_ = aspect;
+  const ImGuiViewport *mainViewport = ImGui::GetMainViewport();
+  screenDocked_ = ImGui::IsWindowDocked();
+  screenChrome_ = ImVec2(ImGui::GetWindowWidth() - avail.x, ImGui::GetWindowHeight() - avail.y);
+  if (ImGui::GetWindowViewport() == mainViewport && (screenDocked_ || fullPage_)) {
+    screenFillsMain_ = true;
+    screenExtra_ = ImVec2(mainViewport->Size.x - avail.x, mainViewport->Size.y - avail.y);
+    fitMainWindow();
+  }
+
   // Takes the clicks, so a click on the picture focuses the window rather
   // than starting to drag it.
   ImGui::InvisibleButton("##screen", ImVec2(std::max(avail.x, 1.0f), std::max(avail.y, 1.0f)));
 }
 
+namespace {
+
+// The smallest picture a resize may leave, in points: a //e at one to one.
+constexpr float MIN_PICTURE_WIDTH = 280;
+
+// The Screen window's size, floating, with its picture at the machine's
+// shape and its title bar and border on top. The edge that moved most leads.
+struct ScreenShape {
+  float aspect;
+  ImVec2 chrome;
+};
+
+void keepScreenShape(ImGuiSizeCallbackData *data) {
+  const auto *shape = static_cast<const ScreenShape *>(data->UserData);
+  const ImVec2 current = data->CurrentSize;
+  const ImVec2 desired = data->DesiredSize;
+  if (std::fabs(desired.x - current.x) >= std::fabs(desired.y - current.y)) {
+    const float picture = std::max(desired.x - shape->chrome.x, MIN_PICTURE_WIDTH);
+    data->DesiredSize = ImVec2(picture + shape->chrome.x, picture / shape->aspect + shape->chrome.y);
+  } else {
+    const float picture = std::max((desired.y - shape->chrome.y) * shape->aspect, MIN_PICTURE_WIDTH);
+    data->DesiredSize = ImVec2(picture + shape->chrome.x, picture / shape->aspect + shape->chrome.y);
+  }
+}
+
+} // namespace
+
+bool App::mainContentSizeFor(float proposedWidth, float proposedHeight, float currentWidth,
+                             float currentHeight, float &width, float &height) const {
+  if (!screenFillsMain_ || screenAspect_ <= 0) return false;
+  const ImVec2 extra = screenExtra_;
+  float picture;
+  if (std::fabs(proposedWidth - currentWidth) >= std::fabs(proposedHeight - currentHeight)) {
+    picture = proposedWidth - extra.x;
+  } else {
+    picture = (proposedHeight - extra.y) * screenAspect_;
+  }
+  picture = std::max(picture, MIN_PICTURE_WIDTH);
+  width = std::round(picture + extra.x);
+  height = std::round(picture / screenAspect_ + extra.y);
+  return true;
+}
+
+bool App::mainContentSizeWithin(float maxWidth, float maxHeight, float &width, float &height) const {
+  if (!screenFillsMain_ || screenAspect_ <= 0) return false;
+  const ImVec2 extra = screenExtra_;
+  float picture = std::min(maxWidth - extra.x, (maxHeight - extra.y) * screenAspect_);
+  picture = std::max(picture, MIN_PICTURE_WIDTH);
+  width = std::floor(picture + extra.x);
+  height = std::floor(picture / screenAspect_ + extra.y);
+  return true;
+}
+
+void App::fitMainWindow() {
+  if (!platform_.setMainContentSize) return;
+  // The dock space settles over the first frames, and a splitter or a
+  // window being dragged changes what is left for the picture as it goes:
+  // fit when it has settled, not during.
+  if (ImGui::GetFrameCount() < 4 || ImGui::IsMouseDown(ImGuiMouseButton_Left)) return;
+  if (std::fabs(screenAspect_ - fittedAspect_) < 1e-4f && std::fabs(screenExtra_.x - fittedExtra_.x) < 0.5f &&
+      std::fabs(screenExtra_.y - fittedExtra_.y) < 0.5f) {
+    return;
+  }
+  fittedAspect_ = screenAspect_;
+  fittedExtra_ = screenExtra_;
+
+  // Keep the width and fix the height, unless that will not fit the screen.
+  const ImVec2 size = ImGui::GetMainViewport()->Size;
+  float width = 0;
+  float height = 0;
+  mainContentSizeFor(size.x, size.y, size.x, size.y, width, height);
+  if (platform_.mainContentLimit) {
+    const ImVec2 limit = platform_.mainContentLimit();
+    if (height > limit.y || width > limit.x) mainContentSizeWithin(limit.x, limit.y, width, height);
+  }
+  if (std::fabs(width - size.x) >= 1 || std::fabs(height - size.y) >= 1) {
+    platform_.setMainContentSize(width, height);
+  }
+}
+
 void App::drawScreenWindow() {
+  // Floating, the window keeps the picture's shape itself; docked, the main
+  // window does it (see mainContentSizeFor).
+  static ScreenShape shape;
+  if (!screenDocked_ && screenAspect_ > 0) {
+    shape = ScreenShape{screenAspect_, screenChrome_};
+    ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, FLT_MAX), keepScreenShape, &shape);
+  }
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
   const bool visible = ImGui::Begin(
       SCREEN_WINDOW, &settings_.showScreen,

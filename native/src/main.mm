@@ -81,6 +81,8 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
 - (void)filesDropped:(const std::vector<std::string> &)paths;
 - (BOOL)commandKeysToWindow;
 - (void)attachToolbarTo:(NSWindow *)window;
+- (NSSize)contentSizeFor:(NSSize)proposed current:(NSSize)current;
+- (NSSize)contentSizeWithin:(NSSize)limit;
 @end
 
 @implementation AppViewController {
@@ -128,6 +130,25 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
     weakSelf.view.window.title = [NSString stringWithUTF8String:title.c_str()];
   };
   platform.toggleFullScreen = [weakSelf] { [weakSelf.view.window toggleFullScreen:nil]; };
+  platform.setMainContentSize = [weakSelf](float width, float height) {
+    NSWindow *window = weakSelf.view.window;
+    if (!window || (window.styleMask & NSWindowStyleMaskFullScreen)) return;
+    // Grown from the top left, as a window keeps its title bar in place,
+    // then kept on its screen.
+    const NSRect content = [window contentRectForFrameRect:window.frame];
+    NSRect frame = [window frameRectForContentRect:NSMakeRect(content.origin.x, NSMaxY(content) - height,
+                                                              width, height)];
+    const NSRect visible = (window.screen ?: NSScreen.mainScreen).visibleFrame;
+    if (NSMinY(frame) < NSMinY(visible)) frame.origin.y = NSMinY(visible);
+    if (NSMaxX(frame) > NSMaxX(visible)) frame.origin.x = std::max(NSMinX(visible), NSMaxX(visible) - frame.size.width);
+    [window setFrame:frame display:YES animate:NO];
+  };
+  platform.mainContentLimit = [weakSelf]() -> ImVec2 {
+    NSWindow *window = weakSelf.view.window;
+    const NSRect visible = (window.screen ?: NSScreen.mainScreen).visibleFrame;
+    const NSRect content = window ? [window contentRectForFrameRect:visible] : visible;
+    return ImVec2(content.size.width, content.size.height);
+  };
   platform.setAppearance = [](int choice) {
     NSApp.appearance = choice == 1   ? [NSAppearance appearanceNamed:NSAppearanceNameAqua]
                        : choice == 2 ? [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua]
@@ -294,6 +315,25 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
   return _app && _app->commandKeysToWindow();
 }
 
+// The content size a resize should land on to keep the picture's shape, or
+// the proposal when the picture is not what fills the window.
+- (NSSize)contentSizeFor:(NSSize)proposed current:(NSSize)current {
+  float width = 0;
+  float height = 0;
+  if (!_app || !_app->mainContentSizeFor(proposed.width, proposed.height, current.width, current.height,
+                                         width, height)) {
+    return proposed;
+  }
+  return NSMakeSize(width, height);
+}
+
+- (NSSize)contentSizeWithin:(NSSize)limit {
+  float width = 0;
+  float height = 0;
+  if (!_app || !_app->mainContentSizeWithin(limit.width, limit.height, width, height)) return limit;
+  return NSMakeSize(width, height);
+}
+
 // Another app took the keyboard: key-ups for anything held will never come.
 - (void)releaseKeys {
   if (_app) _app->releaseKeys();
@@ -314,7 +354,7 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
 
 @end
 
-@interface AppDelegate : NSObject <NSApplicationDelegate>
+@interface AppDelegate : NSObject <NSApplicationDelegate, NSWindowDelegate>
 @property(nonatomic, strong) NSWindow *window;
 @property(nonatomic, strong) AppViewController *controller;
 @end
@@ -336,6 +376,7 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
                   backing:NSBackingStoreBuffered
                     defer:NO];
   self.window.contentViewController = self.controller;
+  self.window.delegate = self;
   self.window.title = @"ApplEm";
   [self.window center];
   [self.window setFrameAutosaveName:@"ApplEmMainWindow"];
@@ -358,6 +399,27 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
     [responder keyDown:event];
     return nil;
   }];
+}
+
+// A resize keeps the picture at the machine's shape. Full screen is the
+// system's to size, and the picture is letterboxed there instead.
+- (NSSize)windowWillResize:(NSWindow *)window toSize:(NSSize)frameSize {
+  if (window.styleMask & NSWindowStyleMaskFullScreen) return frameSize;
+  const NSRect frame = window.frame;
+  const NSSize proposed = [window contentRectForFrameRect:NSMakeRect(0, 0, frameSize.width, frameSize.height)].size;
+  const NSSize current = [window contentRectForFrameRect:frame].size;
+  const NSSize content = [self.controller contentSizeFor:proposed current:current];
+  return [window frameRectForContentRect:NSMakeRect(0, 0, content.width, content.height)].size;
+}
+
+// The zoom button: as large as the screen allows at the picture's shape.
+- (NSRect)windowWillUseStandardFrame:(NSWindow *)window defaultFrame:(NSRect)newFrame {
+  const NSSize limit = [window contentRectForFrameRect:newFrame].size;
+  const NSSize content = [self.controller contentSizeWithin:limit];
+  NSRect frame = [window frameRectForContentRect:NSMakeRect(0, 0, content.width, content.height)];
+  frame.origin.x = NSMidX(newFrame) - frame.size.width / 2;
+  frame.origin.y = NSMaxY(newFrame) - frame.size.height;
+  return frame;
 }
 
 - (void)applicationDidResignActive:(NSNotification *)notification {

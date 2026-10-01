@@ -285,6 +285,15 @@ The app is meant to feel like a Mac app rather than an ImGui tool:
 - A dock area holding one window hides its tab, so the screen has none.
 - The status bar is indicators: the drives' lights, which key is Open Apple,
   cursor keys, sound only when muted or missing, and the clock on the right.
+- **The window keeps the picture's shape.** While the picture fills the main
+  window (docked there, or Full Page), a resize lands on the size that keeps
+  the picture at the machine's aspect, with the status bar and anything
+  docked beside it carried on top; the edge dragged furthest leads, and the
+  zoom button picks the largest such size on the screen. A change of shape
+  (another machine, or a panel docked beside it) refits the window once the
+  mouse is up. Floating, the Screen window keeps the shape itself through an
+  ImGui size constraint. Full screen is the system's to size, so there the
+  picture is letterboxed instead.
 
 ## Typeface
 
