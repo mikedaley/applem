@@ -8,6 +8,7 @@
 #include "disk_drives.hpp"
 
 #include "emulation.hpp"
+#include "ui_theme.hpp"
 
 #include "cards/disk_controller.hpp"
 #include "disk-image/disk_image.hpp"
@@ -540,11 +541,13 @@ void DiskDrives::drawDrive(int index) {
   if (d.filename && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) ImGui::SetTooltip("%s", name.c_str());
   ImGui::SameLine(0, 0);
   ImGui::SetCursorScreenPos(ImVec2(nameStart.x + width - trackWidth, nameStart.y));
+  ImGui::PushFont(ui::monoFont(), 0.0f);
   if (track) {
     ImGui::TextColored(d.active ? ACTIVE_TEXT : ImGui::GetStyleColorVec4(ImGuiCol_Text), "%s", track);
   } else {
     ImGui::TextDisabled("T--");
   }
+  ImGui::PopFont();
   if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) ImGui::SetTooltip("Current track");
 
   // Controls.
@@ -563,6 +566,7 @@ void DiskDrives::drawDrive(int index) {
 
   if (detailsShown) {
     ImGui::Spacing();
+    ImGui::PushFont(ui::monoFont(), 0.0f);
     if (ImGui::BeginTable("details", 4, ImGuiTableFlags_SizingFixedFit)) {
       auto row = [](const char *a, const std::string &av, const ImVec4 *ac, const char *b,
                     const std::string &bv, const ImVec4 *bc) {
@@ -589,6 +593,7 @@ void DiskDrives::drawDrive(int index) {
           index == selectedDrive_ ? byte : "--", nullptr);
       ImGui::EndTable();
     }
+    ImGui::PopFont();
   }
 
   ImGui::EndGroup();

@@ -8,6 +8,7 @@
 #include "joystick.hpp"
 
 #include "emulation.hpp"
+#include "ui_theme.hpp"
 
 #include "imgui.h"
 
@@ -132,8 +133,16 @@ void Joystick::drawAppleJoystick() {
 
   ImGui::SameLine();
   ImGui::BeginGroup();
-  ImGui::Text("Paddle 0  %3d", paddles_[0]);
-  ImGui::Text("Paddle 1  %3d", paddles_[1]);
+  ImGui::TextUnformatted("Paddle 0");
+  ImGui::SameLine(80);
+  ImGui::PushFont(ui::monoFont(), 0.0f);
+  ImGui::Text("%3d", paddles_[0]);
+  ImGui::PopFont();
+  ImGui::TextUnformatted("Paddle 1");
+  ImGui::SameLine(80);
+  ImGui::PushFont(ui::monoFont(), 0.0f);
+  ImGui::Text("%3d", paddles_[1]);
+  ImGui::PopFont();
   ImGui::Spacing();
   // Held while the mouse is down on them, as a real button is.
   for (int i = 0; i < 3; i++) {

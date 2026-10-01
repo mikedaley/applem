@@ -51,6 +51,8 @@ struct Platform {
   // the system rather than from ImGui's key state.
   std::function<bool()> capsLockOn;
   std::function<void(const std::string &)> setWindowTitle;
+  // The app's appearance: 0 follows the system, 1 is light, 2 is dark.
+  std::function<void(int)> setAppearance;
   // Enter or leave macOS full screen for the main window.
   std::function<void()> toggleFullScreen;
 

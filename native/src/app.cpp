@@ -8,6 +8,7 @@
 #include "app.hpp"
 
 #include "no_signal_frame.hpp"
+#include "ui_theme.hpp"
 
 #include "imgui.h"
 #include "imgui_internal.h" // DockBuilder, the status bar's viewport side bar
@@ -124,6 +125,7 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "ShowSaveStates=%d", &value) == 1) s.showSaveStates = value;
     else if (std::sscanf(line, "Autosave=%d", &value) == 1) s.autosave = value;
     else if (std::sscanf(line, "Speed=%d", &value) == 1) s.speed = value;
+    else if (std::sscanf(line, "Appearance=%d", &value) == 1) s.appearance = std::clamp(value, 0, 2);
     else if (std::sscanf(line, "ShowJoystick=%d", &value) == 1) s.showJoystick = value;
     else if (std::sscanf(line, "GamePort=%d", &value) == 1) s.gamePort = value == 1 ? 1 : 0;
     else if (std::sscanf(line, "CursorKeys=%d", &value) == 1) s.cursorKeys = value;
@@ -157,6 +159,7 @@ void App::registerSettingsHandler() {
     out->appendf("ShowSaveStates=%d\n", s.showSaveStates ? 1 : 0);
     out->appendf("Autosave=%d\n", app->states_ && app->states_->autosave ? 1 : 0);
     out->appendf("Speed=%d\n", s.speed);
+    out->appendf("Appearance=%d\n", s.appearance);
     out->appendf("ShowJoystick=%d\n", s.showJoystick ? 1 : 0);
     out->appendf("GamePort=%d\n", s.gamePort);
     out->appendf("CursorKeys=%d\n", s.cursorKeys ? 1 : 0);
@@ -243,6 +246,7 @@ void App::startEmulation() {
   hardDrives_->update();
   hardDrives_->restore();
   states_->autosave = settings_.autosave;
+  if (platform_.setAppearance) platform_.setAppearance(settings_.appearance);
   joystick_.device = settings_.gamePort;
   joystick_.cursorKeys = settings_.cursorKeys;
   joystick_.gamepadEnabled = settings_.gamepads;
@@ -482,6 +486,17 @@ MenuItem App::viewMenu() {
   items.push_back(window("view.joystick", "Joystick", settings_.showJoystick, "4"));
   items.push_back(window("view.display", "Display Settings…", settings_.showDisplaySettings, ","));
   items.push_back(window("view.statusbar", "Status Bar", settings_.showStatusBar, "/"));
+  // Light, dark, or whatever the system is, as the browser's theme offers.
+  std::vector<MenuItem> appearances;
+  const char *names[] = {"System", "Light", "Dark"};
+  for (int choice = 0; choice < 3; choice++) {
+    appearances.push_back(item(a, "view.appearance." + std::to_string(choice), names[choice], [this, choice] {
+                                 settings_.appearance = choice;
+                                 if (platform_.setAppearance) platform_.setAppearance(choice);
+                                 ImGui::MarkIniSettingsDirty();
+                               }, "", 0, settings_.appearance == choice));
+  }
+  items.push_back(submenu("Appearance", appearances));
   items.push_back(MenuItem::separatorItem());
   items.push_back(item(a, "view.fullpage", fullPage_ ? "Leave Full Page" : "Full Page", [this] {
                          fullPage_ = !fullPage_;
@@ -594,7 +609,7 @@ void App::updateWindowTitle() {
 void App::drawDockSpace() {
   const ImGuiID dockspace = ImGui::GetID(DOCKSPACE_ID);
   ImGui::DockSpaceOverViewport(dockspace, ImGui::GetMainViewport(),
-                               ImGuiDockNodeFlags_PassthruCentralNode);
+                               ImGuiDockNodeFlags_PassthruCentralNode | ImGuiDockNodeFlags_AutoHideTabBar);
 
   // A first run, or an ini with nothing docked: put the screen in the middle.
   // Anything the user has arranged since is left exactly as it is.
@@ -622,7 +637,9 @@ void App::drawStatusBar() {
       ImGui::TextUnformatted(profile_ ? profile_->name : "");
       ImGui::Separator();
       if (emulation_.powered()) {
+        ImGui::PushFont(ui::monoFont(), 0.0f);
         ImGui::Text("%.3f MHz", emulation_.measuredMHz());
+        ImGui::PopFont();
         if (settings_.speed > 1 && profile_ && profile_->family != MachineFamily::AppleIIgs) {
           ImGui::TextColored(ImVec4(0.99f, 0.72f, 0.15f, 1.0f), "%dx", settings_.speed);
         }

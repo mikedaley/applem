@@ -17,6 +17,7 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 #include "app.hpp"
+#include "ui_theme.hpp"
 #include "native_menu.hpp"
 #include "platform_paths.hpp"
 #include "screen_renderer_metal.hpp"
@@ -104,22 +105,10 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
   io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
   io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
 
-  // SF Mono at a size that reads like the rest of macOS. ImGui rasterises
-  // it at each viewport's own density, so it stays sharp on a Retina
-  // display and on a second monitor that is not.
-  const std::string font = a2e::native::uiFontPath();
-  if (!font.empty()) {
-    ImFontConfig config;
-    config.OversampleH = 2;
-    io.Fonts->AddFontFromFileTTF(font.c_str(), 13.0f, &config);
-  }
-
-  ImGui::StyleColorsDark();
-  // A window that has left the main one is a real OS window, so it is drawn
-  // square and opaque like one.
-  ImGuiStyle &style = ImGui::GetStyle();
-  style.WindowRounding = 0.0f;
-  style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+  // SF Pro for the interface and SF Mono for numbers, and the system's own
+  // colours, following light and dark and the accent as they change.
+  a2e::native::ui::loadFonts();
+  a2e::native::ui::followSystemAppearance();
 
   // Key repeat at the rate the user set for the system, not ImGui's own.
   io.KeyRepeatDelay = static_cast<float>(NSEvent.keyRepeatDelay);
@@ -136,6 +125,11 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
     weakSelf.view.window.title = [NSString stringWithUTF8String:title.c_str()];
   };
   platform.toggleFullScreen = [weakSelf] { [weakSelf.view.window toggleFullScreen:nil]; };
+  platform.setAppearance = [](int choice) {
+    NSApp.appearance = choice == 1   ? [NSAppearance appearanceNamed:NSAppearanceNameAqua]
+                       : choice == 2 ? [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua]
+                                     : nil;
+  };
   // The panels run on their own, and answer on the main thread between
   // frames: a modal loop inside a frame would re-enter ImGui.
   platform.openFile = [](const std::string &title, const std::vector<std::string> &extensions,
@@ -251,6 +245,7 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
     return;
   }
 
+  a2e::native::ui::followSystemAppearance();
   ImGui_ImplMetal_NewFrame(pass);
   ImGui_ImplOSX_NewFrame(view);
   ImGui::NewFrame();
@@ -258,7 +253,8 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
   _app->frame();
 
   ImGui::Render();
-  pass.colorAttachments[0].clearColor = MTLClearColorMake(0.08, 0.08, 0.09, 1.0);
+  const ImVec4 background = ImGui::GetStyle().Colors[ImGuiCol_WindowBg];
+  pass.colorAttachments[0].clearColor = MTLClearColorMake(background.x, background.y, background.z, 1.0);
   id<MTLRenderCommandEncoder> encoder =
       [commandBuffer renderCommandEncoderWithDescriptor:pass];
   ImGui_ImplMetal_RenderDrawData(ImGui::GetDrawData(), commandBuffer, encoder);

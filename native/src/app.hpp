@@ -52,6 +52,7 @@ struct Settings {
   bool cursorKeys = false;
   bool gamepads = true;
   float deadzone = DEFAULT_DEADZONE;
+  int appearance = 0; // 0 the system's, 1 light, 2 dark
   // Per machine, keyed by profile key. Absent means the machine's default:
   // on for a IIgs, whose keyboard is a Mac's, and off for the rest.
   std::map<std::string, bool> commandIsOpenApple;

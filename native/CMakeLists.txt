@@ -52,6 +52,7 @@ set(NATIVE_SOURCES
     src/screen_renderer_metal.mm
     src/slot_layout.cpp
     src/state_store.cpp
+    src/ui_theme.mm
 )
 
 add_executable(ApplEmNative MACOSX_BUNDLE ${NATIVE_SOURCES})
