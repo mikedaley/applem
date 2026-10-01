@@ -59,6 +59,11 @@ constexpr int OVERVIEW_BUCKETS = 720;
 // losing half its speed in this long.
 constexpr double TURNS_PER_SECOND = 5.0;
 constexpr double SPIN_DOWN_HALF_LIFE = 0.35;
+// How long the head must stay on a quarter track before Follow head shows
+// it. A program reading a disk steps across tracks, and a copy-protected one
+// darts between quarter tracks for a frame or two at a time; following every
+// step swapped the whole track view several times a second.
+constexpr double HEAD_SETTLE_SECONDS = 0.3;
 // How long the core's disk must stand still before the picture coasts.
 constexpr double SPIN_GAP_SECONDS = 0.06;
 // How soon a disk being written is read again.
@@ -365,7 +370,12 @@ void DiskDrives::update(double now) {
         d.paintStale = true;
       }
     }
-    if (followHead_ && drives_[inspected_].hasDisk) selectedQt_ = drives_[inspected_].quarterTrack;
+    const Drive &inspected = drives_[inspected_];
+    if (inspected.quarterTrack != headSeen_) {
+      headSeen_ = inspected.quarterTrack;
+      headSeenAt_ = now;
+    }
+    if (followHead_ && inspected.hasDisk && now - headSeenAt_ >= HEAD_SETTLE_SECONDS) selectedQt_ = headSeen_;
     refreshDetail(*disk, now);
     refreshRings(*disk, now);
   });
@@ -1114,7 +1124,7 @@ void DiskDrives::drawStrip(float width) {
   }
   // The zoom carries from track to track, so following the head while a
   // disk loads keeps the view it was given; a new drive starts whole.
-  if (stripQt_ < 0 || stripSpan_ <= 0) {
+  if (stripQt_ < 0 || stripSpan_ <= 0 || stripWhole_) {
     stripStart_ = 0;
     stripSpan_ = cells;
   }
@@ -1139,6 +1149,7 @@ void DiskDrives::drawStrip(float width) {
     stripStart_ -= io.MouseDelta.x / width * stripSpan_;
   }
   stripStart_ = std::clamp(stripStart_, 0.0, cells - stripSpan_);
+  stripWhole_ = stripSpan_ >= cells;
 
   const double perCell = width / stripSpan_;
   auto X = [&](double cell) { return static_cast<float>(p0.x + (cell - stripStart_) * perCell); };
@@ -1242,6 +1253,18 @@ void DiskDrives::drawStrip(float width) {
   const Drive &d = drives_[inspected_];
   if (d.quarterTrack == detail_.quarterTrack) {
     const float x = X(d.spin * cells);
+    // While the disk turns, a fading trail behind the head, so a mark that
+    // crosses the whole track five times a second reads as a sweep rather
+    // than a line jumping about.
+    if (d.spinSpeed > 0.5) {
+      const float trail = static_cast<float>(cells * 0.06 * perCell);
+      const float from = std::max(p0.x, x - trail);
+      if (x > p0.x && from < x) {
+        const ImU32 colour = d.active ? headColour(true, d.writing) : IM_COL32(255, 255, 255, 255);
+        draw->AddRectFilledMultiColor(ImVec2(from, p0.y + 2), ImVec2(std::min(x, p1.x), p1.y - 2), withAlpha(colour, 0.0f),
+                                      withAlpha(colour, 0.30f), withAlpha(colour, 0.30f), withAlpha(colour, 0.0f));
+      }
+    }
     if (x >= p0.x && x <= p1.x) {
       const ImU32 colour = d.active ? headColour(true, d.writing) : IM_COL32(255, 255, 255, 200);
       draw->AddLine(ImVec2(x, p0.y + 2), ImVec2(x, p1.y - 2), colour, 1.5f);
@@ -1287,6 +1310,7 @@ void DiskDrives::drawStrip(float width) {
       const double middle = stripStart_ + stripSpan_ * 0.5;
       stripSpan_ = std::clamp(stripSpan_ * factor, std::min(STRIP_MIN_SPAN, cells), cells);
       stripStart_ = std::clamp(middle - stripSpan_ * 0.5, 0.0, cells - stripSpan_);
+      stripWhole_ = stripSpan_ >= cells;
     };
     if (ui::Button("-", ImVec2(button, 0))) zoomStrip(2.0);
     ImGui::SameLine(0, 4);
@@ -1296,6 +1320,7 @@ void DiskDrives::drawStrip(float width) {
     if (ui::Button("Whole Track")) {
       stripStart_ = 0;
       stripSpan_ = cells;
+      stripWhole_ = true;
     }
     ImGui::EndDisabled();
     ImGui::SameLine(0, 12);

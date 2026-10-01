@@ -186,6 +186,10 @@ private:
   int inspected_ = 0;
   int selectedQt_ = 0;
   bool followHead_ = true;
+  // Where the head was last seen and since when: Follow head moves to a
+  // track only once the head has stayed on it a moment.
+  int headSeen_ = -1;
+  double headSeenAt_ = 0;
   PlatterMode mode_ = PlatterMode::Structure;
   int pane_ = 0; // 0 the sector's bytes, 1 the nibbles
   int selectedSector_ = 0;
@@ -196,6 +200,7 @@ private:
   // The unrolled track's view, in cells: where it starts and how many show.
   double stripStart_ = 0;
   double stripSpan_ = 0;
+  bool stripWhole_ = true; // showing the whole track, whatever its length
   int stripQt_ = -1;
 
   // The platter zoomed in: the part of the disk shown, painted afresh when
