@@ -212,6 +212,24 @@ state: kept, applied again after a switch, snapped to the nearest offered
 value, and not offered on a IIgs, which has its own speed register. Above
 1x the status bar says so. Measured: 4.105 MHz at 4x.
 
+## Game port
+
+View > Joystick (`joystick.*`, `game_port.*`) chooses the device on the
+connector, the Apple joystick or Sirius's Joyport, and drives it from the
+on-screen stick (it springs back when let go), the cursor keys when View >
+Cursor Keys as Joystick is on (the arrows still reach the keyboard too; a
+CURSOR KEYS mark shows in the status bar), and gamepads through the
+GameController framework, mapped into the browser's standard layout. The
+browser's numbers: a deadzone that rescales the rest of the range, a
+switch closing past half travel, the D-pad on 12 to 15, fire on A or B,
+an impossible pair dropped, and one pad driving both Joyport sticks.
+
+Sources are merged each frame and only a change is sent, because the
+pushbutton lines are also the Apple keys: sending "not pressed" every frame
+would let go of an Apple key the keyboard holds. A rebuilt machine starts
+on an Apple joystick and is told the device again. A stored deadzone of 0
+stays 0 (the browser read it back as 0.1).
+
 ## IIgs battery RAM
 
 The 256 bytes are kept in `iigs-battery-ram.bin`, written when the core
@@ -249,7 +267,7 @@ different things.
 2. Scaffolding: window, docking, multi-viewport, menu bar. Done.
 3. A machine running on screen, machine selection, keyboard, audio. Done.
 4. Media and configuration: disk drives, SmartPort and expansion slots
-   IIgs battery RAM, save states and CPU speed (done); game port.
+   IIgs battery RAM, save states, CPU speed and the game port. Done.
 5. Display fidelity: the CRT shaders in Metal, display settings and profiles. Done.
 6. Debugger: CPU, memory, stack, zero page, soft switches, trace.
 7. The remaining debug views, including the Disk Inspector.

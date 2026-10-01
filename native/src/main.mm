@@ -11,6 +11,7 @@
  */
 
 #import <Cocoa/Cocoa.h>
+#import <GameController/GameController.h>
 #import <Metal/Metal.h>
 #import <MetalKit/MetalKit.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
@@ -172,6 +173,28 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
                bytesPerRow:width * 4];
     // Held until releaseTexture, which hands the reference back to ARC.
     return (ImTextureID)(intptr_t)CFBridgingRetain(texture);
+  };
+  // GameController's extended gamepad, in the W3C standard layout the
+  // browser reads: a thumbstick's up is positive here and negative there.
+  platform.gamepads = [] {
+    std::vector<a2e::native::Pad> pads;
+    for (GCController *controller in GCController.controllers) {
+      GCExtendedGamepad *gamepad = controller.extendedGamepad;
+      if (!gamepad) continue;
+      a2e::native::Pad pad;
+      pad.axes = {gamepad.leftThumbstick.xAxis.value, -gamepad.leftThumbstick.yAxis.value,
+                  gamepad.rightThumbstick.xAxis.value, -gamepad.rightThumbstick.yAxis.value};
+      pad.buttons[0] = gamepad.buttonA.isPressed;
+      pad.buttons[1] = gamepad.buttonB.isPressed;
+      pad.buttons[2] = gamepad.buttonX.isPressed;
+      pad.buttons[3] = gamepad.buttonY.isPressed;
+      pad.buttons[12] = gamepad.dpad.up.isPressed;
+      pad.buttons[13] = gamepad.dpad.down.isPressed;
+      pad.buttons[14] = gamepad.dpad.left.isPressed;
+      pad.buttons[15] = gamepad.dpad.right.isPressed;
+      pads.push_back(pad);
+    }
+    return pads;
   };
   platform.releaseTexture = [](ImTextureID texture) {
     if (texture != ImTextureID_Invalid) CFBridgingRelease((void *)(intptr_t)texture);

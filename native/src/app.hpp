@@ -10,6 +10,7 @@
 #include "disk_drives.hpp"
 #include "display.hpp"
 #include "hard_drives.hpp"
+#include "joystick.hpp"
 #include "save_states.hpp"
 #include "emulation.hpp"
 #include "expansion_slots.hpp"
@@ -44,6 +45,11 @@ struct Settings {
   bool showSaveStates = false;
   bool autosave = false;
   int speed = 1; // 1, 2, 4 or 8 times the machine's clock
+  bool showJoystick = false;
+  int gamePort = 0; // 0 the Apple joystick, 1 the Joyport
+  bool cursorKeys = false;
+  bool gamepads = true;
+  float deadzone = DEFAULT_DEADZONE;
   // Per machine, keyed by profile key. Absent means the machine's default:
   // on for a IIgs, whose keyboard is a Mac's, and off for the rest.
   std::map<std::string, bool> commandIsOpenApple;
@@ -99,6 +105,7 @@ private:
   void updateScreenSource();
   void drawStatusBar();
   void drawDiskDrives();
+  void drawJoystick();
   void drawSwitchConfirmation();
 
   void routeKeyboard();
@@ -123,6 +130,7 @@ private:
   std::unique_ptr<HardDrives> hardDrives_;
   ExpansionSlots slots_{emulation_};
   std::unique_ptr<SaveStates> states_;
+  Joystick joystick_{emulation_};
   bool started_ = false;
 
   // The machine profile currently built, for drawing; refreshed on a switch.

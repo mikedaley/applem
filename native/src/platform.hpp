@@ -11,6 +11,7 @@
 #pragma once
 
 #include "crt_params.hpp"
+#include "game_port.hpp"
 #include "imgui.h"
 
 #include <cstdint>
@@ -71,6 +72,9 @@ struct Platform {
   // letting one go.
   std::function<ImTextureID(const uint8_t *rgba, int width, int height)> makeTexture;
   std::function<void(ImTextureID)> releaseTexture;
+
+  // The connected gamepads, in the browser's standard layout.
+  std::function<std::vector<Pad>()> gamepads;
 };
 
 } // namespace a2e::native

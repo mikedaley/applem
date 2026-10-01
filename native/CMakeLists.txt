@@ -39,7 +39,9 @@ set(NATIVE_SOURCES
     src/drive_sounds.cpp
     src/emulation.cpp
     src/expansion_slots.cpp
+    src/game_port.cpp
     src/hard_drives.cpp
+    src/joystick.cpp
     src/key_mapper.cpp
     src/media_store.cpp
     src/no_signal_frame.cpp
@@ -103,6 +105,7 @@ target_link_libraries(ApplEmNative PRIVATE
 # The keyboard mapping and the emulation thread's queues, without a window.
 add_executable(test_native_input
     tests/test_native_input.cpp
+    src/game_port.cpp
     src/key_mapper.cpp
 )
 target_include_directories(test_native_input PRIVATE

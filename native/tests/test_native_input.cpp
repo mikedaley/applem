@@ -13,6 +13,7 @@
 
 #include "../src/audio_ring.hpp"
 #include "../src/frame_queue.hpp"
+#include "../src/game_port.hpp"
 #include "../src/key_mapper.hpp"
 #include "../../src/host/machine_host.hpp"
 
@@ -223,4 +224,53 @@ TEST_CASE("The audio ring plays what was written and silence past it",
     ring.clear();
     REQUIRE(ring.read(out, 4) == 0);
   }
+}
+
+TEST_CASE("A gamepad's stick is a paddle, past the deadzone", "[native][gameport]") {
+  // Inside the deadzone is the middle; the rest is rescaled, so a full push
+  // is still a full reading.
+  REQUIRE(applyDeadzone(0.05f, 0.1f) == 0.0f);
+  REQUIRE(applyDeadzone(1.0f, 0.1f) == Approx(1.0f));
+  REQUIRE(applyDeadzone(-0.55f, 0.1f) == Approx(-0.5f));
+  REQUIRE(paddleFromAxis(0.0f, 0.1f) == 128);
+  REQUIRE(paddleFromAxis(-1.0f, 0.1f) == 0);
+  REQUIRE(paddleFromAxis(1.0f, 0.1f) == 255);
+}
+
+TEST_CASE("A Joyport stick closes its switches as a CX40 does", "[native][gameport]") {
+  Pad pad;
+  REQUIRE(joyportMask(pad, 0.1f) == 0);
+  // The D-pad, or the stick past halfway, closes the same switch.
+  pad.buttons[PAD_UP] = true;
+  REQUIRE(joyportMask(pad, 0.1f) == SWITCH_UP);
+  pad.buttons[PAD_UP] = false;
+  pad.axes[0] = 0.4f; // past the deadzone, short of the switch
+  REQUIRE(joyportMask(pad, 0.1f) == 0);
+  pad.axes[0] = 0.8f;
+  REQUIRE(joyportMask(pad, 0.1f) == SWITCH_RIGHT);
+  pad.buttons[PAD_B] = true;
+  REQUIRE(joyportMask(pad, 0.1f) == (SWITCH_RIGHT | SWITCH_FIRE));
+  // An impossible pair is dropped rather than sent.
+  pad.buttons[PAD_LEFT] = true;
+  REQUIRE(joyportMask(pad, 0.1f) == SWITCH_FIRE);
+}
+
+TEST_CASE("The cursor keys are a stick at full deflection", "[native][gameport]") {
+  REQUIRE(paddleFromKeys(false, false) == 128);
+  REQUIRE(paddleFromKeys(true, false) == 0);
+  REQUIRE(paddleFromKeys(false, true) == 255);
+  REQUIRE(paddleFromKeys(true, true) == 128);
+  REQUIRE(joyportMaskFromKeys(true, false, true, false) == (SWITCH_UP | SWITCH_LEFT));
+}
+
+TEST_CASE("The Joyport's switches reach a //e's pushbuttons, active low", "[native][gameport]") {
+  host::MachineHost host;
+  host.build();
+  host.setGamePortDevice(GamePortDevice::SiriusJoyport);
+  runFrames(host, 30); // past the reset guard that lets go of PB0/PB1
+  host.setJoyportStick(0, SWITCH_FIRE);
+  // Stick 1, AN0 and AN1 off: PB0 is fire, and a closed switch reads low.
+  REQUIRE((host.emulator()->peekMemory(0xC061) & 0x80) == 0);
+  host.setJoyportStick(0, 0);
+  REQUIRE((host.emulator()->peekMemory(0xC061) & 0x80) != 0);
 }

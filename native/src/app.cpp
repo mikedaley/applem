@@ -64,6 +64,7 @@ App::App(std::string settingsDirectory, Platform platform)
   registerSettingsHandler();
   registerDisplayHandler();
   registerSlotsHandler();
+  joystick_.setGamepadSource(platform_.gamepads);
   // Refitting can rebuild the SmartPort, and its images with it.
   slots_.setAppliedCallback([this] { hardDrives_->syncWithMachine(); });
 
@@ -123,6 +124,12 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "ShowSaveStates=%d", &value) == 1) s.showSaveStates = value;
     else if (std::sscanf(line, "Autosave=%d", &value) == 1) s.autosave = value;
     else if (std::sscanf(line, "Speed=%d", &value) == 1) s.speed = value;
+    else if (std::sscanf(line, "ShowJoystick=%d", &value) == 1) s.showJoystick = value;
+    else if (std::sscanf(line, "GamePort=%d", &value) == 1) s.gamePort = value == 1 ? 1 : 0;
+    else if (std::sscanf(line, "CursorKeys=%d", &value) == 1) s.cursorKeys = value;
+    else if (std::sscanf(line, "Gamepads=%d", &value) == 1) s.gamepads = value;
+    // A stored 0 is a deadzone of 0, which the browser read back as 0.1.
+    else if (std::sscanf(line, "Deadzone=%f", &number) == 1) s.deadzone = std::clamp(number, 0.0f, MAX_DEADZONE);
     else if (std::sscanf(line, "NoSlotClock=%d", &value) == 1) app->slots_.noSlotClock = value;
     else if (std::sscanf(line, "ShowStatusBar=%d", &value) == 1) s.showStatusBar = value;
     else if (std::sscanf(line, "CommandIsOpenApple.%63[^=]=%d", text, &value) == 2) {
@@ -150,6 +157,11 @@ void App::registerSettingsHandler() {
     out->appendf("ShowSaveStates=%d\n", s.showSaveStates ? 1 : 0);
     out->appendf("Autosave=%d\n", app->states_ && app->states_->autosave ? 1 : 0);
     out->appendf("Speed=%d\n", s.speed);
+    out->appendf("ShowJoystick=%d\n", s.showJoystick ? 1 : 0);
+    out->appendf("GamePort=%d\n", s.gamePort);
+    out->appendf("CursorKeys=%d\n", s.cursorKeys ? 1 : 0);
+    out->appendf("Gamepads=%d\n", s.gamepads ? 1 : 0);
+    out->appendf("Deadzone=%.2f\n", s.deadzone);
     out->appendf("NoSlotClock=%d\n", app->slots_.noSlotClock ? 1 : 0);
     out->appendf("ShowStatusBar=%d\n", s.showStatusBar ? 1 : 0);
     for (const auto &[key, on] : s.commandIsOpenApple) {
@@ -231,6 +243,11 @@ void App::startEmulation() {
   hardDrives_->update();
   hardDrives_->restore();
   states_->autosave = settings_.autosave;
+  joystick_.device = settings_.gamePort;
+  joystick_.cursorKeys = settings_.cursorKeys;
+  joystick_.gamepadEnabled = settings_.gamepads;
+  joystick_.deadzone = settings_.deadzone;
+  joystick_.machineRebuilt();
   applySpeed();
   emulation_.setPowered(true);
   started_ = true;
@@ -244,6 +261,7 @@ void App::frame() {
   drives_->update(ImGui::GetTime());
   saveBatteryRamIfChanged(ImGui::GetTime());
   states_->update(ImGui::GetTime());
+  joystick_.update(screenHadKeyboard_);
   hardDrives_->update();
 
   // The decoder and character set live in the machine's video, which a
@@ -312,6 +330,8 @@ void App::drawMenuBar() {
     ImGui::MenuItem(SCREEN_WINDOW, nullptr, &settings_.showScreen);
     ImGui::MenuItem("Display Settings", nullptr, &settings_.showDisplaySettings);
     ImGui::MenuItem("Disk Drives", nullptr, &settings_.showDiskDrives);
+    ImGui::MenuItem("Joystick", nullptr, &settings_.showJoystick);
+    ImGui::MenuItem("Cursor Keys as Joystick", nullptr, &joystick_.cursorKeys);
     // Not on a //c, whose every slot is soldered down.
     if (profile_ && profile_->caps.hasExpansionSlots) {
       ImGui::MenuItem("Expansion Slots", nullptr, &settings_.showExpansionSlots);
@@ -414,6 +434,7 @@ void App::drawMachineMenu() {
         display_.machineRebuilt();
         slots_.apply();
         restoreBatteryRam();
+        joystick_.machineRebuilt();
       }
     }
     ImGui::EndMenu();
@@ -463,6 +484,7 @@ bool App::switchMachine(MachineId id) {
   slots_.apply();
   restoreBatteryRam();
   applySpeed();
+  joystick_.machineRebuilt();
   drives_->machineChanged();
   hardDrives_->machineChanged();
   noSignalStale_ = true;
@@ -529,6 +551,10 @@ void App::drawStatusBar() {
       } else {
         ImGui::TextDisabled("No audio device: free-running");
       }
+      if (joystick_.cursorKeys) {
+        ImGui::Separator();
+        ImGui::TextColored(ImVec4(0.0f, 0.62f, 0.86f, 1.0f), "CURSOR KEYS");
+      }
       if (screenHadKeyboard_) {
         ImGui::Separator();
         ImGui::TextUnformatted(commandIsOpenApple() ? "Keyboard: Cmd is Open Apple"
@@ -542,7 +568,23 @@ void App::drawStatusBar() {
 
 // The window draws every frame it is open; its save and error questions are
 // drawn whether it is or not. The options it toggles are remembered.
+// The game port's settings are the Joystick's to change; they are kept
+// whenever they do.
+void App::drawJoystick() {
+  firstPosition(380, 120);
+  joystick_.draw(&settings_.showJoystick);
+  if (joystick_.device != settings_.gamePort || joystick_.cursorKeys != settings_.cursorKeys ||
+      joystick_.gamepadEnabled != settings_.gamepads || joystick_.deadzone != settings_.deadzone) {
+    settings_.gamePort = joystick_.device;
+    settings_.cursorKeys = joystick_.cursorKeys;
+    settings_.gamepads = joystick_.gamepadEnabled;
+    settings_.deadzone = joystick_.deadzone;
+    ImGui::MarkIniSettingsDirty();
+  }
+}
+
 void App::drawDiskDrives() {
+  drawJoystick();
   firstPosition(80, 60);
   states_->draw(&settings_.showSaveStates);
   if (states_->autosave != settings_.autosave) {
