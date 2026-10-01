@@ -70,9 +70,23 @@ struct TrackDetail {
   bool flux = false;
   int trackId = -1;
   inspect::TrackAnalysis analysis;
+  std::vector<uint8_t> bits;     // the cells, packed, top bit first
   std::vector<uint8_t> cellTime; // per cell; empty unless flux
 };
 TrackDetail readTrackDetail(DiskImage &image, int quarterTrack);
+
+// Whether a cell holds a flux transition.
+inline bool cellBit(const std::vector<uint8_t> &bits, uint32_t cell) {
+  return cell / 8 < bits.size() && (bits[cell / 8] & (0x80 >> (cell % 8)));
+}
+
+// A quarter track read in full for the zoomed platter: the track, and the
+// kind of every cell, so a pixel can find its own in one lookup.
+struct Ring {
+  TrackDetail track;
+  std::vector<uint8_t> cellKinds;
+};
+Ring makeRing(TrackDetail track);
 
 // 17, 17.25, 17.5, 17.75.
 std::string trackLabel(int quarterTrack);

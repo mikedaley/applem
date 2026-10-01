@@ -9,6 +9,7 @@
 
 #include "disk_inspector_data.hpp"
 
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -46,16 +47,32 @@ uint32_t timeColour(uint8_t time);
 constexpr uint32_t MEDIUM_COLOUR = 0x1a1308;
 constexpr uint32_t HUB_COLOUR = 0xd8d4c8;
 
+// The part of the disk a painting shows: `zoom` times the whole disk,
+// centred on (cx, cy) in the disk's own units (its radius is 1, y down),
+// with the angle `turn` (a fraction of a turn) at twelve o'clock.
+struct PlatterView {
+  double zoom = 1.0;
+  double cx = 0.0;
+  double cy = 0.0;
+  double turn = 0.0;
+};
+
+// Quarter tracks read in full, for a view close enough to show them cell by
+// cell; null for one that was not read. The overview's arcs stand in.
+using PlatterRings = std::array<const Ring *, inspect::QUARTER_TRACKS>;
+
 // Paint the disk into `rgba` (size x size, rows from the top), angle 0 at
 // twelve o'clock and running clockwise, with the index hole there. Outside
 // the disk and inside the hub hole is transparent. Without an overview the
-// disk is blank medium.
+// disk is blank medium. A ring read in full is drawn from its own cells,
+// and once a cell is wide enough to see, its flux transitions show.
 //
 // Every pixel finds its quarter track from its radius and its place round
 // the track from its angle. A quarter track with nothing recorded beside one
 // that has data takes its neighbour's, faded: the head reads a track from
 // the quarter track either side, and a disk recorded on half tracks would
 // otherwise look nearly empty.
-void paintPlatter(std::vector<uint8_t> &rgba, int size, const Overview *overview, PlatterMode mode);
+void paintPlatter(std::vector<uint8_t> &rgba, int size, const Overview *overview, PlatterMode mode,
+                  const PlatterView &view = {}, const PlatterRings *rings = nullptr);
 
 } // namespace a2e::native

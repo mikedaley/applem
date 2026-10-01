@@ -136,19 +136,22 @@ right-click menu, to leave); View > Full Screen is macOS's.
 View > Disk Drives is the browser's Disk Drives and Disk Inspector windows
 in one (`disk_drives.*`, `disk_inspector_data.*`, `disk_platter.*`,
 `media_store.*`, `drive_sounds.*`). A card per drive carries the disk,
-turning as the real one does, with the head on it; the label in the
+turning as the real one does, with the head on it (when the motor stops,
+after the drive's own second of run-on, it coasts down rather than
+stopping dead); the label in the
 filename's sticker colour; what the inspector found (format, 13 or 16
 sector, flux, bad sectors); the head's track; the controller's phases,
 latch and state; and Insert, Recent, Blank and Eject. Clicking a card
 inspects that drive, below: the platter coloured by what is recorded on
 every quarter track (or, in Timing, how long a flux track's cells took),
-hover for what is under the pointer and click to pick a track; the track
-unrolled as a strip that zooms with the scroll wheel down to the flux
-transitions, with its sectors named and the head marked; the sectors in the
+hover for what is under the pointer and click to pick a track, and scroll
+to zoom (to 400x, about the pointer) and drag to pan, when the disk holds
+still and the head goes round it; the track unrolled as a strip that zooms
+down to sixteen cells, where each nibble's value and kind are written and
+every cell shows its 1 or 0, with its sectors named and the head marked; the sectors in the
 order they pass the head; and the picked sector's bytes or every nibble on
 the track. Follow head keeps the inspector on the head's track. The
-inspector folds away under its disclosure (`DiskInspector` in the
-settings).
+Inspector switch hides the inspector (`DiskInspector` in the settings).
 
 **One description of a disk, the core's.** The whole disk comes through
 `inspect::buildOverview`, the buffer the browser parses, read here by
@@ -164,7 +167,11 @@ overview out pixel by pixel from polar coordinates, as the browser's
 `_paintDisk` does, into a texture that is repainted only when the overview
 or the mode changes; a frame draws it as one quad turned by the core's own
 `DiskImage::getRotation()`, so what passes under the drawn head is what is
-passing under the real one. `test_native_media` pins the parsing, the
+passing under the real one. Zoomed in, the view is painted afresh as it
+moves (at half resolution while dragged), and once no more than 48 rings
+show, each is read in full (`makeRing`, a few a frame under the lock) and
+drawn from its own cells: flux transitions once a cell is wide enough to
+see, and the nibbles' values along the ring once there is room. `test_native_media` pins the parsing, the
 summary, a whole track, the ring geometry and the painting's transparency.
 
 The drive's rules are the browser's:

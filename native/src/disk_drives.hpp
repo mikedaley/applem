@@ -16,6 +16,7 @@
 
 #include <array>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -104,6 +105,14 @@ private:
     // How far round the disk is under the head, as a fraction of a turn:
     // the core's own, so the platter turns as the disk does.
     double rotation = 0;
+    // The turn drawn. It is the core's while the disk turns there; when the
+    // core's stops, the picture coasts down as a drive's spindle does, and
+    // it is in step again the moment the motor starts.
+    double spin = 0;
+    double spinSpeed = 0; // turns a second
+    double spinAt = -1;
+    double spinCore = 0; // the core's turn last frame
+    double spinMovedAt = -1;
 
     // What is recorded on it, read again when the controller's revision
     // for the drive moves.
@@ -154,6 +163,11 @@ private:
   // Read the inspected track again if it is a different one, or the disk
   // has changed under it. Under the machine's lock.
   void refreshDetail(DiskController &disk, double now);
+  // Read in full the quarter tracks the zoomed platter shows, a few a frame.
+  // Under the machine's lock.
+  void refreshRings(DiskController &disk, double now);
+  void paintView(int pixels);
+  void fitPlatter();
   void drawSavePopup();
   void drawErrorPopup();
 
@@ -183,6 +197,18 @@ private:
   double stripStart_ = 0;
   double stripSpan_ = 0;
   int stripQt_ = -1;
+
+  // The platter zoomed in: the part of the disk shown, painted afresh when
+  // it moves, and the quarter tracks it shows read in full.
+  PlatterView view_;
+  ImTextureID viewTexture_ = ImTextureID_Invalid;
+  int viewPixels_ = 0;
+  bool viewStale_ = true;
+  std::map<int, Ring> rings_;
+  std::vector<int> wantedRings_;
+  int ringsDrive_ = -1;
+  uint32_t ringsRevision_ = 0;
+  double ringsAt_ = -1;
 
   PendingSave save_;
   std::string error_;

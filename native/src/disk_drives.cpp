@@ -41,13 +41,26 @@ constexpr float DECK_HEIGHT = 136;
 constexpr float CARD_ROUNDING = 10;
 constexpr float THUMBNAIL_SIZE = 108;
 constexpr float PLATTER_SIZE = 400;
-constexpr float DETAIL_HEIGHT = 520;
-constexpr float STRIP_HEIGHT = 82;
+constexpr float DETAIL_HEIGHT = 566;
+constexpr float STRIP_HEIGHT = 104;
+// The fewest cells the strip shows, and how far the platter zooms.
+constexpr double STRIP_MIN_SPAN = 16;
+constexpr double MAX_PLATTER_ZOOM = 400;
+// The zoomed platter reads rings in full once no more than this many show,
+// and a few a frame, so the machine's lock is not held for long.
+constexpr int MAX_RINGS_IN_FULL = 48;
+constexpr int RINGS_PER_FRAME = 8;
 // The platter's textures, in pixels: enough for a Retina display.
 constexpr int PLATTER_PIXELS = 800;
 constexpr int THUMBNAIL_PIXELS = 224;
 // Arcs per ring in the overview: half a degree each, as the browser reads it.
 constexpr int OVERVIEW_BUCKETS = 720;
+// A drive turns at 300 RPM, and when the motor stops the disk coasts down,
+// losing half its speed in this long.
+constexpr double TURNS_PER_SECOND = 5.0;
+constexpr double SPIN_DOWN_HALF_LIFE = 0.35;
+// How long the core's disk must stand still before the picture coasts.
+constexpr double SPIN_GAP_SECONDS = 0.06;
 // How soon a disk being written is read again.
 constexpr double REREAD_SECONDS = 0.5;
 
@@ -282,12 +295,17 @@ void DiskDrives::finishSave(const PendingSave &save, const std::vector<uint8_t> 
 void DiskDrives::resetVisuals(Drive &drive) {
   drive.lastTrack = -1;
   drive.rotation = 0;
+  drive.spin = 0;
+  drive.spinSpeed = 0;
+  drive.spinCore = 0;
   drive.overviewRead = false;
   drive.overviewAt = -1;
   drive.overview.reset();
   drive.summary = DiskSummary{};
   drive.paintStale = true;
   detailDrive_ = -1; // whatever was read of it is gone
+  ringsDrive_ = -1;
+  viewStale_ = true;
 }
 
 void DiskDrives::reportError(const std::string &message) {
@@ -297,6 +315,7 @@ void DiskDrives::reportError(const std::string &message) {
 
 DiskDrives::~DiskDrives() {
   for (Drive &drive : drives_) releasePlatters(drive);
+  if (platform_.releaseTexture) platform_.releaseTexture(viewTexture_);
 }
 
 // ---------------------------------------------------------------------------
@@ -337,6 +356,7 @@ void DiskDrives::update(double now) {
           d.overviewRead = true;
           d.overviewAt = now;
           d.paintStale = true;
+          if (i == inspected_) viewStale_ = true;
         }
       } else if (d.overviewRead) {
         d.overviewRead = false;
@@ -347,9 +367,35 @@ void DiskDrives::update(double now) {
     }
     if (followHead_ && drives_[inspected_].hasDisk) selectedQt_ = drives_[inspected_].quarterTrack;
     refreshDetail(*disk, now);
+    refreshRings(*disk, now);
   });
 
   for (Drive &d : drives_) {
+    // The picture's turn: the core's while it moves, coasting down after.
+    const double dt = d.spinAt >= 0 ? now - d.spinAt : 0;
+    d.spinAt = now;
+    double moved = d.rotation - d.spinCore;
+    moved -= std::floor(moved);
+    d.spinCore = d.rotation;
+    if (d.hasDisk && moved > 1e-6 && moved < 0.999) {
+      d.spin = d.rotation;
+      d.spinSpeed = TURNS_PER_SECOND;
+      d.spinMovedAt = now;
+    } else if (d.spinSpeed > 0 && dt > 0 && (d.active || now - d.spinMovedAt < SPIN_GAP_SECONDS)) {
+      // At speed while the motor runs. The core stops turning the disk the
+      // moment the program switches the drive off, but the drive's timer
+      // keeps the motor running for a second after, as a real Disk II's
+      // does, and only then does it coast down. The machine also runs a
+      // frame at a time, so a frame can pass with the disk not moved.
+      d.spinSpeed = TURNS_PER_SECOND;
+      d.spin += d.spinSpeed * dt;
+      d.spin -= std::floor(d.spin);
+    } else if (d.spinSpeed > 0 && dt > 0) {
+      d.spinSpeed *= std::pow(0.5, dt / SPIN_DOWN_HALF_LIFE);
+      d.spin += d.spinSpeed * dt;
+      d.spin -= std::floor(d.spin);
+      if (d.spinSpeed < 0.02) d.spinSpeed = 0;
+    }
     if (!d.hasDisk) {
       d.lastTrack = -1;
       continue;
@@ -380,9 +426,65 @@ void DiskDrives::refreshDetail(DiskController &disk, double now) {
   if (selectedSector_ >= static_cast<int>(detail_.analysis.sectors.size())) selectedSector_ = 0;
 }
 
+void DiskDrives::refreshRings(DiskController &disk, double now) {
+  const Drive &d = drives_[inspected_];
+  if (!d.hasDisk) {
+    if (!rings_.empty()) viewStale_ = true;
+    rings_.clear();
+    ringsDrive_ = -1;
+    return;
+  }
+  const uint32_t revision = disk.getRevision(inspected_);
+  if (ringsDrive_ != inspected_ || (revision != ringsRevision_ && now - ringsAt_ >= REREAD_SECONDS)) {
+    rings_.clear();
+    ringsDrive_ = inspected_;
+    ringsRevision_ = revision;
+    ringsAt_ = now;
+    viewStale_ = true;
+  }
+  // Keep only what is shown once the cache grows.
+  if (rings_.size() > 2 * MAX_RINGS_IN_FULL) {
+    for (auto it = rings_.begin(); it != rings_.end();) {
+      if (std::find(wantedRings_.begin(), wantedRings_.end(), it->first) == wantedRings_.end()) it = rings_.erase(it);
+      else ++it;
+    }
+  }
+  const DiskImage *image = disk.getDiskImage(inspected_);
+  if (!image) return;
+  int read = 0;
+  for (int qt : wantedRings_) {
+    if (rings_.count(qt)) continue;
+    if (read++ == RINGS_PER_FRAME) break;
+    rings_.emplace(qt, makeRing(readTrackDetail(*const_cast<DiskImage *>(image), qt)));
+    viewStale_ = true;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // The platter
 // ---------------------------------------------------------------------------
+
+void DiskDrives::fitPlatter() {
+  view_ = PlatterView{};
+  wantedRings_.clear();
+  viewStale_ = true;
+}
+
+// The zoomed view, painted afresh, with the rings read in full in it.
+void DiskDrives::paintView(int pixels) {
+  if (!platform_.makeTexture) return;
+  const Drive &d = drives_[inspected_];
+  PlatterRings rings{};
+  for (const auto &[qt, ring] : rings_) {
+    if (qt >= 0 && qt < platter::QUARTER_TRACKS) rings[qt] = &ring;
+  }
+  std::vector<uint8_t> rgba;
+  paintPlatter(rgba, pixels, d.overview ? &*d.overview : nullptr, mode_, view_, &rings);
+  if (platform_.releaseTexture) platform_.releaseTexture(viewTexture_);
+  viewTexture_ = platform_.makeTexture(rgba.data(), pixels, pixels);
+  viewPixels_ = pixels;
+  viewStale_ = false;
+}
 
 void DiskDrives::releasePlatters(Drive &drive) {
   if (platform_.releaseTexture) {
@@ -609,7 +711,7 @@ void DiskDrives::drawDeck(int index) {
   const ImVec2 centre(card.x + 14 + radius, card.y + DECK_HEIGHT * 0.5f);
   if (d.hasDisk && d.thumbnail != ImTextureID_Invalid) {
     draw->AddCircleFilled(ImVec2(centre.x, centre.y + 3), radius * 0.97f, IM_COL32(0, 0, 0, dark ? 90 : 40));
-    drawTurned(draw, d.thumbnail, centre, radius, static_cast<float>(-d.rotation * 2 * M_PI));
+    drawTurned(draw, d.thumbnail, centre, radius, static_cast<float>(-d.spin * 2 * M_PI));
     sheen(draw, centre, radius * platter::BAND_OUTER, radius * platter::BAND_INNER);
     const float headRadius = platter::radiusOf(d.quarterTrack) * radius;
     const ImVec2 head(centre.x, centre.y - headRadius);
@@ -713,6 +815,7 @@ void DiskDrives::drawDeck(int index) {
       inspected_ = index;
       stripQt_ = -1;
       followHead_ = true;
+      fitPlatter();
     }
     inspectorShown = true;
   }
@@ -723,14 +826,24 @@ void DiskDrives::drawDeck(int index) {
   ImGui::PopID();
 }
 
+// The disk, large. At full size it turns with the real one, with the head
+// fixed at twelve o'clock. Zoomed in (scroll, about the pointer) it holds
+// still and the head goes round it, since a view at fifty times turning
+// five times a second shows nothing; a drag pans and a double click shows
+// the whole disk again. Once few enough rings show, each is read in full
+// and drawn cell by cell, with its flux transitions and, closer still, the
+// nibbles' values along it. Hover for what is under the pointer; a click
+// picks the track.
 void DiskDrives::drawPlatter(ImVec2 origin, float size) {
   Drive &d = drives_[inspected_];
   ImDrawList *draw = ImGui::GetWindowDrawList();
   const float radius = size * 0.5f - 2;
   const ImVec2 centre(origin.x + size * 0.5f, origin.y + size * 0.5f);
   ImGui::SetCursorScreenPos(origin);
+  ImGui::SetNextItemAllowOverlap();
   ImGui::InvisibleButton("##platter", ImVec2(size, size));
   const bool hovered = ImGui::IsItemHovered();
+  const bool active = ImGui::IsItemActive();
 
   if (!d.hasDisk || d.platter == ImTextureID_Invalid) {
     ghostDisk(draw, centre, radius);
@@ -739,31 +852,149 @@ void DiskDrives::drawPlatter(ImVec2 origin, float size) {
     return;
   }
 
-  const bool dark = ui::isDark();
-  draw->AddCircleFilled(ImVec2(centre.x, centre.y + 8), radius * 0.98f, IM_COL32(0, 0, 0, dark ? 70 : 26), 96);
-  draw->AddCircleFilled(ImVec2(centre.x, centre.y + 3), radius * 0.99f, IM_COL32(0, 0, 0, dark ? 90 : 34), 96);
-  const float turn = static_cast<float>(d.rotation);
-  drawTurned(draw, d.platter, centre, radius, -turn * 2.0f * static_cast<float>(M_PI));
-  sheen(draw, centre, radius * platter::BAND_OUTER, radius * platter::BAND_INNER);
+  const ImGuiIO &io = ImGui::GetIO();
+  const ImVec2 viewMin(centre.x - radius, centre.y - radius);
+  const ImVec2 viewMax(centre.x + radius, centre.y + radius);
 
-  // The quarter track being inspected.
-  const float ringWidth = std::max(1.5f, platter::RING_WIDTH * radius);
-  if (detail_.quarterTrack >= 0) {
-    draw->AddCircle(centre, platter::radiusOf(detail_.quarterTrack) * radius, accent(0.95f), 0, ringWidth + 0.5f);
+  // Zoom about a point on the screen, keeping the disk under it still.
+  auto zoomAt = [&](ImVec2 at, double factor) {
+    const double z0 = view_.zoom;
+    const double z1 = std::clamp(z0 * factor, 1.0, MAX_PLATTER_ZOOM);
+    if (z0 <= 1.001 && z1 > 1.001) view_.turn = d.spin; // hold the disk where it is
+    const double px = (at.x - centre.x) / radius;
+    const double py = (at.y - centre.y) / radius;
+    view_.cx += px / z0 - px / z1;
+    view_.cy += py / z0 - py / z1;
+    view_.zoom = z1;
+    viewStale_ = true;
+  };
+  if (hovered) {
+    ImGui::SetItemKeyOwner(ImGuiKey_MouseWheelY);
+    if (io.MouseWheel != 0) zoomAt(io.MousePos, std::pow(1.2, io.MouseWheel));
+    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) fitPlatter();
+  }
+  const bool dragging = active && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 2.0f);
+  if (dragging && view_.zoom > 1.001) {
+    view_.cx -= io.MouseDelta.x / (radius * view_.zoom);
+    view_.cy -= io.MouseDelta.y / (radius * view_.zoom);
+    viewStale_ = true;
+  }
+  if (view_.zoom <= 1.001) {
+    view_ = PlatterView{};
+  } else {
+    const double limit = 1.0 - 1.0 / view_.zoom;
+    view_.cx = std::clamp(view_.cx, -limit, limit);
+    view_.cy = std::clamp(view_.cy, -limit, limit);
+  }
+  const bool zoomed = view_.zoom > 1.001;
+  const double zoom = view_.zoom;
+  const double scale = radius * zoom; // screen points per disk unit
+  auto toScreen = [&](double x, double y) {
+    return ImVec2(static_cast<float>(centre.x + (x - view_.cx) * scale), static_cast<float>(centre.y + (y - view_.cy) * scale));
+  };
+  // The disk's angle, as a fraction of a turn, at twelve o'clock.
+  const double turn = zoomed ? view_.turn : d.spin;
+
+  const bool dark = ui::isDark();
+  if (!zoomed) {
+    draw->AddCircleFilled(ImVec2(centre.x, centre.y + 8), radius * 0.98f, IM_COL32(0, 0, 0, dark ? 70 : 26), 96);
+    draw->AddCircleFilled(ImVec2(centre.x, centre.y + 3), radius * 0.99f, IM_COL32(0, 0, 0, dark ? 90 : 34), 96);
+    drawTurned(draw, d.platter, centre, radius, static_cast<float>(-turn * 2.0 * M_PI));
+    sheen(draw, centre, radius * platter::BAND_OUTER, radius * platter::BAND_INNER);
+  } else {
+    // Which rings show, and read them in full once there are few enough.
+    double nearest = std::hypot(std::max(0.0, std::abs(view_.cx) - 1.0 / zoom), std::max(0.0, std::abs(view_.cy) - 1.0 / zoom));
+    double farthest = 0;
+    for (int corner = 0; corner < 4; corner++) {
+      const double x = view_.cx + (corner & 1 ? 1 : -1) / zoom;
+      const double y = view_.cy + (corner & 2 ? 1 : -1) / zoom;
+      farthest = std::max(farthest, std::hypot(x, y));
+    }
+    const int outer = std::max(0, static_cast<int>((platter::BAND_OUTER - farthest) / platter::RING_WIDTH));
+    const int inner = std::min(platter::QUARTER_TRACKS - 1,
+                               static_cast<int>((platter::BAND_OUTER - nearest) / platter::RING_WIDTH));
+    wantedRings_.clear();
+    if (nearest <= platter::BAND_OUTER && farthest >= platter::BAND_INNER && inner - outer + 1 <= MAX_RINGS_IN_FULL) {
+      for (int qt = outer; qt <= inner; qt++) wantedRings_.push_back(qt);
+    }
+    // Painted afresh as the view moves: at half resolution while it is
+    // being dragged, and in full once it settles.
+    const int pixels = dragging || io.MouseWheel != 0 ? PLATTER_PIXELS / 2 : PLATTER_PIXELS;
+    if (viewStale_ || viewPixels_ != pixels) paintView(pixels);
+    draw->AddRectFilled(viewMin, viewMax, IM_COL32(0x0c, 0x0a, 0x06, 255), 12.0f);
+    if (viewTexture_ != ImTextureID_Invalid) {
+      draw->AddImageRounded(ImTextureRef(viewTexture_), viewMin, viewMax, ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 12.0f);
+    }
+    border(draw, viewMin, viewMax, 12.0f);
+  }
+  draw->PushClipRect(viewMin, viewMax, true);
+
+  // A ring outlined: one stroke while it is thin, its two edges once wide.
+  const ImVec2 hub = toScreen(0, 0);
+  const float ringPixels = static_cast<float>(platter::RING_WIDTH * scale);
+  auto outline = [&](int qt, ImU32 colour) {
+    const float r = static_cast<float>(platter::radiusOf(qt) * scale);
+    if (ringPixels < 6) {
+      draw->AddCircle(hub, r, colour, 0, std::max(1.5f, ringPixels + 0.5f));
+    } else {
+      draw->AddCircle(hub, r - ringPixels * 0.5f, colour, 0, 1.5f);
+      draw->AddCircle(hub, r + ringPixels * 0.5f, colour, 0, 1.5f);
+    }
+  };
+  if (detail_.quarterTrack >= 0) outline(detail_.quarterTrack, accent(0.95f));
+
+  // The nibbles' values along each ring, once there is room to write them.
+  if (zoomed && ringPixels >= 11) {
+    ImGui::PushFont(ui::monoFont(), std::min(15.0f, ringPixels * 0.62f));
+    const float hexWidth = ImGui::CalcTextSize("FF").x;
+    for (int qt : wantedRings_) {
+      auto it = rings_.find(qt);
+      if (it == rings_.end() || !it->second.track.present) continue;
+      const auto &a = it->second.track.analysis;
+      const double rMid = platter::radiusOf(qt);
+      const double arcPerCell = 2 * M_PI * rMid * scale / a.bit_count;
+      if (arcPerCell * 8 < hexWidth + 4) continue;
+      for (const inspect::Nibble &n : a.nibbles) {
+        if (arcPerCell * n.cells < hexWidth + 4) continue;
+        const double angle = ((n.start_bit + n.cells * 0.5) / a.bit_count - turn) * 2 * M_PI;
+        const ImVec2 at = toScreen(std::sin(angle) * rMid, -std::cos(angle) * rMid);
+        if (at.x < viewMin.x - 20 || at.x > viewMax.x + 20 || at.y < viewMin.y - 20 || at.y > viewMax.y + 20) continue;
+        char hex[4];
+        std::snprintf(hex, sizeof(hex), "%02X", n.value);
+        const bool quiet = (n.kind & inspect::KIND_MASK) == inspect::SYNC || (n.kind & inspect::KIND_MASK) == inspect::INVALID;
+        centredText(draw, at, quiet ? IM_COL32(255, 255, 255, 170) : IM_COL32(0, 0, 0, 200), hex);
+      }
+    }
+    ImGui::PopFont();
   }
 
   // Under the pointer: which quarter track, and what is on it there.
-  if (hovered) {
-    const ImVec2 m(ImGui::GetIO().MousePos.x - centre.x, ImGui::GetIO().MousePos.y - centre.y);
-    const float r = std::hypot(m.x, m.y) / radius;
-    const int qt = platter::quarterTrackAt(r);
+  if (hovered && !dragging) {
+    const double x = (io.MousePos.x - centre.x) / scale + view_.cx;
+    const double y = (io.MousePos.y - centre.y) / scale + view_.cy;
+    const int qt = platter::quarterTrackAt(static_cast<float>(std::hypot(x, y)));
     if (qt >= 0 && d.overview) {
-      draw->AddCircle(centre, platter::radiusOf(qt) * radius, IM_COL32(255, 255, 255, 110), 0, ringWidth);
-      double a = std::atan2(m.x, -m.y) / (2 * M_PI) + d.rotation;
+      outline(qt, IM_COL32(255, 255, 255, 110));
+      double a = std::atan2(x, -y) / (2 * M_PI) + turn;
       a -= std::floor(a);
       const OverviewTrack &t = d.overview->tracks[qt];
       std::string tip = "Track " + trackLabel(qt);
-      if (t.present && d.overview->buckets > 0) {
+      auto ring = rings_.find(qt);
+      if (ring != rings_.end() && ring->second.track.present) {
+        const auto &analysis = ring->second.track.analysis;
+        const uint32_t cell = std::min(analysis.bit_count - 1, static_cast<uint32_t>(a * analysis.bit_count));
+        const int i = nibbleAtCell(analysis.nibbles, cell);
+        if (i >= 0) {
+          const inspect::Nibble &n = analysis.nibbles[i];
+          char line[64];
+          std::snprintf(line, sizeof(line), "\nNibble %d  $%02X", i, n.value);
+          tip += line + std::string("\n") + kindName(n.kind);
+          if (n.sector != inspect::NO_SECTOR && n.sector < analysis.sectors.size()) {
+            tip += ", sector " + std::to_string(analysis.sectors[n.sector].sector);
+          }
+          tip += "\nCell " + std::to_string(cell) + " of " + std::to_string(analysis.bit_count);
+        }
+      } else if (t.present && d.overview->buckets > 0) {
         const int b = std::min(d.overview->buckets - 1, static_cast<int>(a * d.overview->buckets));
         tip += "\n" + kindName(t.kinds[b]);
         if (t.sectors[b] != inspect::NO_SECTOR) tip += ", sector " + std::to_string(t.sectors[b]);
@@ -777,20 +1008,52 @@ void DiskDrives::drawPlatter(ImVec2 origin, float size) {
         tip += "\nNothing recorded";
       }
       ImGui::SetTooltip("%s", tip.c_str());
-      if (ImGui::IsItemClicked()) {
+      if (ImGui::IsItemDeactivated() && io.MouseDragMaxDistanceSqr[0] < 9.0f) {
         selectedQt_ = qt;
         followHead_ = false;
       }
     }
   }
 
-  // The head, at twelve o'clock, on its arm.
-  const float headRadius = platter::radiusOf(d.quarterTrack) * radius;
-  const ImVec2 head(centre.x, centre.y - headRadius);
-  draw->AddLine(ImVec2(centre.x, centre.y - radius - 6), head, dark ? IM_COL32(255, 255, 255, 60) : IM_COL32(0, 0, 0, 70), 4.0f);
-  if (d.active) glow(draw, head, 4.0f, headColour(true, d.writing));
-  draw->AddRectFilled(ImVec2(head.x - 7, head.y - 4), ImVec2(head.x + 7, head.y + 4), headColour(d.active, d.writing), 2.5f);
-  draw->AddRect(ImVec2(head.x - 7, head.y - 4), ImVec2(head.x + 7, head.y + 4), IM_COL32(0, 0, 0, 120), 2.5f);
+  // The head. At full size it sits at twelve o'clock on its arm; zoomed, it
+  // goes round the still disk at the angle under it now.
+  const double headRadius = platter::radiusOf(d.quarterTrack);
+  if (!zoomed) {
+    const ImVec2 head(centre.x, centre.y - static_cast<float>(headRadius * radius));
+    draw->AddLine(ImVec2(centre.x, centre.y - radius - 6), head, dark ? IM_COL32(255, 255, 255, 60) : IM_COL32(0, 0, 0, 70), 4.0f);
+    if (d.active) glow(draw, head, 4.0f, headColour(true, d.writing));
+    draw->AddRectFilled(ImVec2(head.x - 7, head.y - 4), ImVec2(head.x + 7, head.y + 4), headColour(d.active, d.writing), 2.5f);
+    draw->AddRect(ImVec2(head.x - 7, head.y - 4), ImVec2(head.x + 7, head.y + 4), IM_COL32(0, 0, 0, 120), 2.5f);
+  } else {
+    const double angle = (d.spin - turn) * 2 * M_PI;
+    const ImVec2 head = toScreen(std::sin(angle) * headRadius, -std::cos(angle) * headRadius);
+    const float size = std::clamp(ringPixels * 0.45f, 4.0f, 9.0f);
+    if (d.active) glow(draw, head, size, headColour(true, d.writing));
+    draw->AddCircleFilled(head, size, headColour(d.active, d.writing));
+    draw->AddCircle(head, size, IM_COL32(0, 0, 0, 140), 0, 1.5f);
+  }
+  draw->PopClipRect();
+
+  // Zoom controls, over the bottom right corner.
+  const float button = ImGui::GetFrameHeight();
+  const float controlsWidth = button * 2 + 52 + 44 + 12;
+  ImGui::SetCursorScreenPos(ImVec2(viewMax.x - controlsWidth - 6, viewMax.y - button - 6));
+  ImGui::PushID("platterzoom");
+  if (ui::Button("-", ImVec2(button, 0))) zoomAt(centre, 1 / 1.5);
+  ImGui::SameLine(0, 4);
+  char level[16];
+  std::snprintf(level, sizeof(level), zoom < 10 ? "%.1fx" : "%.0fx", zoom);
+  const ImVec2 at = ImGui::GetCursorScreenPos();
+  draw->AddRectFilled(at, ImVec2(at.x + 52, at.y + button), withAlpha(ImGui::GetColorU32(ImGuiCol_WindowBg), 0.85f), button * 0.5f);
+  centredText(draw, ImVec2(at.x + 26, at.y + button * 0.5f), text(), level);
+  ImGui::Dummy(ImVec2(52, button));
+  ImGui::SameLine(0, 4);
+  if (ui::Button("+", ImVec2(button, 0))) zoomAt(centre, 1.5);
+  ImGui::SameLine(0, 4);
+  ImGui::BeginDisabled(!zoomed);
+  if (ui::Button("Fit", ImVec2(44, 0))) fitPlatter();
+  ImGui::EndDisabled();
+  ImGui::PopID();
 }
 
 void DiskDrives::drawLegend(float width) {
@@ -864,7 +1127,7 @@ void DiskDrives::drawStrip(float width) {
     if (io.MouseWheel != 0) {
       const double at = (io.MousePos.x - p0.x) / width;
       const double cell = stripStart_ + at * stripSpan_;
-      stripSpan_ = std::clamp(stripSpan_ * std::pow(0.8, io.MouseWheel), 24.0, cells);
+      stripSpan_ = std::clamp(stripSpan_ * std::pow(0.8, io.MouseWheel), std::min(STRIP_MIN_SPAN, cells), cells);
       stripStart_ = cell - at * stripSpan_;
     }
     if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
@@ -885,37 +1148,70 @@ void DiskDrives::drawStrip(float width) {
   const float timeTop = p1.y - 11;
   draw->PushClipRect(ImVec2(p0.x + 1, p0.y + 1), ImVec2(p1.x - 1, p1.y - 1), true);
 
-  // The nibbles.
+  // The nibbles. Each is its kind's colour across the band; once there is
+  // room its value is written in the top half, and when a cell is wide
+  // enough the bottom half shows the cells themselves: a tick for each flux
+  // transition, and closer still a 1 or a 0 in every cell.
   int first = nibbleAtCell(nibbles, static_cast<uint32_t>(stripStart_));
   if (nibbles[first].start_bit > stripStart_) first = 0;
-  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.8f);
+  const bool showCells = perCell >= 2.5;
+  const bool showDigits = perCell >= 11;
+  const float split = showCells ? bandTop + (bandBottom - bandTop) * 0.5f : bandBottom;
+  const float valueSize = std::clamp(static_cast<float>(perCell) * 1.1f, ImGui::GetFontSize() * 0.8f, 18.0f);
+  ImGui::PushFont(ui::monoFont(), valueSize);
   const float hexWidth = ImGui::CalcTextSize("FF").x;
+  ImGui::PopFont();
   for (size_t i = first; i < nibbles.size(); i++) {
     const inspect::Nibble &n = nibbles[i];
     if (n.start_bit > stripStart_ + stripSpan_) break;
     const float x0 = X(n.start_bit);
     const float x1 = X(n.start_bit + n.cells);
     const uint8_t kind = n.kind;
-    const bool noise = (kind & inspect::KIND_MASK) == inspect::INVALID && !(kind & inspect::BAD);
+    const uint8_t k = kind & inspect::KIND_MASK;
+    const bool noise = k == inspect::INVALID && !(kind & inspect::BAD);
+    const bool quiet = noise || (k == inspect::SYNC && !(kind & inspect::BAD));
     const ImU32 colour = noise ? IM_COL32(0x8b, 0x94, 0x9e, 90) : rgbU32(kindColour(kind));
     const float gap = x1 - x0 >= 6 ? 1.0f : 0.0f;
-    draw->AddRectFilled(ImVec2(x0, bandTop), ImVec2(std::max(x0 + 1, x1 - gap), bandBottom), colour,
-                        x1 - x0 >= 6 ? 2.0f : 0.0f);
-    if (perCell >= 2.5) {
-      // The flux transitions: a nibble's ones, top bit first, and its zeros.
-      for (int bit = 0; bit < 8; bit++) {
-        if (!(n.value & (0x80 >> bit))) continue;
-        const float x = X(n.start_bit + bit + 0.5);
-        draw->AddLine(ImVec2(x, bandTop + 3), ImVec2(x, bandBottom - 3), IM_COL32(255, 255, 255, 170), 1.0f);
-      }
-    } else if (x1 - x0 >= hexWidth + 6) {
+    const float right = std::max(x0 + 1, x1 - gap);
+    draw->AddRectFilled(ImVec2(x0, bandTop), ImVec2(right, bandBottom), colour, x1 - x0 >= 6 ? 2.0f : 0.0f);
+    const ImU32 ink = quiet ? IM_COL32(255, 255, 255, 190) : IM_COL32(0, 0, 0, 200);
+
+    if (x1 - x0 >= hexWidth + 6) {
       char hex[4];
       std::snprintf(hex, sizeof(hex), "%02X", n.value);
-      const ImU32 ink = (kind & inspect::KIND_MASK) == inspect::SYNC ? IM_COL32(255, 255, 255, 150) : IM_COL32(0, 0, 0, 190);
-      centredText(draw, ImVec2((x0 + x1) * 0.5f, (bandTop + bandBottom) * 0.5f), ink, hex);
+      ImGui::PushFont(ui::monoFont(), valueSize);
+      centredText(draw, ImVec2((x0 + x1) * 0.5f, (bandTop + split) * 0.5f), ink, hex);
+      ImGui::PopFont();
+      // And what it is, when the nibble is wide enough to say.
+      if (x1 - x0 >= 230) {
+        ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.75f);
+        const std::string name = kindName(kind);
+        draw->AddText(ImVec2(std::max(x0, p0.x) + 6, bandTop + 3), withAlpha(ink, 0.75f), name.c_str());
+        ImGui::PopFont();
+      }
+    }
+    if (showCells) {
+      draw->AddRectFilled(ImVec2(x0, split), ImVec2(right, bandBottom), IM_COL32(0, 0, 0, 95));
+      ImGui::PushFont(ui::monoFont(), std::min(15.0f, static_cast<float>(perCell) * 0.8f));
+      for (uint32_t c = 0; c < n.cells; c++) {
+        const uint32_t cell = (n.start_bit + c) % a.bit_count;
+        const float xc = X(n.start_bit + c + 0.5);
+        if (xc < p0.x - perCell || xc > p1.x + perCell) continue;
+        const bool one = cellBit(detail_.bits, cell);
+        if (showDigits) {
+          if (c > 0) {
+            const float xs = X(n.start_bit + c);
+            draw->AddLine(ImVec2(xs, split + 3), ImVec2(xs, bandBottom - 3), IM_COL32(255, 255, 255, 30), 1.0f);
+          }
+          centredText(draw, ImVec2(xc, (split + bandBottom) * 0.5f),
+                      one ? IM_COL32(255, 255, 255, 235) : IM_COL32(255, 255, 255, 80), one ? "1" : "0");
+        } else if (one) {
+          draw->AddLine(ImVec2(xc, split + 3), ImVec2(xc, bandBottom - 3), IM_COL32(255, 255, 255, 200), 1.0f);
+        }
+      }
+      ImGui::PopFont();
     }
   }
-  ImGui::PopFont();
 
   // The sectors, named over their address fields.
   ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.75f);
@@ -945,7 +1241,7 @@ void DiskDrives::drawStrip(float width) {
   // The head, if it is over this quarter track.
   const Drive &d = drives_[inspected_];
   if (d.quarterTrack == detail_.quarterTrack) {
-    const float x = X(d.rotation * cells);
+    const float x = X(d.spin * cells);
     if (x >= p0.x && x <= p1.x) {
       const ImU32 colour = d.active ? headColour(true, d.writing) : IM_COL32(255, 255, 255, 200);
       draw->AddLine(ImVec2(x, p0.y + 2), ImVec2(x, p1.y - 2), colour, 1.5f);
@@ -980,6 +1276,37 @@ void DiskDrives::drawStrip(float width) {
         selectedSector_ = n.sector;
       }
     }
+  }
+
+  // Zoom controls, and how much of the track shows.
+  {
+    const float button = ImGui::GetFrameHeight();
+    ImGui::SetCursorScreenPos(ImVec2(p0.x, p1.y + 6));
+    ImGui::PushID("stripzoom");
+    auto zoomStrip = [&](double factor) {
+      const double middle = stripStart_ + stripSpan_ * 0.5;
+      stripSpan_ = std::clamp(stripSpan_ * factor, std::min(STRIP_MIN_SPAN, cells), cells);
+      stripStart_ = std::clamp(middle - stripSpan_ * 0.5, 0.0, cells - stripSpan_);
+    };
+    if (ui::Button("-", ImVec2(button, 0))) zoomStrip(2.0);
+    ImGui::SameLine(0, 4);
+    if (ui::Button("+", ImVec2(button, 0))) zoomStrip(0.5);
+    ImGui::SameLine(0, 4);
+    ImGui::BeginDisabled(stripSpan_ >= cells);
+    if (ui::Button("Whole Track")) {
+      stripStart_ = 0;
+      stripSpan_ = cells;
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine(0, 12);
+    char shown[64];
+    std::snprintf(shown, sizeof(shown), "%.0fx  ·  cells %.0f–%.0f", cells / stripSpan_, stripStart_,
+                  stripStart_ + stripSpan_);
+    ImGui::AlignTextToFramePadding();
+    ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.85f);
+    ImGui::TextColored(ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled), "%s", shown);
+    ImGui::PopFont();
+    ImGui::PopID();
   }
 }
 
@@ -1180,10 +1507,6 @@ void DiskDrives::drawTrackDetail(float width) {
   ImGui::SetCursorScreenPos(ImVec2(start.x, start.y + titleHeight + ImGui::GetTextLineHeight() + 12));
 
   drawStrip(width);
-  ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.8f);
-  ImGui::TextColored(ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled),
-                     "Scroll to zoom  ·  drag to pan  ·  double-click for the whole track");
-  ImGui::PopFont();
   ImGui::Spacing();
   ImGui::TextColored(ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled), "Sectors, in the order they pass the head");
   drawSectorChips(width);
@@ -1235,6 +1558,7 @@ void DiskDrives::drawInspector() {
   if (ui::SegmentedControl("##mode", &mode, {"Structure", "Timing"}, 200.0f)) {
     mode_ = mode == 1 ? PlatterMode::Timing : PlatterMode::Structure;
     for (Drive &drive : drives_) drive.paintStale = true;
+    viewStale_ = true;
   }
   ImGui::SameLine(0, 20);
   ui::Switch("Follow head", &followHead_);
@@ -1331,7 +1655,7 @@ void DiskDrives::draw(bool *open) {
     for (Drive &d : drives_) paintPlatters(d);
     if (ImGui::Begin("Disk Drives", open, ImGuiWindowFlags_AlwaysAutoResize)) {
       const ImVec2 top = ImGui::GetCursorScreenPos();
-      ui::Disclosure("Inspector", &inspectorShown);
+      ui::Switch("Inspector", &inspectorShown);
       bool sounds = emulation_.driveSounds().enabled();
       ImGui::SameLine();
       ImGui::SetCursorScreenPos(ImVec2(top.x + TOTAL_WIDTH - ui::SwitchWidth("Drive Sounds"), top.y));

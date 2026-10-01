@@ -93,8 +93,20 @@ TrackDetail readTrackDetail(DiskImage &image, int quarterTrack) {
   detail.flux = view.flux;
   detail.trackId = view.track_id;
   detail.analysis = inspect::analyzeTrack(view.bits.data(), view.bit_count);
+  detail.bits = std::move(view.bits);
   detail.cellTime = std::move(view.cell_time);
   return detail;
+}
+
+Ring makeRing(TrackDetail track) {
+  Ring ring;
+  const uint32_t cells = track.analysis.bit_count;
+  ring.cellKinds.assign(cells, inspect::NONE);
+  for (const inspect::Nibble &n : track.analysis.nibbles) {
+    for (uint32_t c = 0; c < n.cells; c++) ring.cellKinds[(n.start_bit + c) % cells] = n.kind;
+  }
+  ring.track = std::move(track);
+  return ring;
 }
 
 std::string trackLabel(int quarterTrack) {

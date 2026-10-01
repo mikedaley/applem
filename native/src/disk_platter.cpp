@@ -72,24 +72,35 @@ uint32_t timeColour(uint8_t time) {
   return d < 0 ? mix(NEUTRAL, BLUE, -d) : mix(NEUTRAL, ORANGE, d);
 }
 
-void paintPlatter(std::vector<uint8_t> &rgba, int size, const Overview *overview, PlatterMode mode) {
+void paintPlatter(std::vector<uint8_t> &rgba, int size, const Overview *overview, PlatterMode mode,
+                  const PlatterView &view, const PlatterRings *rings) {
   using namespace platter;
   rgba.assign(static_cast<size_t>(size) * size * 4, 0);
   const double half = size / 2.0;
   const auto *tracks = overview && !overview->tracks.empty() ? &overview->tracks : nullptr;
   const int buckets = overview ? overview->buckets : 0;
   const bool timing = mode == PlatterMode::Timing;
-  const double pixel = 1.0 / half; // one pixel, as a fraction of the radius
-  uint32_t seed = 12345;
-  auto noise = [&] {
-    seed = seed * 1103515245u + 12345u;
-    return ((seed >> 8) & 0xFFFF) / 65535.0;
+  const double zoom = std::max(1.0, view.zoom);
+  const double pixel = 1.0 / (half * zoom); // one pixel, as a fraction of the radius
+  // The index hole sits at the disk's angle 0, wherever the view has turned it.
+  const double holeAngle = -view.turn * 2 * M_PI;
+  const double holeX = std::sin(holeAngle) * INDEX_HOLE_RADIUS;
+  const double holeY = -std::cos(holeAngle) * INDEX_HOLE_RADIUS;
+  constexpr double HOLE = 0.018;
+  // Noise that belongs to the place on the disk, so it holds still as the
+  // view moves.
+  auto noise = [](uint32_t a, uint32_t b) {
+    uint32_t h = a * 0x9E3779B1u ^ (b + 0x7F4A7C15u) * 0x85EBCA77u;
+    h ^= h >> 15;
+    h *= 0x2C1B3C6Du;
+    h ^= h >> 12;
+    return (h & 0xFFFF) / 65535.0;
   };
 
   for (int y = 0; y < size; y++) {
-    const double dy = (y + 0.5 - half) / half;
+    const double dy = (y + 0.5 - half) / half / zoom + view.cy;
     for (int x = 0; x < size; x++) {
-      const double dx = (x + 0.5 - half) / half;
+      const double dx = (x + 0.5 - half) / half / zoom + view.cx;
       const double r = std::sqrt(dx * dx + dy * dy);
       // Smooth edges at the rim and the hub hole.
       const double coverage = std::clamp((DISK_EDGE - r) / pixel, 0.0, 1.0) *
@@ -104,57 +115,66 @@ void paintPlatter(std::vector<uint8_t> &rgba, int size, const Overview *overview
       } else if (tracks) {
         const double position = (BAND_OUTER - r) / RING_WIDTH;
         int qt = std::min(QUARTER_TRACKS - 1, static_cast<int>(position));
-        const OverviewTrack *t = &(*tracks)[qt];
         bool bleed = false;
-        if (!t->present) {
+        if (!(*tracks)[qt].present) {
           const int near = qt > 0 && (*tracks)[qt - 1].present                    ? qt - 1
                            : qt + 1 < QUARTER_TRACKS && (*tracks)[qt + 1].present ? qt + 1
                                                                                   : -1;
           if (near >= 0) {
-            t = &(*tracks)[near];
+            qt = near;
             bleed = true;
           }
         }
-        if (t->present && buckets > 0) {
+        const OverviewTrack &t = (*tracks)[qt];
+        if (t.present && buckets > 0) {
           // Angle from twelve o'clock, clockwise, as a fraction of a turn.
-          double a = std::atan2(dx, -dy) / (2 * M_PI);
+          double a = std::atan2(dx, -dy) / (2 * M_PI) + view.turn;
           a -= std::floor(a);
-          const int b = std::min(buckets - 1, static_cast<int>(a * buckets));
-          const uint8_t kind = t->kinds[b];
+          const Ring *ring = rings ? (*rings)[qt] : nullptr;
+          uint8_t kind;
+          uint8_t time = 0;
+          uint32_t place;
+          bool transition = false;
+          if (ring && ring->track.present && !ring->cellKinds.empty()) {
+            const uint32_t cells = static_cast<uint32_t>(ring->cellKinds.size());
+            const uint32_t cell = std::min(cells - 1, static_cast<uint32_t>(a * cells));
+            kind = ring->cellKinds[cell];
+            if (cell < ring->track.cellTime.size()) time = ring->track.cellTime[cell];
+            place = cell;
+            // Once a cell is wide enough to see, the ones in it show.
+            const double cellPixels = 2 * M_PI * r / cells * half * zoom;
+            transition = cellPixels >= 2.5 && cellBit(ring->track.bits, cell);
+          } else {
+            const int b = std::min(buckets - 1, static_cast<int>(a * buckets));
+            kind = t.kinds[b];
+            time = t.times[b];
+            place = static_cast<uint32_t>(b);
+          }
           if (timing) {
-            const uint32_t tc = t->flux ? timeColour(t->times[b]) : 0;
+            const uint32_t tc = t.flux ? timeColour(time) : 0;
             rgb = tc ? tc : mix(MEDIUM_COLOUR, kindColour(kind), 0.22);
           } else if ((kind & inspect::KIND_MASK) == inspect::INVALID && !(kind & inspect::BAD)) {
-            rgb = mix(MEDIUM_COLOUR, MUTED, 0.25 + noise() * 0.6);
+            rgb = mix(MEDIUM_COLOUR, MUTED, 0.25 + noise(qt, place) * 0.6);
           } else {
             rgb = kindColour(kind);
           }
+          if (transition) rgb = mix(rgb, 0xffffff, 0.55);
           if (bleed && rgb != MEDIUM_COLOUR) rgb = mix(MEDIUM_COLOUR, rgb, 0.45);
         }
         // A groove between whole tracks, so the rings read as tracks.
         const double inTrack = std::fmod(position / 4.0, 1.0);
-        if (inTrack < 0.06 || inTrack > 0.97) shade = 0.62;
+        const double groove = std::max(0.03, pixel / RING_WIDTH / 4.0);
+        if (inTrack < groove || inTrack > 1.0 - groove * 0.5) shade = 0.62;
       }
+      // The index hole.
+      const double hole = std::hypot(dx - holeX, dy - holeY);
+      if (hole < HOLE + pixel) shade *= 1.0 - 0.85 * std::clamp((HOLE - hole) / pixel + 0.5, 0.0, 1.0);
 
       uint8_t *p = &rgba[(static_cast<size_t>(y) * size + x) * 4];
       p[0] = static_cast<uint8_t>(((rgb >> 16) & 0xFF) * shade);
       p[1] = static_cast<uint8_t>(((rgb >> 8) & 0xFF) * shade);
       p[2] = static_cast<uint8_t>((rgb & 0xFF) * shade);
       p[3] = static_cast<uint8_t>(std::lround(255 * coverage));
-    }
-  }
-
-  // The index hole, at twelve o'clock on the hub's side of the band.
-  const double holeX = half;
-  const double holeY = half - INDEX_HOLE_RADIUS * half;
-  const double holeR = 0.018 * half;
-  for (int y = static_cast<int>(holeY - holeR - 1); y <= static_cast<int>(holeY + holeR + 1); y++) {
-    for (int x = static_cast<int>(holeX - holeR - 1); x <= static_cast<int>(holeX + holeR + 1); x++) {
-      if (x < 0 || y < 0 || x >= size || y >= size) continue;
-      const double d = std::hypot(x + 0.5 - holeX, y + 0.5 - holeY);
-      const double inside = std::clamp(holeR - d + 0.5, 0.0, 1.0);
-      uint8_t *p = &rgba[(static_cast<size_t>(y) * size + x) * 4];
-      for (int c = 0; c < 3; c++) p[c] = static_cast<uint8_t>(p[c] * (1.0 - 0.85 * inside));
     }
   }
 }
