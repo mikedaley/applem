@@ -48,6 +48,11 @@ bool SegmentedControl(const char *id, int *selected, const std::vector<std::stri
 // written beside the track.
 bool SliderInt(const char *label, int *value, int min, int max, const char *format = "%d");
 bool SliderFloat(const char *label, float *value, float min, float max, const char *format = "%.2f");
+// An upright slider of the given size, the knob riding a thin track with
+// the fill drawn from `fillFrom` (a slider centred on 0dB fills from its
+// middle). No label: the caller writes what it is. A double click puts the
+// value back at `fillFrom`.
+bool VSliderFloat(const char *id, float *value, float min, float max, ImVec2 size, float fillFrom);
 
 // A pop-up button: shows the current choice and opens a menu of them. Use
 // as ImGui::BeginCombo/EndCombo.

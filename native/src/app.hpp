@@ -17,6 +17,7 @@
 #include "key_mapper.hpp"
 #include "cpu_debugger.hpp"
 #include "menu_model.hpp"
+#include "equalizer_window.hpp"
 #include "mockingboard_window.hpp"
 #include "platform.hpp"
 
@@ -52,6 +53,8 @@ struct Settings {
   bool showMockingboard = false;
   bool showCpuDebugger = false;
   int mockingboardMutes = 0; // a bit a channel, PSG 1's A B C then PSG 2's
+  bool showEqualizer = false;
+  Equalizer::Settings equalizer; // the tone controls over the output
   int gamePort = 0; // 0 the Apple joystick, 1 the Joyport
   bool cursorKeys = false;
   bool gamepads = true;
@@ -158,6 +161,7 @@ private:
   void drawDiskDrives();
   void drawJoystick();
   void drawMockingboard();
+  void drawEqualizer();
   void drawSwitchConfirmation();
 
   void routeKeyboard();
@@ -188,6 +192,7 @@ private:
   std::unique_ptr<SaveStates> states_;
   Joystick joystick_{emulation_};
   MockingboardWindow mockingboard_{emulation_};
+  EqualizerWindow equalizer_{emulation_};
   CpuDebugger debugger_{emulation_, platform_};
   bool started_ = false;
 

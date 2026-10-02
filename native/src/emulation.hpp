@@ -10,6 +10,7 @@
 #include "../../src/host/machine_host.hpp"
 #include "audio_output.hpp"
 #include "audio_ring.hpp"
+#include "equalizer.hpp"
 #include "drive_sounds.hpp"
 #include "frame_queue.hpp"
 #include "machine_poll.hpp"
@@ -127,6 +128,8 @@ public:
   bool audioRunning() const { return audio_.running(); }
   // The drives' own sounds, mixed in at the main volume.
   DriveSounds &driveSounds() { return driveSounds_; }
+  // The tone controls over everything, applied last.
+  Equalizer &equalizer() { return equalizer_; }
   // The machine's clock as measured against the wall, in MHz, across the
   // last ten seconds. A refill runs a whole video frame at once (about
   // 17,000 cycles), so a one-second window caught a refill more or fewer and
@@ -159,6 +162,7 @@ private:
   FrameQueue frames_;
   AudioOutput audio_;
   DriveSounds driveSounds_{SAMPLE_RATE};
+  Equalizer equalizer_{SAMPLE_RATE};
   dispatch_semaphore_t wake_;
 
   std::atomic<float> gain_{0.5f};

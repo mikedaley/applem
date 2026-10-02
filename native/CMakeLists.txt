@@ -44,6 +44,8 @@ set(NATIVE_SOURCES
     src/display_settings.cpp
     src/drive_sounds.cpp
     src/emulation.cpp
+    src/equalizer.cpp
+    src/equalizer_window.cpp
     src/expansion_slots.cpp
     src/game_port.cpp
     src/hard_drives.cpp
@@ -154,6 +156,19 @@ target_include_directories(test_native_debugger PRIVATE
 target_compile_options(test_native_debugger PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(test_native_debugger PRIVATE a2e_core)
 add_test(NAME test_native_debugger COMMAND test_native_debugger
+         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+# The output equaliser's filters, response and settings.
+add_executable(test_native_equalizer
+    tests/test_native_equalizer.cpp
+    src/equalizer.cpp
+)
+target_include_directories(test_native_equalizer PRIVATE
+    ${CMAKE_SOURCE_DIR}/tests/catch2
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_compile_options(test_native_equalizer PRIVATE -Wall -Wextra -Wno-unused-parameter)
+add_test(NAME test_native_equalizer COMMAND test_native_equalizer
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 # Renders test pictures through the CRT chain for scripts/compare-crt.mjs,

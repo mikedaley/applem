@@ -132,6 +132,12 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "ShowMockingboard=%d", &value) == 1) s.showMockingboard = value;
     else if (std::sscanf(line, "ShowCpuDebugger=%d", &value) == 1) s.showCpuDebugger = value;
     else if (std::sscanf(line, "MockingboardMutes=%d", &value) == 1) s.mockingboardMutes = value & 0x3F;
+    else if (std::sscanf(line, "ShowEqualizer=%d", &value) == 1) s.showEqualizer = value;
+    else if (std::sscanf(line, "Equalizer=%d", &value) == 1) s.equalizer.enabled = value;
+    else if (std::sscanf(line, "EqualizerPreamp=%f", &number) == 1) s.equalizer.preampDb = number;
+    else if (std::sscanf(line, "EqualizerBand.%d=%f", &value, &number) == 2) {
+      if (value >= 0 && value < Equalizer::BANDS) s.equalizer.gainDb[value] = number;
+    }
     else if (std::sscanf(line, "GamePort=%d", &value) == 1) s.gamePort = value == 1 ? 1 : 0;
     else if (std::sscanf(line, "CursorKeys=%d", &value) == 1) s.cursorKeys = value;
     else if (std::sscanf(line, "Gamepads=%d", &value) == 1) s.gamepads = value;
@@ -171,6 +177,10 @@ void App::registerSettingsHandler() {
     out->appendf("ShowMockingboard=%d\n", s.showMockingboard ? 1 : 0);
     out->appendf("ShowCpuDebugger=%d\n", s.showCpuDebugger ? 1 : 0);
     out->appendf("MockingboardMutes=%d\n", s.mockingboardMutes);
+    out->appendf("ShowEqualizer=%d\n", s.showEqualizer ? 1 : 0);
+    out->appendf("Equalizer=%d\n", s.equalizer.enabled ? 1 : 0);
+    out->appendf("EqualizerPreamp=%.1f\n", s.equalizer.preampDb);
+    for (int i = 0; i < Equalizer::BANDS; i++) out->appendf("EqualizerBand.%d=%.1f\n", i, s.equalizer.gainDb[i]);
     out->appendf("GamePort=%d\n", s.gamePort);
     out->appendf("CursorKeys=%d\n", s.cursorKeys ? 1 : 0);
     out->appendf("Gamepads=%d\n", s.gamepads ? 1 : 0);
@@ -265,6 +275,8 @@ void App::startEmulation() {
 
   emulation_.setVolume(settings_.volume);
   emulation_.setMuted(settings_.muted);
+  equalizer_.settings = settings_.equalizer;
+  emulation_.equalizer().set(settings_.equalizer);
   emulation_.start(wanted->id, static_cast<size_t>(settings_.iigsMemoryKB) * 1024);
   const VideoStandard standard = profile_->timing.standard;
   emulation_.withMachine([&](host::MachineHost &host) { host.setVideoStandard(standard); });
@@ -622,6 +634,10 @@ MenuItem App::viewMenu() {
                            }, "", 0, std::lround(settings_.volume * 100) == percent));
   }
   items.push_back(submenu("Volume", volumes));
+  items.push_back(item(a, "view.equalizer", "Equalizer", [this] {
+                         settings_.showEqualizer = !settings_.showEqualizer;
+                         ImGui::MarkIniSettingsDirty();
+                       }, "", 0, settings_.showEqualizer));
   items.push_back(MenuItem::separatorItem());
   items.push_back(item(a, "view.imguidemo", "Dear ImGui Demo", [this] { showDemo_ = !showDemo_; }, "", 0, showDemo_));
   return submenu("View", items);
@@ -860,9 +876,20 @@ void App::drawMockingboard() {
   }
 }
 
+// Its settings are the user's, kept whenever they change.
+void App::drawEqualizer() {
+  firstPosition(300, 140);
+  equalizer_.draw(&settings_.showEqualizer);
+  if (equalizer_.changed()) {
+    settings_.equalizer = equalizer_.settings;
+    ImGui::MarkIniSettingsDirty();
+  }
+}
+
 void App::drawDiskDrives() {
   drawJoystick();
   drawMockingboard();
+  drawEqualizer();
   firstPosition(60, 40);
   debugger_.draw(&settings_.showCpuDebugger);
   firstPosition(80, 60);

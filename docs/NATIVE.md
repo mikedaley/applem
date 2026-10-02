@@ -379,6 +379,26 @@ would let go of an Apple key the keyboard holds. A rebuilt machine starts
 on an Apple joystick and is told the device again. A stored deadzone of 0
 stays 0 (the browser read it back as 0.1).
 
+## Equalizer
+
+View > Equalizer (`equalizer.*`, `equalizer_window.*`) is a graphic
+equaliser over the mixed output: ten octave bands from 31Hz to 16kHz, each
+a peaking filter of 12dB either way, a preamp, a switch, and a few presets
+(Flat is the reset). It stands in for the tone controls on the amplifier a
+real machine was plugged into, so everything passes through it: the
+speaker, a Mockingboard, a IIgs's Ensoniq and the drives' sounds, after
+the volume and last of all. The window draws the response the settings
+make and a slider a band; a double click puts a band back to 0dB.
+
+The filters run in the device's callback, which must never block, so the
+settings reach it without a lock: the window writes each value into an
+atomic and bumps a version, and the callback recomputes its coefficients
+when the version has moved. Switched on, the filters start from rest. The
+settings are kept with the app's. `test_native_equalizer` checks that off
+or flat the mix passes through untouched, that a band's gain lands on its
+centre and leaves the far bands alone, and that the curve the window draws
+is what the filters do.
+
 ## Debug views
 
 The Debug menu holds the debug views, each offered only when the machine
@@ -574,7 +594,7 @@ present ImGui keeps its own font.
 
 `~/Library/Application Support/ApplEm Native/layout.ini` holds ImGui's layout
 and, under `[ApplEm][Settings]`, the app's own settings: the machine, the IIgs
-memory size, volume, the open windows and the Cmd key choice per machine;
+memory size, volume, the equaliser, the open windows and the Cmd key choice per machine;
 each machine's display settings are under `[ApplEmDisplay][<machine key>]`.
 Saved display profiles are in `display-profiles.ini` beside it, so Reset to
 Defaults never takes them. Not the Tauri build's folder; the two keep

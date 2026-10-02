@@ -358,6 +358,51 @@ bool SliderFloat(const char *label, float *value, float min, float max, const ch
   return slider(label, value, min, max, format);
 }
 
+bool VSliderFloat(const char *id, float *value, float min, float max, ImVec2 size, float fillFrom) {
+  ImGuiWindow *window = ImGui::GetCurrentWindow();
+  if (window->SkipItems) return false;
+  const ImGuiID itemId = window->GetID(id);
+  const ImVec2 pos = window->DC.CursorPos;
+  const ImRect frame(pos, ImVec2(pos.x + size.x, pos.y + size.y));
+  ImGui::ItemSize(frame);
+  if (!ImGui::ItemAdd(frame, itemId)) return false;
+
+  const float knobRadius = std::round(ImGui::GetFrameHeight() * 0.36f);
+  const float trackTop = frame.Min.y + knobRadius;
+  const float trackBottom = frame.Max.y - knobRadius;
+  bool hovered = false;
+  bool held = false;
+  ImGui::ButtonBehavior(frame, itemId, &hovered, &held, ImGuiButtonFlags_PressedOnClick);
+  bool changed = false;
+  if (hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && *value != fillFrom) {
+    *value = fillFrom;
+    changed = true;
+    ImGui::MarkItemEdited(itemId);
+  } else if (held && trackBottom > trackTop) {
+    const float t = std::clamp((trackBottom - ImGui::GetIO().MousePos.y) / (trackBottom - trackTop), 0.0f, 1.0f);
+    const float next = min + (max - min) * t;
+    if (next != *value) {
+      *value = next;
+      changed = true;
+      ImGui::MarkItemEdited(itemId);
+    }
+  }
+
+  ImDrawList *draw = window->DrawList;
+  auto yFor = [&](float v) {
+    const float t = max > min ? std::clamp((v - min) / (max - min), 0.0f, 1.0f) : 0.0f;
+    return trackBottom - (trackBottom - trackTop) * t;
+  };
+  const float x = frame.Min.x + size.x * 0.5f;
+  const float trackHalf = 2.0f;
+  draw->AddRectFilled(ImVec2(x - trackHalf, trackTop), ImVec2(x + trackHalf, trackBottom), track(), trackHalf);
+  const float y = yFor(*value);
+  const float from = yFor(fillFrom);
+  draw->AddRectFilled(ImVec2(x - trackHalf, std::min(y, from)), ImVec2(x + trackHalf, std::max(y, from)), accent(), trackHalf);
+  knob(draw, ImVec2(x, y), knobRadius * (held ? 1.06f : 1.0f));
+  return changed;
+}
+
 bool BeginPopUpButton(const char *label, const char *preview, float width) {
   ImGuiWindow *window = ImGui::GetCurrentWindow();
   if (window->SkipItems) return false;

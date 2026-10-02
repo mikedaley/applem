@@ -46,6 +46,7 @@ void Emulation::start(MachineId machine, size_t iigsFastRam) {
     const float gain = gain_.load(std::memory_order_relaxed);
     for (size_t i = 0; i < frames * 2; i++) stereo[i] *= gain;
     driveSounds_.mix(stereo, frames, gain);
+    equalizer_.process(stereo, frames);
     if (ring_.available() < LOW_WATER) dispatch_semaphore_signal(wake_);
   });
 
