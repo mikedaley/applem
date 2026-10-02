@@ -94,10 +94,11 @@ namespace {
 
 // The window, in points.
 constexpr float BOARD_WIDTH = 600;
-constexpr float ROW_HEIGHT = 70;
-constexpr float CONNECTOR_X = 54;   // where a card's front edge sits, from the board's left
-// The tab with the fingers starts this far along a card's bottom edge and
-// runs to this share of its length, as on Apple's cards.
+constexpr float ROW_HEIGHT = 74;
+constexpr float CARD_X = 54;        // where a card's left edge sits, from the board's left
+// The tab with the fingers is at the right-hand end of a card's bottom edge,
+// as on Apple's cards seen from the component side: it ends this far short
+// of the right edge and takes this share of the edge's length.
 constexpr float TAB_INSET = 22;
 constexpr float TAB_SHARE = 0.62f;
 // An Apple II slot is a 50-contact connector, 25 on each side of the card.
@@ -132,9 +133,9 @@ void dashedRect(ImDrawList *draw, ImVec2 a, ImVec2 b, ImU32 colour) {
 }
 
 // A slot's edge connector, from the side: a black body along the bottom of
-// the row, which a card's tab goes into, and its fifty pins, twenty-five a
-// side, coming out under it as two staggered rows, at the same pitch as a
-// card's fingers.
+// the row, under the right-hand end of the card where its tab goes, and its
+// fifty pins, twenty-five a side, coming out under it as two staggered rows,
+// at the same pitch as a card's fingers.
 void connector(ImDrawList *draw, float tabLeft, float tabRight, float y) {
   const float pitch = (tabRight - tabLeft) / PINS_PER_SIDE;
   draw->AddRectFilled(ImVec2(tabLeft - 6, y + 2), ImVec2(tabRight + 6, y + 12), IM_COL32(0x10, 0x10, 0x10, 255), 2.0f);
@@ -147,7 +148,7 @@ void connector(ImDrawList *draw, float tabLeft, float tabRight, float y) {
   }
 }
 
-// What is on each card, as the real one has it, left to right after the
+// What is on each card, as the real one has it, left to right under the
 // label: chips with their part numbers, and the odd crystal, battery, DIP
 // switch or ribbon header.
 enum class Part { Chip, BigChip, Crystal, Battery, Header, DipSwitch };
@@ -204,22 +205,23 @@ ImU32 mixWithWhite(unsigned c, float t) {
   return IM_COL32(ch(16), ch(8), ch(0), 255);
 }
 
-// A card in its slot, as Apple II cards are: a green board with its gold
-// tab in the connector, a chamfered corner at the back, the chips and
-// parts it really carries, a paper label in the card's colour with its
-// name, and its board number in silkscreen.
+// A card in its slot, as an Apple II card looks from its component side in
+// the machine: a green board standing on the gold tab at the right-hand end
+// of its bottom edge, a chamfered corner at the other end of the top, the
+// chips and parts it really carries running from the left, a paper label in
+// the card's colour with its name, and its board number in silkscreen.
 void card(ImDrawList *draw, ImVec2 at, ImVec2 size, const std::string &id, unsigned colour, const char *name,
           bool locked) {
   const ImVec2 end(at.x + size.x, at.y + size.y);
   const float tab = 8;   // how far the tab with the fingers reaches down
-  const float cut = 12;  // the corner chamfer at the back
+  const float cut = 12;  // the corner chamfer, at the end away from the tab
   const ImU32 board = locked ? IM_COL32(0x3a, 0x55, 0x44, 255) : IM_COL32(0x2a, 0x6a, 0x3c, 255);
   const ImU32 edge = locked ? IM_COL32(0x55, 0x70, 0x5e, 255) : IM_COL32(0x4c, 0x8e, 0x5c, 255);
 
-  // The tab along the bottom edge, with its gold fingers, which goes into
-  // the slot's connector.
-  const float tabLeft = at.x + TAB_INSET;
-  const float tabRight = at.x + size.x * TAB_SHARE;
+  // The tab at the right-hand end of the bottom edge, with its gold fingers,
+  // which goes into the slot's connector.
+  const float tabLeft = end.x - size.x * TAB_SHARE;
+  const float tabRight = end.x - TAB_INSET;
   draw->AddRectFilled(ImVec2(tabLeft, end.y - 1), ImVec2(tabRight, end.y + tab), board);
   // Twenty-five fingers, one for each contact on this side of the slot.
   const float pitch = (tabRight - tabLeft) / PINS_PER_SIDE;
@@ -228,9 +230,9 @@ void card(ImDrawList *draw, ImVec2 at, ImVec2 size, const std::string &id, unsig
     draw->AddRectFilled(ImVec2(x, end.y + 1), ImVec2(x + pitch * 0.6f, end.y + tab), GOLD, 0.5f);
   }
 
-  // The board: square at the front, its back corner cut.
-  const ImVec2 outline[5] = {ImVec2(at.x, at.y), ImVec2(end.x - cut, at.y), ImVec2(end.x, at.y + cut),
-                             ImVec2(end.x, end.y), ImVec2(at.x, end.y)};
+  // The board: square over the connector, the top corner away from it cut.
+  const ImVec2 outline[5] = {ImVec2(at.x + cut, at.y), ImVec2(end.x, at.y), ImVec2(end.x, end.y),
+                             ImVec2(at.x, end.y), ImVec2(at.x, at.y + cut)};
   ImVec2 shadow[5];
   for (int i = 0; i < 5; i++) shadow[i] = ImVec2(outline[i].x + 2, outline[i].y + 3);
   draw->AddConvexPolyFilled(shadow, 5, IM_COL32(0, 0, 0, 80));
@@ -239,7 +241,7 @@ void card(ImDrawList *draw, ImVec2 at, ImVec2 size, const std::string &id, unsig
   for (float y = at.y + 7; y < end.y - 4; y += 6) {
     draw->AddLine(ImVec2(at.x + 4, y), ImVec2(end.x - 6, y), IM_COL32(255, 255, 255, 10), 1.0f);
   }
-  draw->AddRectFilledMultiColor(ImVec2(at.x + 1, at.y + 1), ImVec2(end.x - cut, at.y + size.y * 0.45f),
+  draw->AddRectFilledMultiColor(ImVec2(at.x + cut, at.y + 1), ImVec2(end.x - 1, at.y + size.y * 0.45f),
                                 IM_COL32(255, 255, 255, 22), IM_COL32(255, 255, 255, 22), IM_COL32(255, 255, 255, 0),
                                 IM_COL32(255, 255, 255, 0));
   draw->AddPolyline(outline, 5, edge, ImDrawFlags_Closed, 1.0f);
@@ -247,43 +249,74 @@ void card(ImDrawList *draw, ImVec2 at, ImVec2 size, const std::string &id, unsig
   // The label: a paper sticker in the card's colour, its name on it.
   ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.85f);
   const ImVec2 nameSize = ImGui::CalcTextSize(name);
-  const ImVec2 label(at.x + 8, at.y + 6);
+  const ImVec2 label(at.x + cut + 2, at.y + 5);
   const ImVec2 labelEnd(label.x + nameSize.x + 14, label.y + nameSize.y + 6);
   draw->AddRectFilled(ImVec2(label.x + 1, label.y + 1.5f), ImVec2(labelEnd.x + 1, labelEnd.y + 1.5f), IM_COL32(0, 0, 0, 70), 2.5f);
   draw->AddRectFilled(label, labelEnd, locked ? IM_COL32(0xc8, 0xcc, 0xc4, 255) : mixWithWhite(colour, 0.35f), 2.5f);
   draw->AddText(ImVec2(label.x + 7, label.y + 3), IM_COL32(24, 24, 24, 255), name);
   ImGui::PopFont();
   float x = labelEnd.x + 8;
+  float topRowEnd = x; // where the label, and its padlock, end
   if (locked) {
+    topRowEnd = x + 10;
     // A padlock after the label: it is part of the machine.
     const ImVec2 lock(x + 4, label.y + 2);
     draw->AddRectFilled(ImVec2(lock.x - 4, lock.y + 4), ImVec2(lock.x + 4, lock.y + 10), IM_COL32(255, 255, 255, 210), 1.5f);
     draw->PathArcTo(ImVec2(lock.x, lock.y + 4), 3.0f, IM_PI, IM_PI * 2, 10);
     draw->PathStroke(IM_COL32(255, 255, 255, 210), 0, 1.5f);
   }
-  // The board number, in silkscreen under the label.
+  // How wide each part is drawn.
+  auto partWidth = [](Part kind) {
+    switch (kind) {
+    case Part::BigChip: return 50.0f;
+    case Part::Chip: return 34.0f;
+    case Part::Crystal: return 16.0f;
+    case Part::Battery: return 20.0f;
+    case Part::Header: return 30.0f;
+    case Part::DipSwitch: return 24.0f;
+    }
+    return 0.0f;
+  };
+  const std::vector<PartSpec> &parts = partsFor(id);
+  // Ribbon headers go along the top edge at the right-hand end.
+  float headerLeft = end.x - 2;
+  for (const PartSpec &part : parts) {
+    if (part.kind == Part::Header) headerLeft -= partWidth(Part::Header) + 2;
+  }
+
+  // The board number, in silkscreen along the top, between the label and
+  // the headers, where there is room for it.
   ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.6f);
-  draw->AddText(ImVec2(label.x, end.y - ImGui::GetTextLineHeight() - 4), IM_COL32(255, 255, 255, 120), boardNumber(id));
+  const char *number = boardNumber(id);
+  const float numberWidth = ImGui::CalcTextSize(number).x;
+  const float numberX = std::min(headerLeft, end.x - 2) - numberWidth - 6;
+  if (numberX > topRowEnd + 4) {
+    draw->AddText(ImVec2(numberX, label.y + (labelEnd.y - label.y - ImGui::GetTextLineHeight()) * 0.5f),
+                  IM_COL32(255, 255, 255, 120), number);
+  }
   ImGui::PopFont();
 
-  // Its parts, from the back of the board forwards, as many as fit.
+  // The rest of the parts under the label, spread evenly across the whole
+  // board, as many as fit.
   ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.55f);
-  float right = end.x - cut + 2;
-  const float middle = at.y + size.y * 0.58f;
-  const std::vector<PartSpec> &parts = partsFor(id);
-  for (auto it = parts.rbegin(); it != parts.rend(); ++it) {
-    const PartSpec &part = *it;
-    float w = 0;
-    switch (part.kind) {
-    case Part::BigChip: w = 50; break;
-    case Part::Chip: w = 34; break;
-    case Part::Crystal: w = 16; break;
-    case Part::Battery: w = 20; break;
-    case Part::Header: w = 30; break;
-    case Part::DipSwitch: w = 24; break;
-    }
-    const float left = right - w;
-    if (left < labelEnd.x + 6 && part.kind != Part::Header) break;
+  const float rowLeft = at.x + 8;
+  const float rowRight = end.x - 6;
+  float used = 0;
+  int fitted = 0;
+  for (const PartSpec &part : parts) {
+    if (part.kind == Part::Header) continue;
+    const float w = partWidth(part.kind);
+    if (used + w + fitted * 6 > rowRight - rowLeft) break;
+    used += w;
+    fitted++;
+  }
+  const float gap = fitted ? (rowRight - rowLeft - used) / (fitted + 1) : 0;
+  float left = rowLeft + gap;
+  int placed = 0;
+  const float middle = at.y + size.y * 0.69f; // under the label
+  for (const PartSpec &part : parts) {
+    const float w = partWidth(part.kind);
+    if (part.kind != Part::Header && placed++ >= fitted) break;
     switch (part.kind) {
     case Part::Chip:
     case Part::BigChip: {
@@ -320,14 +353,14 @@ void card(ImDrawList *draw, ImVec2 at, ImVec2 size, const std::string &id, unsig
     }
     case Part::Header: {
       // A ribbon header along the board's top edge, its pins in two rows.
-      const ImVec2 c(left, at.y + 3);
+      const ImVec2 c(headerLeft, at.y + 3);
       draw->AddRectFilled(c, ImVec2(c.x + w - 4, c.y + 9), IM_COL32(0x10, 0x10, 0x10, 255), 1.0f);
       for (float px = c.x + 3; px < c.x + w - 6; px += 3.0f) {
         draw->AddRectFilled(ImVec2(px, c.y + 2), ImVec2(px + 1.2f, c.y + 3.2f), GOLD);
         draw->AddRectFilled(ImVec2(px, c.y + 5.5f), ImVec2(px + 1.2f, c.y + 6.7f), GOLD);
       }
       draw->AddText(ImVec2(c.x, c.y + 11), IM_COL32(255, 255, 255, 140), part.legend);
-      right = left - 2; // a header takes no room from the chips below it
+      headerLeft += w + 2; // a header takes no room from the chips below it
       continue;
     }
     case Part::DipSwitch: {
@@ -342,7 +375,7 @@ void card(ImDrawList *draw, ImVec2 at, ImVec2 size, const std::string &id, unsig
       break;
     }
     }
-    right = left - 6;
+    left += w + gap;
   }
   ImGui::PopFont();
 }
@@ -405,7 +438,7 @@ void ExpansionSlots::draw(bool *open) {
     ImGui::PushID(slot);
     const float rowTop = board.y + 28 + (slot - machine_->firstSlot) * ROW_HEIGHT;
     const float cardHeight = ROW_HEIGHT - 24;
-    const ImVec2 cardAt(board.x + CONNECTOR_X, rowTop + 2);
+    const ImVec2 cardAt(board.x + CARD_X, rowTop + 2);
 
     // The slot's number in silkscreen, and its connector.
     ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 1.25f);
@@ -416,7 +449,7 @@ void ExpansionSlots::draw(bool *open) {
     ImGui::PopFont();
     // The slot's connector along the bottom of the row, under where a card's
     // tab goes, whether or not there is a card in it.
-    connector(draw, cardAt.x + TAB_INSET, cardAt.x + CARD_WIDTH * TAB_SHARE, cardAt.y + cardHeight + 2);
+    connector(draw, cardAt.x + CARD_WIDTH * (1 - TAB_SHARE), cardAt.x + CARD_WIDTH - TAB_INSET, cardAt.y + cardHeight + 2);
 
     // Beside the card: what the slot is for, and where it answers.
     const float infoX = cardAt.x + CARD_WIDTH + 14;
@@ -551,7 +584,7 @@ void ExpansionSlots::draw(bool *open) {
   // The No-Slot Clock: a chip under the ROM, needing no slot.
   if (clockRow) {
     const float y = board.y + 28 + slots * ROW_HEIGHT + 4;
-    const ImVec2 chip(board.x + CONNECTOR_X + 10, y + 4);
+    const ImVec2 chip(board.x + CARD_X + 10, y + 4);
     for (float px = chip.x + 3; px < chip.x + 40; px += 4) {
       draw->AddLine(ImVec2(px, chip.y - 2), ImVec2(px, chip.y), IM_COL32(200, 200, 200, 180));
       draw->AddLine(ImVec2(px, chip.y + 22), ImVec2(px, chip.y + 24), IM_COL32(200, 200, 200, 180));

@@ -265,9 +265,10 @@ set once per card, since a refit or a machine switch builds a new one.
 View > Expansion Slots (`expansion_slots.*`, `slot_layout.*`) has the
 browser's rules drawn as the machine's logic board: each slot its number
 in silkscreen and its connector along the bottom of the row, the card in it
-drawn as Apple II cards are, a green board standing on the gold-fingered tab
-along its bottom edge, a chamfered back corner, the chips and parts the real
-card carries (the Mockingboard's AY-3-8910s, the Disk II's PROMs and drive
+drawn as an Apple II card looks from its component side in the machine, a
+green board standing on the gold-fingered tab at the right-hand end of its
+bottom edge, the top corner away from it chamfered, the chips and parts the
+real card carries spread across it (the Mockingboard's AY-3-8910s, the Disk II's PROMs and drive
 headers, the Super Serial Card's DIP switches), a paper label in the card's
 colour with its name and its board number in silkscreen; beside it the
 slot's use and its I/O and ROM addresses. A click on a slot offers its cards from its
