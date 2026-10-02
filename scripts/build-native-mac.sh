@@ -55,7 +55,7 @@ echo "> Version: $VERSION"
 echo "> Building..."
 git submodule update --init native/third_party/imgui
 cmake -S . -B "$BUILD" -DA2E_BUILD_NATIVE=ON -DCMAKE_BUILD_TYPE=Release >/dev/null
-cmake --build "$BUILD" --target ApplEmNative -j "$(sysctl -n hw.ncpu)"
+cmake --build "$BUILD" --target ApplEmNative -j 4
 
 APP="$BUILD/native/ApplEm.app"
 PLIST="$APP/Contents/Info.plist"
