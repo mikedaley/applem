@@ -66,6 +66,7 @@ public:
   bool isBusy(int device) const { return devices_[device].activityFrames > 0; }
   bool isWriting(int device) const { return devices_[device].activityFrames > 0 && devices_[device].lastWrite; }
   bool hasImage(int device) const { return devices_[device].filename.has_value(); }
+  const std::optional<std::string> &imageName(int device) const { return devices_[device].filename; }
 
   static bool isBlockImage(const std::string &path, size_t size);
   void insertFile(int device, const std::string &path);

@@ -868,28 +868,109 @@ void App::drawDiskDrives() {
   }
 }
 
-void App::filesDropped(const std::vector<std::string> &paths, std::optional<ImVec2> at) {
-  if (!started_) return;
+App::DropPlan App::planDrop(const std::vector<std::string> &paths, std::optional<ImVec2> at) const {
+  DropPlan plan;
   for (const std::string &path : paths) {
     std::error_code error;
     const size_t size = static_cast<size_t>(std::filesystem::file_size(path, error));
     if (error) continue;
     if (HardDrives::isBlockImage(path, size)) {
       const int device = at ? hardDrives_->deviceAt(*at) : -1;
-      hardDrives_->insertFile(device >= 0 ? device : hardDrives_->dropTarget(), path);
-      return;
+      return {DropPlan::Kind::SmartPort, device >= 0 ? device : hardDrives_->dropTarget(), path};
     }
     if (DiskDrives::isFloppyImage(path)) {
       const int drive = at ? drives_->driveAt(*at) : -1;
-      drives_->insertFile(drive >= 0 ? drive : drives_->dropTarget(), path);
-      return;
+      return {DropPlan::Kind::Floppy, drive >= 0 ? drive : drives_->dropTarget(), path};
     }
+  }
+  if (!paths.empty()) plan.path = paths.front();
+  return plan;
+}
+
+void App::dropNotice(const std::string &text, bool error) {
+  dropNotice_ = text;
+  dropNoticeError_ = error;
+  dropNoticeUntil_ = ImGui::GetTime() + 3.0;
+}
+
+void App::filesDropped(const std::vector<std::string> &paths, std::optional<ImVec2> at) {
+  if (!started_) return;
+  const DropPlan plan = planDrop(paths, at);
+  const std::string name = std::filesystem::path(plan.path).filename().string();
+  const std::string unit = std::to_string(plan.unit + 1);
+  switch (plan.kind) {
+  case DropPlan::Kind::None:
+    if (!name.empty()) dropNotice(name + " is not a disk image", true);
+    return;
+  case DropPlan::Kind::Floppy:
+    drives_->insertFile(plan.unit, plan.path);
+    if (drives_->diskName(plan.unit) == name) dropNotice(name + " is in Drive " + unit, false);
+    return;
+  case DropPlan::Kind::SmartPort:
+    // With no SmartPort fitted this says so itself, in a dialog.
+    hardDrives_->insertFile(plan.unit, plan.path);
+    if (hardDrives_->imageName(plan.unit) == name) dropNotice(name + " is in SmartPort " + unit, false);
+    return;
   }
 }
 
-void App::dragHover(std::optional<ImVec2> at) {
+bool App::dragHover(std::optional<ImVec2> at, const std::vector<std::string> &paths) {
   drives_->dragOver = at;
   hardDrives_->dragOver = at;
+  dragOver_ = at;
+  dragPlan_ = at ? planDrop(paths, at) : DropPlan{};
+  return dragPlan_.kind != DropPlan::Kind::None;
+}
+
+// While files are dragged over the picture: an outline round it and a pill
+// saying where the disk would go, as a drive's card shows when dragged over;
+// and after a drop, what it did.
+void App::drawScreenDrop(ImVec2 min, ImVec2 max) {
+  ImDrawList *top = ImGui::GetForegroundDrawList(ImGui::GetWindowViewport());
+  const ImU32 accent = ImGui::GetColorU32(ImGuiCol_CheckMark);
+  const ImU32 red = IM_COL32(0xe0, 0x3a, 0x3e, 255);
+  auto pill = [&](const std::string &text, ImU32 colour) {
+    ImGui::PushFont(nullptr, ImGui::GetFontSize() * 1.15f);
+    const ImVec2 size = ImGui::CalcTextSize(text.c_str());
+    const ImVec2 middle((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f);
+    top->AddRectFilled(ImVec2(middle.x - size.x * 0.5f - 16, middle.y - size.y * 0.5f - 9),
+                       ImVec2(middle.x + size.x * 0.5f + 16, middle.y + size.y * 0.5f + 9), colour, 20.0f);
+    top->AddText(ImVec2(middle.x - size.x * 0.5f, middle.y - size.y * 0.5f), IM_COL32_WHITE, text.c_str());
+    ImGui::PopFont();
+  };
+
+  // Under the drag and not covered by another window there.
+  const bool over = dragOver_ && dragOver_->x >= min.x && dragOver_->x < max.x && dragOver_->y >= min.y &&
+                    dragOver_->y < max.y &&
+                    ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem |
+                                           ImGuiHoveredFlags_AllowWhenBlockedByPopup);
+  if (over) {
+    const DropPlan &plan = dragPlan_;
+    const bool none = plan.kind == DropPlan::Kind::None;
+    const ImU32 colour = none ? red : accent;
+    const ImVec2 a(min.x + 6, min.y + 6), b(max.x - 6, max.y - 6);
+    top->AddRectFilled(a, b, (colour & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 40), 8.0f);
+    top->AddRect(a, b, colour, 8.0f, 0, 2.5f);
+    const std::string name = std::filesystem::path(plan.path).filename().string();
+    const std::string unit = std::to_string(plan.unit + 1);
+    std::string prompt;
+    switch (plan.kind) {
+    case DropPlan::Kind::None: prompt = name + " is not a disk image"; break;
+    case DropPlan::Kind::Floppy:
+      prompt = (drives_->hasDisk(plan.unit) ? "Drop to replace the disk in Drive " : "Drop to insert into Drive ") + unit;
+      break;
+    case DropPlan::Kind::SmartPort:
+      prompt = !hardDrives_->available() ? "There is no SmartPort to take this image"
+               : hardDrives_->hasImage(plan.unit) ? "Drop to replace the image in SmartPort " + unit
+                                                  : "Drop to insert into SmartPort " + unit;
+      break;
+    }
+    pill(prompt, colour);
+    return;
+  }
+  if (!dropNotice_.empty() && ImGui::GetTime() < dropNoticeUntil_) {
+    pill(dropNotice_, dropNoticeError_ ? red : accent);
+  }
 }
 
 // The machine's frames, or while it is switched off the no-signal picture,
@@ -1026,6 +1107,7 @@ void App::drawScreen() {
   // Takes the clicks, so a click on the picture focuses the window rather
   // than starting to drag it.
   ImGui::InvisibleButton("##screen", ImVec2(std::max(avail.x, 1.0f), std::max(avail.y, 1.0f)));
+  drawScreenDrop(origin, ImVec2(origin.x + avail.x, origin.y + avail.y));
 }
 
 namespace {

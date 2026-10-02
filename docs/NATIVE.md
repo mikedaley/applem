@@ -235,7 +235,12 @@ The drive's rules are the browser's:
   out of the main window: `main.mm` registers the view ImGui's backend puts
   in each window it makes. A disk dropped on a drive's card (or an image on
   a SmartPort device's) goes into that drive, which lights up while the
-  drag is over it; dropped anywhere else, it goes to the first empty drive. The browser's
+  drag is over it; dropped anywhere else, it goes to the first empty drive.
+  `.hdv`, `.2mg` and a `.po` bigger than 140K go to the SmartPort, the rest to
+  a floppy drive (`App::planDrop`, the browser's `media-kind.js` rule). A drag
+  over the screen outlines it and says where the disk will go, a drop says
+  where it went, and a drag with no disk image in it is refused: the cursor
+  says so and the outline turns red. The browser's
   `public/disks` library is bundled and offered under Recent.
 
 ## SmartPort drives and expansion slots

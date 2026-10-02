@@ -97,9 +97,10 @@ public:
   // coordinates: a disk dropped on a drive's card goes into that drive, and
   // anywhere else into the first empty one.
   void filesDropped(const std::vector<std::string> &paths, std::optional<ImVec2> at = std::nullopt);
-  // Where a drag of files is over one of the app's windows, or nothing once
-  // it has left, so the card it would land on can light up.
-  void dragHover(std::optional<ImVec2> at);
+  // Where a drag of files is over one of the app's windows, and what it
+  // carries, or nothing once it has left, so the card or the screen it would
+  // land on can light up. Whether any of the files is a disk image.
+  bool dragHover(std::optional<ImVec2> at, const std::vector<std::string> &paths = {});
 
   // The menu bar as of the last frame, and an item chosen from it. The
   // action runs at the start of the next frame, where ImGui may be used.
@@ -192,6 +193,24 @@ private:
   // as the browser's full page mode does. Ctrl+Escape leaves it.
   bool fullPage_ = false;
   bool enterFullPage_ = false;
+  // Where a dropped file goes: the first disk image among the files, into
+  // the drive or SmartPort device under the point, or the first empty one.
+  struct DropPlan {
+    enum class Kind { None, Floppy, SmartPort } kind = Kind::None;
+    int unit = 0;
+    std::string path; // the image, or with Kind::None the first file
+  };
+  DropPlan planDrop(const std::vector<std::string> &paths, std::optional<ImVec2> at) const;
+  // A drag over the picture: an outline and where the disk would go.
+  void drawScreenDrop(ImVec2 min, ImVec2 max);
+  void dropNotice(const std::string &text, bool error);
+  std::optional<ImVec2> dragOver_;
+  DropPlan dragPlan_;
+  // What the last drop did, shown over the picture for a moment.
+  std::string dropNotice_;
+  bool dropNoticeError_ = false;
+  double dropNoticeUntil_ = 0;
+
   // Which window shows the picture this frame, so the keyboard follows it.
   const char *screenWindowName_ = nullptr;
   // Where the picture was last drawn: the machine's shape, whether it filled

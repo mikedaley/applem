@@ -58,9 +58,11 @@ std::vector<std::string> droppedPaths(id<NSDraggingInfo> info) {
   return paths;
 }
 
+// Refused, with the cursor saying so, when nothing in it is a disk image.
 NSDragOperation dragMoved(NSWindow *window, id<NSDraggingInfo> info) {
-  if (g_dropApp) g_dropApp->dragHover(imguiPoint(window, info.draggingLocation));
-  return NSDragOperationCopy;
+  if (!g_dropApp) return NSDragOperationNone;
+  return g_dropApp->dragHover(imguiPoint(window, info.draggingLocation), droppedPaths(info)) ? NSDragOperationCopy
+                                                                                           : NSDragOperationNone;
 }
 
 void dragLeft() {
