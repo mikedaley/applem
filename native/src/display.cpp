@@ -141,8 +141,11 @@ void Display::saveProfiles() {
 // Applying
 // ---------------------------------------------------------------------------
 
-void Display::applyToRenderer(ScreenRenderer &renderer) const {
-  renderer.setParams(crtParamsFor(settings()));
+void Display::applyToRenderer(ScreenRenderer &renderer, float beamX, float beamY) const {
+  CrtParams params = crtParamsFor(settings());
+  params.beamX = beamX;
+  params.beamY = beamY;
+  renderer.setParams(params);
 }
 
 // The decoder first, because switching monochrome off restores whichever

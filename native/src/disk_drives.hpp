@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include "machine_poll.hpp"
 #include "ui_controls.hpp"
 
 #include "disk_inspector_data.hpp"
@@ -179,6 +180,7 @@ private:
   void drawErrorPopup();
 
   Emulation &emulation_;
+  MachinePoll poll_;
   Platform &platform_;
   MediaStore store_;
   std::vector<LibraryEntry> library_;

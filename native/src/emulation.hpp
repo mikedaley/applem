@@ -12,13 +12,16 @@
 #include "audio_ring.hpp"
 #include "drive_sounds.hpp"
 #include "frame_queue.hpp"
+#include "machine_poll.hpp"
 
 #include <atomic>
 #include <chrono>
 #include <deque>
+#include <functional>
 #include <dispatch/dispatch.h>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 namespace a2e::native {
 
@@ -43,6 +46,15 @@ namespace a2e::native {
 // refills back to back, and since a mutex is not fair the thread took it
 // straight back every time: the UI waited up to eleven seconds for it, and
 // the screen sat on whatever picture it last had.
+//
+// Waiting at most a refill is still waiting, and the UI used to do it several
+// times a frame: at 4x a refill is four frames of the machine, and a UI frame
+// that waited through one missed the display's refresh. So what the UI does
+// every frame does not wait. Input is post()ed, as the browser posts it to its
+// Worker, and the thread applies it before the next refill; the views that
+// follow the machine poll() it, which gives up if a refill has the lock and
+// keeps the last frame's answer. A poll refused for a tenth of a second waits
+// after all, so a machine that never lets go cannot freeze a view.
 class Emulation {
 public:
   static constexpr int SAMPLE_RATE = 48000;
@@ -62,7 +74,36 @@ public:
     waiting_.fetch_add(1, std::memory_order_relaxed);
     std::lock_guard<std::mutex> lock(mutex_);
     waiting_.fetch_sub(1, std::memory_order_relaxed);
+    // Anything posted before this call reaches the machine before it does.
+    applyPosted();
     return f(host_);
+  }
+
+  // Something for the machine to do, applied on the emulation thread before
+  // its next refill, in the order posted. The UI does not wait for it.
+  using Posted = std::function<void(host::MachineHost &)>;
+  void post(Posted f);
+
+  // When a poll last reached the machine (machine_poll.hpp).
+  using Poll = MachinePoll;
+  static constexpr auto POLL_PATIENCE = std::chrono::milliseconds(100);
+
+  // Run `f` against the machine if the lock is free, and return whether it
+  // ran. A refill holding the lock is not waited for, unless this poll has
+  // been refused for POLL_PATIENCE.
+  template <typename F> bool poll(Poll &p, F &&f) {
+    const auto now = std::chrono::steady_clock::now();
+    std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
+    if (!lock.owns_lock()) {
+      if (now - p.last < POLL_PATIENCE) return false;
+      waiting_.fetch_add(1, std::memory_order_relaxed);
+      lock.lock();
+      waiting_.fetch_sub(1, std::memory_order_relaxed);
+    }
+    p.last = now;
+    applyPosted();
+    f(host_);
+    return true;
   }
 
   // Powered off, the machine does not run and nothing is drawn; powering on
@@ -96,6 +137,8 @@ public:
 
 private:
   void run();
+  // Called with the machine's lock held.
+  void applyPosted();
   void refill(float *scratch, bool toDevice);
   void applyGain();
   void measure();
@@ -104,6 +147,10 @@ private:
   std::mutex mutex_;
   // Callers of withMachine() waiting for the lock, which a refill yields to.
   std::atomic<int> waiting_{0};
+  // What post() has queued, under its own lock so posting never waits for a
+  // refill.
+  std::mutex postedMutex_;
+  std::vector<Posted> posted_;
   std::thread thread_;
   std::atomic<bool> quit_{false};
   std::atomic<bool> powered_{false};
@@ -115,6 +162,8 @@ private:
   dispatch_semaphore_t wake_;
 
   std::atomic<float> gain_{0.5f};
+  // 1 while the machine runs, 0 while it is paused; the emulation thread's.
+  float pauseLevel_ = 1.0f;
   float volume_ = 0.5f;
   bool muted_ = false;
 

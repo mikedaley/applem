@@ -15,6 +15,7 @@
 #include "emulation.hpp"
 #include "expansion_slots.hpp"
 #include "key_mapper.hpp"
+#include "cpu_debugger.hpp"
 #include "menu_model.hpp"
 #include "mockingboard_window.hpp"
 #include "platform.hpp"
@@ -49,6 +50,7 @@ struct Settings {
   int speed = 1; // 1, 2, 4 or 8 times the machine's clock
   bool showJoystick = false;
   bool showMockingboard = false;
+  bool showCpuDebugger = false;
   int mockingboardMutes = 0; // a bit a channel, PSG 1's A B C then PSG 2's
   int gamePort = 0; // 0 the Apple joystick, 1 the Joyport
   bool cursorKeys = false;
@@ -130,6 +132,7 @@ private:
   void registerSettingsHandler();
   void registerDisplayHandler();
   void registerSlotsHandler();
+  void registerDebuggerHandler();
   void startEmulation();
 
   void buildMenus();
@@ -178,6 +181,7 @@ private:
   std::unique_ptr<SaveStates> states_;
   Joystick joystick_{emulation_};
   MockingboardWindow mockingboard_{emulation_};
+  CpuDebugger debugger_{emulation_, platform_};
   bool started_ = false;
 
   // The machine profile currently built, for drawing; refreshed on a switch.

@@ -86,6 +86,9 @@ void Emulation::run() {
     last = now;
 
     if (!powered_) {
+      // Nothing refills, so what was posted is applied here.
+      std::lock_guard<std::mutex> lock(mutex_);
+      applyPosted();
       owed = 0.0;
       continue;
     }
@@ -111,7 +114,22 @@ void Emulation::run() {
 void Emulation::refill(float *scratch, bool toDevice) {
   while (waiting_.load(std::memory_order_relaxed) > 0) std::this_thread::yield();
   std::lock_guard<std::mutex> lock(mutex_);
+  applyPosted();
   host_.generateStereoAudioSamples(scratch, SAMPLES_PER_FRAME);
+  // A paused machine is silent, as the browser's is: its sound sources would
+  // otherwise hold whatever they were playing, a Mockingboard or an Ensoniq
+  // note sounding for as long as the debugger sits on a breakpoint. The level
+  // ramps across one buffer on the way in and out, so neither edge clicks.
+  const float target = host_.isPaused() ? 0.0f : 1.0f;
+  if (pauseLevel_ != target || target == 0.0f) {
+    const float from = pauseLevel_;
+    for (int i = 0; i < SAMPLES_PER_FRAME; i++) {
+      const float level = from + (target - from) * (i + 1) / SAMPLES_PER_FRAME;
+      scratch[i * 2] *= level;
+      scratch[i * 2 + 1] *= level;
+    }
+    pauseLevel_ = target;
+  }
   if (toDevice) ring_.write(scratch, SAMPLES_PER_FRAME);
 
   if (host_.consumeFrameSamples() > 0) {
@@ -122,6 +140,21 @@ void Emulation::refill(float *scratch, bool toDevice) {
       frames_.push(host_.framebuffer(), width, height);
     }
   }
+}
+
+void Emulation::post(Posted f) {
+  std::lock_guard<std::mutex> lock(postedMutex_);
+  posted_.push_back(std::move(f));
+}
+
+void Emulation::applyPosted() {
+  std::vector<Posted> due;
+  {
+    std::lock_guard<std::mutex> lock(postedMutex_);
+    if (posted_.empty()) return;
+    due.swap(posted_);
+  }
+  for (Posted &f : due) f(host_);
 }
 
 void Emulation::measure() {
@@ -158,6 +191,7 @@ void Emulation::setPowered(bool on) {
   if (on == powered_) return;
   {
     std::lock_guard<std::mutex> lock(mutex_);
+    applyPosted(); // for the machine it was meant for
     if (on) {
       host_.reset();
     } else if (DiskController *disk = host_.diskController()) {
@@ -174,6 +208,7 @@ bool Emulation::setMachine(MachineId id) {
   bool ok = false;
   {
     std::lock_guard<std::mutex> lock(mutex_);
+    applyPosted(); // for the machine it was meant for
     ok = host_.setMachine(id);
     applyGain();
   }
@@ -186,6 +221,7 @@ bool Emulation::setIIgsFastRam(size_t bytes) {
   bool ok = false;
   {
     std::lock_guard<std::mutex> lock(mutex_);
+    applyPosted(); // for the machine it was meant for
     ok = host_.setIIgsFastRam(bytes);
     applyGain();
   }

@@ -391,6 +391,76 @@ EP ticks of the clock over 8. The mutes are kept in the settings and put
 back on any card that is new, since a rebuilt machine or a refitted slot
 starts with every channel on.
 
+Debug > CPU Debugger (`cpu_debugger.*`) is the browser's window for either
+processor: registers, flags, the clock, the beam and the stack down the
+left, the machine's own disassembly in the middle, and Breakpoints, Watch,
+Beam and Trace in a panel below that folds and resizes. Nothing in the
+window scrolls but the lists: the left column's cards are a fixed height
+and the stack's card takes whatever is left of it, down to the window's
+foot, with the stack (all of page one above SP, or 256 entries of a native
+stack) scrolling inside it. The window's minimum size keeps the cards and a
+few stack entries in view. **The beam is shown
+on the screen**, as the browser shows it: while the machine is paused and
+the window is open, the CRT shader's crosshair (`beamX`/`beamY`) marks the
+line and column, placed through the profile's text rectangle so a IIgs's
+border is allowed for, and a beam in horizontal blanking draws the line
+alone; the column carries only the numbers. What it asks of the
+machine is `MachineHost`'s (`machine_host_debug.cpp`), shared with the
+browser's bindings, and it reads the machine once a frame under one lock
+into a snapshot. Stops are examined every frame whether the window is open
+or not, because the core knows nothing of conditions: a breakpoint whose
+condition is false is sent straight back to running. Continue, Step Into,
+Step Over and Step Out are also Debug menu items on F5, F11, F10 and
+Shift-F11, which reach the menu while the screen has the keyboard.
+Command-click in the gutter bookmarks a line, as Ctrl/Cmd-click does in the
+browser, and the Bookmarks button jumps to one.
+
+**The listing is decoded fresh every frame from wherever it is**, with a few
+lines beyond each edge, so it scrolls without end: by the pixel (three
+lines to a wheel notch, a trackpad about as far as the fingers go), by the
+arrow keys and Page Up/Down when it has focus, and by a scrollbar over the
+whole bank, which marks the PC, breakpoints and bookmarks. Home follows the
+PC again. Whenever the PC is in view the listing is aligned on it, because
+decoding from an arbitrary start can swallow the PC's first bytes in the
+instruction before it. Each line carries:
+
+- **Its cost in cycles** (`MachineHost::cycleCost`): the core's own base
+  tables and the extras the core charges, so the column cannot disagree
+  with the emulation. Widths, the direct page and the decimal flag are taken
+  as they stand; a page crossing or a branch is a range (`2-3`) except at
+  the PC, where the registers decide it. `test_machine_host` steps every
+  opcode, both index cases and several flag patterns, on a //e and on a IIgs
+  in both modes and widths, and checks the cost at the PC against what the
+  core then charged. Shift-click selects a run of lines and totals it.
+- **Heat and coverage**, behind the header's switch: a //e counts the cycles
+  spent at each address and the line is tinted warmer for more (log scale);
+  a IIgs records only which addresses have run (`IIgsMachine` keeps a bit per
+  address, 2MB, while it is on) and is labelled Coverage. Either way a line
+  that has not run since it was switched on is dimmed, which is how data
+  decoded as code shows itself.
+- **Branch and jump arrows** in lanes beside the addresses, shortest nearest
+  the code, green or orange from the PC as the branch will or will not go,
+  and to the edge with a chevron when the target is off the listing.
+- **Click to follow**: a branch, jump or call's operand is a link; Back and
+  Forward (the header's chevrons, Debug > Back/Forward on ⌘[ and ⌘], and the
+  mouse's side buttons) return along the way.
+- **A rule builder for conditions**, the browser's Condition Rule Builder:
+  Rules… on a breakpoint opens groups of rules (a register, a flag, a byte,
+  a word, a BASIC variable or array element, compared with a number),
+  matched ALL or ANY and nested, written into the condition as the same
+  expression the browser writes (`condition_rules.*`). The tree is not
+  stored: the condition is read back into one when the builder opens, so
+  the ini keeps one string per breakpoint and a hand-typed condition in the
+  builder's shape opens as rules. One it cannot read is shown as such, and
+  Apply replaces it. Breakpoints, watches, beam
+breakpoints, labels, comments, imported symbols and bookmarks are kept in
+the ini under `[ApplEmDebugger][State]`. The Apple II's built-in names are
+generated from `symbols.js` into `apple2_symbols.inc`
+(`npm run generate:native-symbols`, checked by `npm run check`), and
+`test_native_debugger` pins symbol lookup, address parsing, the
+breakpoint list, and the rules' expressions in both directions and through
+the evaluator.
+
 ## IIgs battery RAM
 
 The 256 bytes are kept in `iigs-battery-ram.bin`, written when the core
@@ -502,7 +572,7 @@ different things.
 4. Media and configuration: disk drives, SmartPort and expansion slots
    IIgs battery RAM, save states, CPU speed and the game port. Done.
 5. Display fidelity: the CRT shaders in Metal, display settings and profiles. Done.
-6. Debugger: CPU, memory, stack, zero page, soft switches, trace.
+6. Debugger: memory, zero page and soft switches. The CPU debugger (with the stack and the trace) is done.
 7. The remaining debug views. The Disk Inspector and the Mockingboard are done.
 8. The tools that are JavaScript today: printers, editors, file explorer.
 9. Signing, notarisation and CI.

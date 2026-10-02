@@ -150,14 +150,21 @@ void Joystick::update(bool screenHasKeyboard) {
       buttons_[i] = screenButtons_[i] || (i < 2 && !pads_.empty() && pads_[0].buttons[i]);
     }
 
-    emulation_.withMachine([&](host::MachineHost &host) {
-      for (int i = 0; i < 2; i++) {
-        if (paddles_[i] != sentPaddles_[i]) host.setPaddleValue(i, paddles_[i]);
-      }
-      for (int i = 0; i < 3; i++) {
-        if (static_cast<int>(buttons_[i]) != sentButtons_[i]) host.setButton(i, buttons_[i]);
-      }
-    });
+    // Only what changed, and posted: the UI does not wait for the machine.
+    bool changed = false;
+    for (int i = 0; i < 2; i++) changed |= paddles_[i] != sentPaddles_[i];
+    for (int i = 0; i < 3; i++) changed |= static_cast<int>(buttons_[i]) != sentButtons_[i];
+    if (changed) {
+      emulation_.post([paddles = paddles_, sentPaddles = sentPaddles_, buttons = buttons_,
+                       sentButtons = sentButtons_](host::MachineHost &host) {
+        for (int i = 0; i < 2; i++) {
+          if (paddles[i] != sentPaddles[i]) host.setPaddleValue(i, paddles[i]);
+        }
+        for (int i = 0; i < 3; i++) {
+          if (static_cast<int>(buttons[i]) != sentButtons[i]) host.setButton(i, buttons[i]);
+        }
+      });
+    }
     sentPaddles_ = paddles_;
     for (int i = 0; i < 3; i++) sentButtons_[i] = buttons_[i];
   } else {
@@ -180,11 +187,13 @@ void Joystick::update(bool screenHasKeyboard) {
       if (screenButtons_[stick]) mask |= SWITCH_FIRE;
       sticks_[stick] = mask;
     }
-    emulation_.withMachine([&](host::MachineHost &host) {
-      for (int stick = 0; stick < 2; stick++) {
-        if (sticks_[stick] != sentSticks_[stick]) host.setJoyportStick(stick, sticks_[stick]);
-      }
-    });
+    if (sticks_ != sentSticks_) {
+      emulation_.post([sticks = sticks_, sent = sentSticks_](host::MachineHost &host) {
+        for (int stick = 0; stick < 2; stick++) {
+          if (sticks[stick] != sent[stick]) host.setJoyportStick(stick, sticks[stick]);
+        }
+      });
+    }
     sentSticks_ = sticks_;
   }
 }

@@ -54,7 +54,9 @@ public:
 
   // Push the picture to the renderer, and the decoder to the machine's video.
   // The machine half is needed again whenever the machine is rebuilt.
-  void applyToRenderer(ScreenRenderer &renderer) const;
+  // The picture settings, and the CPU debugger's beam crosshair (the
+  // renderer's beamX/beamY, -1 for none), which is not a setting.
+  void applyToRenderer(ScreenRenderer &renderer, float beamX = -1.0f, float beamY = -1.0f) const;
   void applyToMachine(host::MachineHost &host) const;
 
   const DisplaySettings &settings() const { return current().settings; }

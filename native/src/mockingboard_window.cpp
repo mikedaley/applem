@@ -161,7 +161,7 @@ MockingboardWindow::MockingboardWindow(Emulation &emulation) : emulation_(emulat
 MockingboardWindow::~MockingboardWindow() = default;
 
 void MockingboardWindow::update() {
-  emulation_.withMachine([&](host::MachineHost &host) {
+  if (!emulation_.poll(updatePoll_, [&](host::MachineHost &host) {
     MockingboardCard *mb = host.mockingboard();
     fitted_ = mb != nullptr;
     if (!mb || mb == card_) return;
@@ -170,7 +170,9 @@ void MockingboardWindow::update() {
       AY8910 &chip = psg == 0 ? mb->getPSG1() : mb->getPSG2();
       for (int ch = 0; ch < 3; ch++) chip.setChannelMute(ch, mutes & (1 << (psg * 3 + ch)));
     }
-  });
+  })) {
+    return;
+  }
   if (!fitted_) card_ = nullptr;
 }
 
@@ -186,7 +188,7 @@ void MockingboardWindow::setMute(int psg, int channel, bool muted) {
 
 void MockingboardWindow::take() {
   std::optional<AY8910> chips[2];
-  emulation_.withMachine([&](host::MachineHost &host) {
+  emulation_.poll(takePoll_, [&](host::MachineHost &host) {
     const MockingboardCard *mb = host.mockingboard();
     if (!mb) return;
     enabled_ = mb->isEnabled();

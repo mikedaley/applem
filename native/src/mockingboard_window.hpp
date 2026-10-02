@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include "machine_poll.hpp"
 #include <array>
 #include <cstdint>
 
@@ -64,6 +65,8 @@ private:
   void drawVia(int index, float width);
 
   Emulation &emulation_;
+  MachinePoll updatePoll_;
+  MachinePoll takePoll_;
   bool fitted_ = false;
   // The card the mutes were last applied to, to tell a new one.
   const void *card_ = nullptr;

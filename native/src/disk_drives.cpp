@@ -339,7 +339,7 @@ DiskDrives::~DiskDrives() {
 // ---------------------------------------------------------------------------
 
 void DiskDrives::update(double now) {
-  emulation_.withMachine([&](host::MachineHost &host) {
+  emulation_.poll(poll_, [&](host::MachineHost &host) {
     DiskController *disk = host.diskController();
     if (!disk) return;
     selectedDrive_ = disk->getSelectedDrive();

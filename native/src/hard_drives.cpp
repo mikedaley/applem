@@ -396,7 +396,7 @@ void HardDrives::update() {
   const double now = ImGui::GetTime();
   bool activity = false;
   bool write = false;
-  emulation_.withMachine([&](host::MachineHost &host) {
+  emulation_.poll(poll_, [&](host::MachineHost &host) {
     SmartPortCard *card = host.smartPort();
     available_ = card != nullptr;
     if (!card) {

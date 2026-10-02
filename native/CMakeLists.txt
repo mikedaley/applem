@@ -33,10 +33,14 @@ set(NATIVE_SOURCES
     src/main.mm
     src/app.cpp
     src/audio_output.mm
+    src/cpu_debugger.cpp
     src/disk_drives.cpp
     src/disk_inspector_data.cpp
     src/disk_platter.cpp
     src/display.cpp
+    src/condition_rules.cpp
+    src/debug_breakpoints.cpp
+    src/debug_symbols.cpp
     src/display_settings.cpp
     src/drive_sounds.cpp
     src/emulation.cpp
@@ -134,6 +138,22 @@ target_include_directories(test_native_input PRIVATE
 target_compile_options(test_native_input PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(test_native_input PRIVATE a2e_core imgui)
 add_test(NAME test_native_input COMMAND test_native_input
+         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+# The debugger's symbols, address parsing and breakpoint list.
+add_executable(test_native_debugger
+    tests/test_native_debugger.cpp
+    src/condition_rules.cpp
+    src/debug_symbols.cpp
+    src/debug_breakpoints.cpp
+)
+target_include_directories(test_native_debugger PRIVATE
+    ${CMAKE_SOURCE_DIR}/tests/catch2
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_compile_options(test_native_debugger PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(test_native_debugger PRIVATE a2e_core)
+add_test(NAME test_native_debugger COMMAND test_native_debugger
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 # Renders test pictures through the CRT chain for scripts/compare-crt.mjs,

@@ -66,6 +66,7 @@ App::App(std::string settingsDirectory, Platform platform)
   registerSettingsHandler();
   registerDisplayHandler();
   registerSlotsHandler();
+  registerDebuggerHandler();
   joystick_.setGamepadSource(platform_.gamepads);
   // Refitting can rebuild the SmartPort, and its images with it.
   slots_.setAppliedCallback([this] { hardDrives_->syncWithMachine(); });
@@ -129,6 +130,7 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "WindowDocking=%d", &value) == 1) s.windowDocking = value;
     else if (std::sscanf(line, "ShowJoystick=%d", &value) == 1) s.showJoystick = value;
     else if (std::sscanf(line, "ShowMockingboard=%d", &value) == 1) s.showMockingboard = value;
+    else if (std::sscanf(line, "ShowCpuDebugger=%d", &value) == 1) s.showCpuDebugger = value;
     else if (std::sscanf(line, "MockingboardMutes=%d", &value) == 1) s.mockingboardMutes = value & 0x3F;
     else if (std::sscanf(line, "GamePort=%d", &value) == 1) s.gamePort = value == 1 ? 1 : 0;
     else if (std::sscanf(line, "CursorKeys=%d", &value) == 1) s.cursorKeys = value;
@@ -165,6 +167,7 @@ void App::registerSettingsHandler() {
     out->appendf("WindowDocking=%d\n", s.windowDocking ? 1 : 0);
     out->appendf("ShowJoystick=%d\n", s.showJoystick ? 1 : 0);
     out->appendf("ShowMockingboard=%d\n", s.showMockingboard ? 1 : 0);
+    out->appendf("ShowCpuDebugger=%d\n", s.showCpuDebugger ? 1 : 0);
     out->appendf("MockingboardMutes=%d\n", s.mockingboardMutes);
     out->appendf("GamePort=%d\n", s.gamePort);
     out->appendf("CursorKeys=%d\n", s.cursorKeys ? 1 : 0);
@@ -219,6 +222,29 @@ void App::registerSlotsHandler() {
   ImGui::AddSettingsHandler(&handler);
 }
 
+// The debugger's breakpoints, watches, labels and layout, under
+// [ApplEmDebugger][State].
+void App::registerDebuggerHandler() {
+  ImGuiSettingsHandler handler;
+  handler.TypeName = "ApplEmDebugger";
+  handler.TypeHash = ImHashStr("ApplEmDebugger");
+  handler.UserData = &debugger_;
+  handler.ReadOpenFn = [](ImGuiContext *, ImGuiSettingsHandler *, const char *name) -> void * {
+    return std::strcmp(name, "State") == 0 ? reinterpret_cast<void *>(1) : nullptr;
+  };
+  handler.ReadLineFn = [](ImGuiContext *, ImGuiSettingsHandler *h, void *, const char *line) {
+    static_cast<CpuDebugger *>(h->UserData)->readSetting(line);
+  };
+  handler.WriteAllFn = [](ImGuiContext *, ImGuiSettingsHandler *h, ImGuiTextBuffer *out) {
+    std::string text;
+    static_cast<const CpuDebugger *>(h->UserData)->writeSettings(text);
+    out->appendf("[%s][State]\n", h->TypeName);
+    out->append(text.c_str());
+    out->append("\n");
+  };
+  ImGui::AddSettingsHandler(&handler);
+}
+
 // Started on the first frame rather than in the constructor, because ImGui
 // reads the ini, and so the settings, inside the first NewFrame.
 void App::startEmulation() {
@@ -257,6 +283,7 @@ void App::startEmulation() {
   joystick_.deadzone = settings_.deadzone;
   joystick_.machineRebuilt();
   mockingboard_.mutes = settings_.mockingboardMutes;
+  debugger_.setMachine(*wanted);
   applySpeed();
   emulation_.setPowered(true);
   started_ = true;
@@ -275,11 +302,14 @@ void App::frame() {
   joystick_.update(screenHadKeyboard_);
   hardDrives_->update();
   mockingboard_.update();
+  debugger_.update();
 
   // The decoder and character set live in the machine's video, which a
   // rebuild replaces, so they are told again whenever they may have gone.
   if (display_.takeMachineChange()) applyMachineDisplay();
-  display_.applyToRenderer(*platform_.screen);
+  float beamX = -1.0f, beamY = -1.0f;
+  debugger_.beamOnScreen(settings_.showCpuDebugger, beamX, beamY);
+  display_.applyToRenderer(*platform_.screen, beamX, beamY);
 
   // Ctrl+Escape leaves Full Page, as in the browser.
   if (fullPage_ && ImGui::IsKeyPressed(ImGuiKey_Escape, false) &&
@@ -480,6 +510,7 @@ MenuItem App::machineMenu() {
                             slots_.apply();
                             restoreBatteryRam();
                             joystick_.machineRebuilt();
+                            if (profile_) debugger_.setMachine(*profile_);
                           }, "", 0, settings_.iigsMemoryKB == kb));
   }
   items.push_back(submenu("IIgs Memory", memory));
@@ -582,8 +613,26 @@ MenuItem App::viewMenu() {
 // the browser's menus follow the machine (machine-availability.js).
 std::optional<MenuItem> App::debugMenu() {
   auto &a = menuActions_;
-  std::vector<MenuItem> items;
+  const bool on = emulation_.powered();
+  std::vector<MenuItem> items = {
+      item(a, "debug.cpu", "CPU Debugger", [this] {
+             settings_.showCpuDebugger = !settings_.showCpuDebugger;
+             ImGui::MarkIniSettingsDirty();
+           }, "d", MOD_COMMAND | MOD_SHIFT, settings_.showCpuDebugger),
+      MenuItem::separatorItem(),
+      item(a, "debug.continue", debugger_.paused() ? "Continue" : "Pause", [this] { debugger_.continueOrPause(); },
+           "F5", 0, false, on),
+      item(a, "debug.stepinto", "Step Into", [this] { debugger_.stepInto(); }, "F11", 0, false, on),
+      item(a, "debug.stepover", "Step Over", [this] { debugger_.stepOver(); }, "F10", 0, false, on),
+      item(a, "debug.stepout", "Step Out", [this] { debugger_.stepOut(); }, "F11", MOD_SHIFT, false, on),
+      MenuItem::separatorItem(),
+      item(a, "debug.back", "Back", [this] { debugger_.back(); }, "[", MOD_COMMAND, false,
+           settings_.showCpuDebugger && debugger_.canGoBack()),
+      item(a, "debug.forward", "Forward", [this] { debugger_.forward(); }, "]", MOD_COMMAND, false,
+           settings_.showCpuDebugger && debugger_.canGoForward()),
+  };
   if (mockingboard_.available()) {
+    items.push_back(MenuItem::separatorItem());
     items.push_back(item(a, "debug.mockingboard", "Mockingboard", [this] {
                            settings_.showMockingboard = !settings_.showMockingboard;
                            ImGui::MarkIniSettingsDirty();
@@ -635,6 +684,7 @@ bool App::switchMachine(MachineId id) {
   restoreBatteryRam();
   applySpeed();
   joystick_.machineRebuilt();
+  debugger_.setMachine(*profile_);
   drives_->machineChanged();
   hardDrives_->machineChanged();
   noSignalStale_ = true;
@@ -792,6 +842,8 @@ void App::drawMockingboard() {
 void App::drawDiskDrives() {
   drawJoystick();
   drawMockingboard();
+  firstPosition(60, 40);
+  debugger_.draw(&settings_.showCpuDebugger);
   firstPosition(80, 60);
   states_->draw(&settings_.showSaveStates);
   if (states_->autosave != settings_.autosave) {
@@ -1184,30 +1236,45 @@ void App::routeKeyboard() {
   const bool command = commandIsOpenApple();
   const bool capsLock = platform_.capsLockOn && platform_.capsLockOn();
 
-  emulation_.withMachine([&](host::MachineHost &host) {
-    for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_NamedKey_END; k++) {
-      const ImGuiKey key = static_cast<ImGuiKey>(k);
-      const std::optional<HostKey> hostKey = browserKeyFor(key, swap);
-      if (!hostKey) continue;
-      // Caps Lock is a state the core is told with every key, not a key.
-      if (hostKey->keyCode == 20) continue;
-      // Ctrl+F12 is the app's Ctrl+Reset.
-      if (key == ImGuiKey_F12 && held.control) continue;
+  // This frame's key changes, posted together and only when there are any:
+  // the machine is not waited for, and not touched at all on a frame with
+  // nothing to say.
+  struct Change {
+    bool down;
+    CoreKeyEvent event;
+  };
+  std::vector<Change> changes;
+  for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_NamedKey_END; k++) {
+    const ImGuiKey key = static_cast<ImGuiKey>(k);
+    const std::optional<HostKey> hostKey = browserKeyFor(key, swap);
+    if (!hostKey) continue;
+    // Caps Lock is a state the core is told with every key, not a key.
+    if (hostKey->keyCode == 20) continue;
+    // Ctrl+F12 is the app's Ctrl+Reset.
+    if (key == ImGuiKey_F12 && held.control) continue;
 
-      // Modifier keys do not repeat on a Mac, so they are never sent twice.
-      const bool repeat = !isModifier(hostKey->keyCode);
-      if (ImGui::IsKeyPressed(key, repeat)) {
-        if (auto event = coreKeyEvent(*hostKey, held, command, false)) {
-          host.handleRawKeyDown(event->keyCode, event->shift, event->ctrl,
-                                event->alt, event->meta, capsLock, event->location);
-          keysDown_.insert(k);
-        }
+    // Modifier keys do not repeat on a Mac, so they are never sent twice.
+    const bool repeat = !isModifier(hostKey->keyCode);
+    if (ImGui::IsKeyPressed(key, repeat)) {
+      if (auto event = coreKeyEvent(*hostKey, held, command, false)) {
+        changes.push_back({true, *event});
+        keysDown_.insert(k);
       }
-      if (ImGui::IsKeyReleased(key) && keysDown_.erase(k)) {
-        if (auto event = coreKeyEvent(*hostKey, held, command, true)) {
-          host.handleRawKeyUp(event->keyCode, event->shift, event->ctrl,
-                              event->alt, event->meta, event->location);
-        }
+    }
+    if (ImGui::IsKeyReleased(key) && keysDown_.erase(k)) {
+      if (auto event = coreKeyEvent(*hostKey, held, command, true)) {
+        changes.push_back({false, *event});
+      }
+    }
+  }
+  if (changes.empty()) return;
+  emulation_.post([changes = std::move(changes), capsLock](host::MachineHost &host) {
+    for (const Change &c : changes) {
+      const CoreKeyEvent &e = c.event;
+      if (c.down) {
+        host.handleRawKeyDown(e.keyCode, e.shift, e.ctrl, e.alt, e.meta, capsLock, e.location);
+      } else {
+        host.handleRawKeyUp(e.keyCode, e.shift, e.ctrl, e.alt, e.meta, e.location);
       }
     }
   });
