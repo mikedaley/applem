@@ -401,7 +401,9 @@ lock: drawing neither holds up the emulation thread nor disturbs the chip
 that is playing. Frequencies are the core's counters: a tone is the clock
 over 16 TP (the browser's window said 8, an octave high, and now says 16
 too), noise the clock over 16 NP, and an envelope ramp sixteen steps of
-EP ticks of the clock over 8. The mutes are kept in the settings and put
+2 EP ticks of the clock over 8 (the datasheet's 256 EP clocks; the core
+used to step every EP ticks, which is the YM2149's rate, and the window
+said the same). The mutes are kept in the settings and put
 back on any card that is new, since a rebuilt machine or a refitted slot
 starts with every channel on.
 

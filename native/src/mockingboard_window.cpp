@@ -425,13 +425,13 @@ void MockingboardWindow::drawChip(int index) {
   const uint8_t shape = psg.registers[13] & 0x0F;
   envelopeGlyph(draw, ImVec2(x, y), ImVec2(x + 54, y + line), shape, PURPLE);
   x += 64;
-  // The envelope steps once every EP ticks of the clock over 8, sixteen
-  // steps a ramp.
+  // The envelope steps once every 2 EP ticks of the clock over 8, sixteen
+  // steps a ramp: the datasheet's 256 EP clocks.
   const int ep = psg.registers[11] | (psg.registers[12] << 8);
   char value[32];
   std::snprintf(value, sizeof(value), "$%X", shape);
   x += field(draw, ImVec2(x, y), "SHAPE", value, PURPLE) + 14;
-  std::snprintf(value, sizeof(value), "%.1f ms", 128.0 * std::max(ep, 1) / CLOCK * 1000.0);
+  std::snprintf(value, sizeof(value), "%.1f ms", 256.0 * std::max(ep, 1) / CLOCK * 1000.0);
   x += field(draw, ImVec2(x, y), "RAMP", value, PURPLE) + 28;
   caption(draw, ImVec2(x, y + 2), "NOISE", secondary());
   x += 46;
