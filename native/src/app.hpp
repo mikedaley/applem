@@ -61,6 +61,8 @@ struct Settings {
   // Per machine, keyed by profile key. Absent means the machine's default:
   // on for a IIgs, whose keyboard is a Mac's, and off for the rest.
   std::map<std::string, bool> commandIsOpenApple;
+  // Per machine: timed for PAL rather than NTSC. Absent means NTSC.
+  std::map<std::string, bool> pal;
 };
 
 // Everything drawn each frame: the menu bar, the dock space and the windows.
@@ -166,6 +168,10 @@ private:
   void updateWindowTitle();
   void applyMachineDisplay();
   void applySpeed();
+  // NTSC or PAL as remembered for a machine, and choosing it for the one
+  // running: the same machine retimed, nothing rebuilt.
+  VideoStandard standardFor(const MachineProfile &machine) const;
+  void setVideoStandard(VideoStandard standard);
   // A IIgs's battery-backed settings, kept as a real battery keeps them.
   void restoreBatteryRam();
   void saveBatteryRamIfChanged(double now);

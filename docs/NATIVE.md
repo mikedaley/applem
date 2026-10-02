@@ -325,6 +325,15 @@ a load the drive windows take what the drives hold from the core, and each
 floppy's fingerprint is taken afresh, so eject asks about changes made
 after the load.
 
+## NTSC and PAL
+
+Machine > Video Standard, offered for the machines Apple made in both, times
+the running machine for NTSC or PAL without rebuilding it (see CLAUDE.md, NTSC
+and PAL). The choice is kept per machine as `PAL.<key>` in the settings,
+applied when a machine is built or switched to, and a note over the picture
+says to reboot so a program starts afresh at the new rate. The status bar's
+clock reads about 1.018 MHz under PAL.
+
 ## CPU speed
 
 Machine > CPU Speed offers 1x, 2x, 4x and 8x of the machine's clock, as the

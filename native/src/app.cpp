@@ -141,6 +141,8 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "ShowStatusBar=%d", &value) == 1) s.showStatusBar = value;
     else if (std::sscanf(line, "CommandIsOpenApple.%63[^=]=%d", text, &value) == 2) {
       s.commandIsOpenApple[text] = value;
+    } else if (std::sscanf(line, "PAL.%63[^=]=%d", text, &value) == 2) {
+      s.pal[text] = value;
     }
   };
   handler.WriteAllFn = [](ImGuiContext *, ImGuiSettingsHandler *h,
@@ -177,6 +179,9 @@ void App::registerSettingsHandler() {
     out->appendf("ShowStatusBar=%d\n", s.showStatusBar ? 1 : 0);
     for (const auto &[key, on] : s.commandIsOpenApple) {
       out->appendf("CommandIsOpenApple.%s=%d\n", key.c_str(), on ? 1 : 0);
+    }
+    for (const auto &[key, on] : s.pal) {
+      out->appendf("PAL.%s=%d\n", key.c_str(), on ? 1 : 0);
     }
     out->append("\n");
   };
@@ -255,12 +260,14 @@ void App::startEmulation() {
     wanted = &machineProfile(MachineId::AppleIIe);
   }
   settings_.machine = wanted->key;
-  profile_ = wanted;
+  profile_ = &machineProfile(wanted->id, standardFor(*wanted));
   display_.setMachine(*wanted);
 
   emulation_.setVolume(settings_.volume);
   emulation_.setMuted(settings_.muted);
   emulation_.start(wanted->id, static_cast<size_t>(settings_.iigsMemoryKB) * 1024);
+  const VideoStandard standard = profile_->timing.standard;
+  emulation_.withMachine([&](host::MachineHost &host) { host.setVideoStandard(standard); });
   // The cards, then the media, then the power: the machine starts with the
   // layout and the disks it was left with, as a real one would, and its
   // boot scan finds them. Media restored after the power came on was missed
@@ -493,6 +500,17 @@ MenuItem App::machineMenu() {
     items.push_back(submenu("CPU Speed", speeds));
   }
 
+  // Only for a machine Apple also made for PAL countries.
+  if (profile_ && machineHasStandard(profile_->id, VideoStandard::PAL)) {
+    const bool pal = profile_->timing.standard == VideoStandard::PAL;
+    items.push_back(submenu("Video Standard", {
+        item(a, "machine.standard.ntsc", "NTSC  (60Hz, 262 lines)",
+             [this] { setVideoStandard(VideoStandard::NTSC); }, "", 0, !pal),
+        item(a, "machine.standard.pal", "PAL  (50Hz, 312 lines)",
+             [this] { setVideoStandard(VideoStandard::PAL); }, "", 0, pal),
+    }));
+  }
+
   std::vector<MenuItem> memory;
   for (const MemorySize &size : IIGS_MEMORY_SIZES) {
     const int kb = size.kb;
@@ -676,7 +694,10 @@ bool App::switchMachine(MachineId id) {
   saveBatteryRamIfChanged(-1);
   states_->autosaveNow();
   if (!emulation_.setMachine(id)) return false;
-  profile_ = &machineProfile(id);
+  // A machine is built NTSC, and retimed if it was left PAL.
+  profile_ = &machineProfile(id, standardFor(machineProfile(id)));
+  const VideoStandard standard = profile_->timing.standard;
+  emulation_.withMachine([&](host::MachineHost &host) { host.setVideoStandard(standard); });
   settings_.machine = profile_->key;
   display_.setMachine(*profile_);
   slots_.setMachine(*profile_);
@@ -1035,6 +1056,25 @@ void App::applySpeed() {
   settings_.speed = multiple;
   emulation_.withMachine([&](host::MachineHost &host) { host.setSpeedMultiplier(multiple); });
   emulation_.resetMeasurement();
+}
+
+VideoStandard App::standardFor(const MachineProfile &machine) const {
+  auto it = settings_.pal.find(machine.key);
+  const bool pal = it != settings_.pal.end() && it->second;
+  return pal && machineHasStandard(machine.id, VideoStandard::PAL) ? VideoStandard::PAL : VideoStandard::NTSC;
+}
+
+void App::setVideoStandard(VideoStandard standard) {
+  if (!profile_ || profile_->timing.standard == standard) return;
+  if (!emulation_.withMachine([&](host::MachineHost &host) { return host.setVideoStandard(standard); })) return;
+  settings_.pal[profile_->key] = standard == VideoStandard::PAL;
+  ImGui::MarkIniSettingsDirty();
+  profile_ = &machineProfile(profile_->id, standard);
+  debugger_.setMachine(*profile_);
+  emulation_.resetMeasurement();
+  dropNotice(standard == VideoStandard::PAL ? "PAL, 50Hz: reboot to start a program afresh"
+                                            : "NTSC, 60Hz: reboot to start a program afresh",
+             false);
 }
 
 // The video settings that live in the machine rather than in the shader.
