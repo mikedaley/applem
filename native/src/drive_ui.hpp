@@ -9,6 +9,7 @@
 
 #include "disk_inspector_data.hpp"
 #include "disk_platter.hpp"
+#include "ui_controls.hpp"
 #include "ui_theme.hpp"
 
 #include "imgui.h"
@@ -250,7 +251,7 @@ inline void label(ImDrawList *draw, ImVec2 a, ImVec2 b, const std::string *filen
     draw->AddText(ImVec2(a.x + 14, a.y + (height - ImGui::GetTextLineHeight()) * 0.5f), IM_COL32(30, 28, 24, 255),
                   filename->c_str());
     draw->PopClipRect();
-    if (ImGui::IsMouseHoveringRect(a, b)) ImGui::SetTooltip("%s", filename->c_str());
+    if (ui::IsHoveringRect(a, b)) ImGui::SetTooltip("%s", filename->c_str());
   } else {
     dashedRect(draw, a, b, text(0.22f));
     draw->AddText(ImVec2(a.x + 12, a.y + (height - ImGui::GetTextLineHeight()) * 0.5f), secondary(), empty);

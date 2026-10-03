@@ -320,7 +320,7 @@ void Display::rowLabel(const char *label, const char *tooltip) {
   rowTop_ = top.y;
   const ImVec2 labelAt(groupStart_.x + 12, top.y + ROW_PAD + (height - ImGui::GetTextLineHeight()) * 0.5f);
   draw->AddText(labelAt, text(), label);
-  if (tooltip && ImGui::IsMouseHoveringRect(labelAt, ImVec2(labelAt.x + LABEL_WIDTH - 20, labelAt.y + height)) &&
+  if (tooltip && ui::IsHoveringRect(labelAt, ImVec2(labelAt.x + LABEL_WIDTH - 20, labelAt.y + height)) &&
       ImGui::IsWindowHovered()) {
     ImGui::SetTooltip("%s", tooltip);
   }

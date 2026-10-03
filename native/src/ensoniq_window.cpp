@@ -381,11 +381,11 @@ void EnsoniqWindow::drawOscillator(int index, float width, float height) {
   const float py = mid - pillHeight() * 0.5f;
   const float modeX = x;
   x += pill(draw, ImVec2(x, py), MODE_NAMES[mode], running, withAlpha(hue, 0.85f), "SWAP") + 4;
-  const bool modeHovered = ImGui::IsMouseHoveringRect(ImVec2(modeX, py), ImVec2(x, py + pillHeight()));
+  const bool modeHovered = ui::IsHoveringRect(ImVec2(modeX, py), ImVec2(x, py + pillHeight()));
   const float irqX = x;
   const bool irqEnabled = o.control & IIgsSound::OSC_INTERRUPT_ENABLE;
   x += pill(draw, ImVec2(x, py), "I", irqEnabled, o.interruptPending ? p.red : withAlpha(p.purple, 0.85f)) + 10;
-  const bool irqHovered = ImGui::IsMouseHoveringRect(ImVec2(irqX, py), ImVec2(x, py + pillHeight()));
+  const bool irqHovered = ui::IsHoveringRect(ImVec2(irqX, py), ImVec2(x, py + pillHeight()));
   if (modeHovered) ImGui::SetTooltip("%s", MODE_TIPS[mode]);
   if (irqHovered) {
     ImGui::SetTooltip("Interrupts when it halts: %s%s", irqEnabled ? "yes" : "no",
@@ -413,7 +413,7 @@ void EnsoniqWindow::drawOscillator(int index, float width, float height) {
   ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.7f);
   draw->AddText(ImVec2(x, mid + 4), withAlpha(secondary(), fade), freq);
   ImGui::PopFont();
-  if (ImGui::IsMouseHoveringRect(ImVec2(x, mid - 14), ImVec2(x + 62, mid + 14))) {
+  if (ui::IsHoveringRect(ImVec2(x, mid - 14), ImVec2(x + 62, mid + 14))) {
     ImGui::SetTooltip("Frequency $%04X, resolution %d: the table plays %.2f times a second\n"
                       "(its pitch, if it holds one cycle of a wave)",
                       o.frequency, o.resolution, hz);
@@ -476,7 +476,7 @@ void EnsoniqWindow::drawOscillator(int index, float width, float height) {
   ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.66f);
   draw->AddText(ImVec2(wa.x + 6, wa.y + 2), withAlpha(secondary(), fade), table);
   ImGui::PopFont();
-  if (ImGui::IsMouseHoveringRect(wa, wb)) {
+  if (ui::IsHoveringRect(wa, wb)) {
     ImGui::SetTooltip("Table $%04X-$%04X, %u bytes, resolution %d\nPlaying byte %u of it; it last read $%02X\n"
                       "Channel %d (only a stereo card would separate them)",
                       o.start, (o.start + o.length - 1) & 0xFFFF, o.length, o.resolution, o.position, o.data,

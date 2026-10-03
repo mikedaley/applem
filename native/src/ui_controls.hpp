@@ -65,11 +65,18 @@ bool Disclosure(const char *label, bool *open);
 // How wide Switch draws with this label, for placing one at a right edge.
 float SwitchWidth(const char *label);
 
-// Call after ImGui::NewFrame. A click on a window that is not focused only
-// focuses it, as a Mac's does: the controls under it do not hear the click,
-// its release, or the wheel. A click on a title bar still drags the window,
-// and while a popup is open ImGui deals with clicks itself.
+// Call after ImGui::NewFrame. Only the focused window answers the mouse: a
+// window behind shows no tooltips or hover highlights and does not scroll,
+// and a click on it only focuses it, as a Mac's does; the controls under it
+// do not hear the click or its release. A click on a title bar still drags
+// the window, and while a popup is open ImGui deals with clicks itself.
 void ClickToFocus();
+
+// Whether the pointer is over a rectangle of the window being drawn, and that
+// window is the one under it and answering the mouse. ImGui's own
+// IsMouseHoveringRect is geometry alone: it is true through a window in
+// front, and in a window behind, which showed a covered window's tooltips.
+bool IsHoveringRect(ImVec2 min, ImVec2 max);
 
 // Whether the app's windows may dock into one another and into the main
 // window. When not, call BeforeWindow before each window's Begin: it gives

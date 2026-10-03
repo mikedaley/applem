@@ -691,15 +691,6 @@ bool BeginWindow(const char *name, bool *open, ImGuiWindowFlags flags) {
 void ClickToFocus() {
   ImGuiContext &g = *GImGui;
   ImGuiIO &io = g.IO;
-  // A click swallowed here is swallowed until its button comes up.
-  static bool swallowed[ImGuiMouseButton_COUNT] = {};
-  for (int b = 0; b < ImGuiMouseButton_COUNT; b++) {
-    if (swallowed[b] && io.MouseReleased[b]) {
-      io.MouseReleased[b] = false;
-      swallowed[b] = false;
-    }
-  }
-
   ImGuiWindow *hovered = g.HoveredWindow;
   if (!hovered || g.OpenPopupStack.Size > 0) return;
   ImGuiWindow *root = hovered->RootWindow;
@@ -707,20 +698,31 @@ void ClickToFocus() {
 
   bool clicked = false;
   for (int b = 0; b < ImGuiMouseButton_COUNT; b++) clicked |= io.MouseClicked[b];
-  if (!clicked) {
-    io.MouseWheel = 0;
-    io.MouseWheelH = 0;
-    return;
-  }
-  if (!(root->Flags & ImGuiWindowFlags_NoTitleBar) && root->TitleBarRect().Contains(io.MousePos)) return;
+  // A title bar takes the first click, so a window behind can be dragged.
+  if (clicked && !(root->Flags & ImGuiWindowFlags_NoTitleBar) && root->TitleBarRect().Contains(io.MousePos)) return;
+  // Otherwise nothing in a window behind is hovered: no tooltips, no hover
+  // highlights, no scrolling, until it is brought to the front.
+  g.HoveredWindow = nullptr;
+  g.HoveredWindowUnderMovingWindow = nullptr;
+  io.MouseWheel = 0;
+  io.MouseWheelH = 0;
+  if (!clicked) return;
   ImGui::FocusWindow(hovered);
+  // The click is this function's until the button comes up. ImGui reads a
+  // click from the button's key state, not from io.MouseClicked, so the
+  // button is owned rather than the click cleared: no widget hears it or its
+  // release, and neither does ImGui's own "a click on nothing clears focus",
+  // which, seeing no hovered window, took the focus straight back.
+  static const ImGuiID owner = ImHashStr("ClickToFocus");
   for (int b = 0; b < ImGuiMouseButton_COUNT; b++) {
     if (!io.MouseClicked[b]) continue;
-    io.MouseClicked[b] = false;
-    io.MouseDoubleClicked[b] = false;
-    io.MouseClickedCount[b] = 0;
-    swallowed[b] = true;
+    ImGui::SetKeyOwner(ImGui::MouseButtonToKey(b), owner, ImGuiInputFlags_LockUntilRelease);
   }
+}
+
+bool IsHoveringRect(ImVec2 min, ImVec2 max) {
+  return ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) &&
+         ImGui::IsMouseHoveringRect(min, max);
 }
 
 } // namespace a2e::native::ui

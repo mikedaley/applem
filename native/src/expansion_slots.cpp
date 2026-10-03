@@ -469,7 +469,7 @@ void ExpansionSlots::draw(bool *open) {
         if (const auto device = builtInDevice(*machine_, slot)) fixedId = builtInParts(*device);
       }
       card(draw, cardAt, ImVec2(CARD_WIDTH, cardHeight), fixedId, 0x8b949e, fixedCardLabel(*machine_, slot).c_str(), true);
-      if (ImGui::IsMouseHoveringRect(cardAt, ImVec2(cardAt.x + CARD_WIDTH, cardAt.y + cardHeight)) &&
+      if (ui::IsHoveringRect(cardAt, ImVec2(cardAt.x + CARD_WIDTH, cardAt.y + cardHeight)) &&
           ImGui::IsWindowHovered()) {
         ImGui::SetTooltip("Part of the machine: it cannot be taken out.");
       }
