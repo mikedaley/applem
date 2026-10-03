@@ -183,7 +183,7 @@ private:
   // and Control-Option gives it back.
   void setMouseCaptured(bool captured);
   void updateMouse();
-  void drawMouseHints(ImVec2 p0, ImVec2 p1, bool overPicture);
+  void drawMouseHints(ImVec2 p0, ImVec2 p1, bool overPicture, bool focused);
   void handleAppShortcuts();
   void paste();
   bool switchMachine(MachineId id);
@@ -275,6 +275,10 @@ private:
   // whether it has the host's.
   bool machineHasMouse_ = false;
   bool mouseCaptured_ = false;
+  // Whether the screen had the keyboard, in the active window, as of the
+  // last frame: a click captures the mouse only then, so the first click on
+  // the window focuses it and the second takes the mouse.
+  bool screenWasFocused_ = false;
   bool mouseButtonDown_ = false;
   MachinePoll mousePoll_;
   double mouseCapturedAt_ = -10.0;

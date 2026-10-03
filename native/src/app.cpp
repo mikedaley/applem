@@ -1397,10 +1397,17 @@ void App::drawScreen() {
   const ImVec2 pointer = ImGui::GetIO().MousePos;
   const bool overPicture = ImGui::IsItemHovered() && pointer.x >= p0.x && pointer.x < p1.x && pointer.y >= p0.y &&
                            pointer.y < p1.y;
-  if (overPicture && ImGui::IsItemClicked(ImGuiMouseButton_Left) && machineHasMouse_ && emulation_.powered()) {
+  // The first click on a window that is not the one in use only selects it,
+  // as a click on any Mac window does; the click after that takes the
+  // mouse. Whether it was in use is last frame's answer, because by the time
+  // the click is seen ImGui may already have focused the window for it.
+  if (overPicture && ImGui::IsItemClicked(ImGuiMouseButton_Left) && screenWasFocused_ && machineHasMouse_ &&
+      emulation_.powered()) {
     setMouseCaptured(true);
   }
-  drawMouseHints(p0, p1, overPicture);
+  const bool activeWindow = ImGui::GetWindowViewport()->Flags & ImGuiViewportFlags_IsFocused;
+  screenWasFocused_ = activeWindow && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+  drawMouseHints(p0, p1, overPicture, screenWasFocused_);
   drawScreenDrop(origin, ImVec2(origin.x + avail.x, origin.y + avail.y));
 }
 
@@ -1715,7 +1722,7 @@ void App::updateMouse() {
 // the pointer rests on a machine that has a mouse, and how to give it back
 // for a few seconds after it is taken. Drawn over the picture, which is dark
 // whatever the appearance, so the capsules are dark with white text.
-void App::drawMouseHints(ImVec2 p0, ImVec2 p1, bool overPicture) {
+void App::drawMouseHints(ImVec2 p0, ImVec2 p1, bool overPicture, bool focused) {
   ImDrawList *draw = ImGui::GetWindowDrawList();
   const double now = ImGui::GetTime();
   auto capsule = [&](const char *text, float y, float alpha) {
@@ -1754,7 +1761,8 @@ void App::drawMouseHints(ImVec2 p0, ImVec2 p1, bool overPicture) {
   // across the picture as the pointer passes over.
   const float alpha = std::clamp(static_cast<float>(now - pictureHoveredSince_ - 0.4) / 0.25f, 0.0f, 1.0f);
   const float height = ImGui::GetTextLineHeight() + 14;
-  capsule("Click to use the mouse", p1.y - height - 14, alpha);
+  capsule(focused ? "Click to use the mouse" : "Click to select the screen, then again to use the mouse",
+          p1.y - height - 14, alpha);
 }
 
 void App::releaseKeys() {

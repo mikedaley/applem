@@ -167,7 +167,11 @@ right-click menu, to leave); View > Full Screen is macOS's.
 
 A machine with a mouse (a IIgs, a //c, or a //e or II+ with a mouse card,
 as `MachineHost::hasMouse` says) takes the host's when the picture is
-clicked, or from Machine > Capture Mouse. The pointer is hidden and held
+clicked, or from Machine > Capture Mouse. **The first click selects, the
+second captures**, as a click on any Mac window first brings it forward: a
+click captures only if the screen already had the keyboard in the active
+window as of the frame before (`screenWasFocused_`), because by the time
+the click is seen ImGui may have focused the window for it. The pointer is hidden and held
 where it is (`CGAssociateMouseAndMouseCursorPosition`), and a local event
 monitor in `main.mm` counts its movement and the left button and keeps
 them from the windows; the App hands them to the machine each frame, a
@@ -181,7 +185,8 @@ not release. Leaving the app gives it back too, at once, and so does the
 machine losing its mouse or its power.
 
 It is made to be found: resting the pointer on the picture of a machine
-with a mouse shows "Click to use the mouse"; taking it shows how to give it
+with a mouse shows "Click to use the mouse", or "Click to select the
+screen, then again to use the mouse" while it is not selected; taking it shows how to give it
 back for a few seconds, over the picture; and the status bar says which it
 is the whole time. The capsules are dark with white text whatever the
 appearance, because they sit on the picture.
