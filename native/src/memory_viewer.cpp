@@ -1443,6 +1443,9 @@ void MemoryViewer::drawGrid(ImVec2 size) {
 
   // The keyboard, while the grid has it.
   gridFocused_ = ImGui::IsWindowFocused();
+  // The grid takes typed hex itself, so it claims the keyboard: unclaimed,
+  // ImGui's Cocoa backend passes every key on to macOS, which beeps.
+  if (gridFocused_) ImGui::SetNextFrameWantCaptureKeyboard(true);
   if (gridFocused_ && !io.WantTextInput) {
     auto key = [](ImGuiKey k) { return ImGui::IsKeyPressed(k, true); };
     const bool shift = io.KeyShift;
