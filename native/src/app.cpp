@@ -1088,9 +1088,9 @@ void App::drawStatusBar() {
       if (!emulation_.powered()) {
         std::snprintf(clock, sizeof(clock), "Off");
       } else if (settings_.speed > 1 && profile_ && profile_->family != MachineFamily::AppleIIgs) {
-        std::snprintf(clock, sizeof(clock), "%dx  %.3f MHz", settings_.speed, emulation_.measuredMHz());
+        std::snprintf(clock, sizeof(clock), "%dx  %.3f MHz", settings_.speed, emulation_.clockMHz());
       } else {
-        std::snprintf(clock, sizeof(clock), "%.3f MHz", emulation_.measuredMHz());
+        std::snprintf(clock, sizeof(clock), "%.3f MHz", emulation_.clockMHz());
       }
       ImGui::PushFont(ui::monoFont(), 0.0f);
       const float width = ImGui::CalcTextSize(clock).x;
@@ -1362,7 +1362,6 @@ void App::applySpeed() {
   }
   settings_.speed = multiple;
   emulation_.withMachine([&](host::MachineHost &host) { host.setSpeedMultiplier(multiple); });
-  emulation_.resetMeasurement();
 }
 
 VideoStandard App::standardFor(const MachineProfile &machine) const {
@@ -1379,7 +1378,6 @@ void App::setVideoStandard(VideoStandard standard) {
   profile_ = &machineProfile(profile_->id, standard);
   debugger_.setMachine(*profile_);
   memory_.setMachine(*profile_);
-  emulation_.resetMeasurement();
   dropNotice(standard == VideoStandard::PAL ? "PAL, 50Hz: reboot to start a program afresh"
                                             : "NTSC, 60Hz: reboot to start a program afresh",
              false);

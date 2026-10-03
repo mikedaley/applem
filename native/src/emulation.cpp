@@ -106,7 +106,6 @@ void Emulation::run() {
         owed -= SAMPLES_PER_FRAME;
       }
     }
-    measure();
   }
 }
 
@@ -117,6 +116,7 @@ void Emulation::refill(float *scratch, bool toDevice) {
   std::lock_guard<std::mutex> lock(mutex_);
   applyPosted();
   host_.generateStereoAudioSamples(scratch, SAMPLES_PER_FRAME);
+  clockMHz_.store(host_.clockHz() / 1.0e6);
   // A paused machine is silent, as the browser's is: its sound sources would
   // otherwise hold whatever they were playing, a Mockingboard or an Ensoniq
   // note sounding for as long as the debugger sits on a breakpoint. The level
@@ -158,36 +158,6 @@ void Emulation::applyPosted() {
   for (Posted &f : due) f(host_);
 }
 
-void Emulation::measure() {
-  constexpr double SAMPLE_SECONDS = 1.0;
-  constexpr double WINDOW_SECONDS = 10.0;
-  const auto now = std::chrono::steady_clock::now();
-  if (measureReset_.exchange(false)) {
-    measureSamples_.clear();
-    measuredMHz_ = 0.0;
-  }
-  if (!measureSamples_.empty() &&
-      std::chrono::duration<double>(now - measureSamples_.back().first).count() < SAMPLE_SECONDS) {
-    return;
-  }
-  uint64_t cycles = 0;
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    cycles = host_.totalCycles();
-  }
-  // A clock that went backwards is a machine that was rebuilt or reloaded.
-  if (!measureSamples_.empty() && cycles < measureSamples_.back().second) measureSamples_.clear();
-  measureSamples_.emplace_back(now, cycles);
-  while (measureSamples_.size() > 2 &&
-         std::chrono::duration<double>(now - measureSamples_.front().first).count() > WINDOW_SECONDS) {
-    measureSamples_.pop_front();
-  }
-  if (measureSamples_.size() < 2) return;
-  const auto &[firstTime, firstCycles] = measureSamples_.front();
-  const double seconds = std::chrono::duration<double>(now - firstTime).count();
-  if (seconds > 0) measuredMHz_ = (cycles - firstCycles) / seconds / 1.0e6;
-}
-
 void Emulation::setPowered(bool on) {
   if (on == powered_) return;
   {
@@ -200,7 +170,6 @@ void Emulation::setPowered(bool on) {
     }
   }
   ring_.clear();
-  measureReset_ = true;
   powered_ = on;
   dispatch_semaphore_signal(wake_);
 }
@@ -211,9 +180,9 @@ bool Emulation::setMachine(MachineId id) {
     std::lock_guard<std::mutex> lock(mutex_);
     applyPosted(); // for the machine it was meant for
     ok = host_.setMachine(id);
+    clockMHz_.store(host_.clockHz() / 1.0e6);
     applyGain();
   }
-  measureReset_ = true;
   ring_.clear();
   return ok;
 }

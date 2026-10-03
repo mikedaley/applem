@@ -17,7 +17,6 @@
 
 #include <atomic>
 #include <chrono>
-#include <deque>
 #include <functional>
 #include <dispatch/dispatch.h>
 #include <mutex>
@@ -130,13 +129,9 @@ public:
   DriveSounds &driveSounds() { return driveSounds_; }
   // The tone controls over everything, applied last.
   Equalizer &equalizer() { return equalizer_; }
-  // The machine's clock as measured against the wall, in MHz, across the
-  // last ten seconds. A refill runs a whole video frame at once (about
-  // 17,000 cycles), so a one-second window caught a refill more or fewer and
-  // wandered by about 1.3%; ten seconds brings that to about 0.1%.
-  double measuredMHz() const { return measuredMHz_.load(); }
-  // Start the measurement again: the clock it is measuring has changed.
-  void resetMeasurement() { measureReset_ = true; }
+  // The processor's clock as rated for what the machine is doing, in MHz
+  // (MachineHost::clockHz), as of the last refill.
+  double clockMHz() const { return clockMHz_.load(); }
 
 private:
   void run();
@@ -144,7 +139,6 @@ private:
   void applyPosted();
   void refill(float *scratch, bool toDevice);
   void applyGain();
-  void measure();
 
   host::MachineHost host_;
   std::mutex mutex_;
@@ -171,10 +165,7 @@ private:
   float volume_ = 0.5f;
   bool muted_ = false;
 
-  std::atomic<double> measuredMHz_{0.0};
-  // (time, cycles) once a second, oldest first, on the emulation thread only.
-  std::deque<std::pair<std::chrono::steady_clock::time_point, uint64_t>> measureSamples_;
-  std::atomic<bool> measureReset_{true};
+  std::atomic<double> clockMHz_{0.0};
 };
 
 } // namespace a2e::native
