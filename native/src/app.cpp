@@ -147,6 +147,7 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "MockingboardMutes=%d", &value) == 1) s.mockingboardMutes = value & 0x3F;
     else if (std::sscanf(line, "MockingboardPhaseLock=%d", &value) == 1) s.mockingboardPhaseLock = value;
     else if (std::sscanf(line, "ShowEqualizer=%d", &value) == 1) s.showEqualizer = value;
+    else if (std::sscanf(line, "MockingboardMono=%d", &value) == 1) s.mockingboardMono = value;
     else if (std::sscanf(line, "Equalizer=%d", &value) == 1) s.equalizer.enabled = value;
     else if (std::sscanf(line, "EqualizerPreamp=%f", &number) == 1) s.equalizer.preampDb = number;
     else if (std::sscanf(line, "EqualizerBand.%d=%f", &value, &number) == 2) {
@@ -197,6 +198,7 @@ void App::registerSettingsHandler() {
     out->appendf("MockingboardMutes=%d\n", s.mockingboardMutes);
     out->appendf("MockingboardPhaseLock=%d\n", s.mockingboardPhaseLock ? 1 : 0);
     out->appendf("ShowEqualizer=%d\n", s.showEqualizer ? 1 : 0);
+    out->appendf("MockingboardMono=%d\n", s.mockingboardMono ? 1 : 0);
     out->appendf("Equalizer=%d\n", s.equalizer.enabled ? 1 : 0);
     out->appendf("EqualizerPreamp=%.1f\n", s.equalizer.preampDb);
     for (int i = 0; i < Equalizer::BANDS; i++) out->appendf("EqualizerBand.%d=%.1f\n", i, s.equalizer.gainDb[i]);
@@ -366,7 +368,7 @@ void App::startEmulation() {
   joystick_.deadzone = settings_.deadzone;
   joystick_.machineRebuilt();
   mockingboard_.mutes = settings_.mockingboardMutes;
-  applyMockingboardPhaseLock();
+  applyMockingboardSound();
   ensoniq_.mutes = settings_.ensoniqMutes;
   debugger_.setMachine(*wanted);
   memory_.setMachine(*wanted);
@@ -725,7 +727,7 @@ MenuItem App::machineMenu() {
       MenuItem::separatorItem(),
       item(a, "machine.mockingboardPhaseLock", "Mockingboard Phase Lock", [this] {
              settings_.mockingboardPhaseLock = !settings_.mockingboardPhaseLock;
-             applyMockingboardPhaseLock();
+             applyMockingboardSound();
              ImGui::MarkIniSettingsDirty();
            }, "", 0, settings_.mockingboardPhaseLock),
       item(a, "machine.equalizer", "Equalizer", [this] {
@@ -735,6 +737,11 @@ MenuItem App::machineMenu() {
   }));
   return submenu("Machine", items);
 }
+      item(a, "machine.mockingboardMono", "Mockingboard Mono", [this] {
+             settings_.mockingboardMono = !settings_.mockingboardMono;
+             applyMockingboardSound();
+             ImGui::MarkIniSettingsDirty();
+           }, "", 0, settings_.mockingboardMono),
 
 // How the picture and the main window look.
 MenuItem App::viewMenu() {
@@ -1116,9 +1123,13 @@ void App::drawJoystick() {
 }
 
 // Its mutes are the user's, and are kept whenever they change.
-void App::applyMockingboardPhaseLock() {
-  const bool on = settings_.mockingboardPhaseLock;
-  emulation_.withMachine([on](host::MachineHost &) { a2e::MockingboardCard::setPhaseLock(on); });
+void App::applyMockingboardSound() {
+  const bool lock = settings_.mockingboardPhaseLock;
+  const bool mono = settings_.mockingboardMono;
+  emulation_.withMachine([lock, mono](host::MachineHost &) {
+    a2e::MockingboardCard::setPhaseLock(lock);
+    a2e::MockingboardCard::setMono(mono);
+  });
 }
 
 void App::drawMockingboard() {
