@@ -19,14 +19,14 @@ struct Button {
 
 const Button BUTTONS[] = {
     {@"power", @"Power", @"power", @"machine.power", @"Switch the machine on or off"},
-    {@"reset", @"Reset", @"arrow.uturn.backward.circle", @"machine.ctrlreset", @"Ctrl+Reset"},
+    {@"reset", @"Reset", @"arrow.uturn.backward.circle", @"machine.ctrlreset", @"Control-Reset"},
     {@"reboot", @"Reboot", @"arrow.clockwise.circle", @"machine.reboot", @"Restart the machine from cold"},
-    {@"drives", @"Disks", @"opticaldiscdrive", @"view.drives", @"Disk Drives"},
-    {@"harddrives", @"SmartPort", @"externaldrive", @"view.harddrives", @"SmartPort Drives"},
-    {@"slots", @"Slots", @"memorychip", @"slots.show", @"Expansion Slots"},
-    {@"joystick", @"Joystick", @"gamecontroller", @"view.joystick", @"Joystick"},
-    {@"display", @"Display", @"tv", @"view.display", @"Display Settings"},
-    {@"states", @"States", @"clock.arrow.circlepath", @"states.show", @"Save States"},
+    {@"drives", @"Disks", @"opticaldiscdrive", @"window.drives", @"Disk Drives"},
+    {@"harddrives", @"SmartPort", @"externaldrive", @"window.harddrives", @"SmartPort Drives"},
+    {@"slots", @"Slots", @"memorychip", @"window.slots", @"Expansion Slots"},
+    {@"joystick", @"Joystick", @"gamecontroller", @"window.joystick", @"Joystick"},
+    {@"display", @"Display", @"tv", @"window.display", @"Display Settings"},
+    {@"states", @"States", @"clock.arrow.circlepath", @"window.states", @"Save States"},
 };
 
 NSString *const MACHINE = @"machine";

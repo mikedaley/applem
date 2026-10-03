@@ -12,7 +12,8 @@
 #include "menu_model.hpp"
 
 // The application menu and the Window menu are the platform's, as on every
-// Mac app; File, Edit, Machine and View come from the model. The bar is
+// Mac app, with the items the model gives them; the rest come from the
+// model. The bar is
 // rebuilt only when the model changes, and never while a menu is open: a
 // rebuild under the user's pointer would close the menu they are reading.
 @interface NativeMenu : NSObject

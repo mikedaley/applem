@@ -72,6 +72,9 @@ struct Platform {
                      const std::vector<std::string> &extensions, FileChosen done)>
       saveFile;
 
+  // Open a web page in the user's browser.
+  std::function<void(const std::string &url)> openURL;
+
   // The bundle's Resources, where the disk library is.
   std::string resourceDirectory;
 

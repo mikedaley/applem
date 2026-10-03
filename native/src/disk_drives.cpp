@@ -665,6 +665,24 @@ void border(ImDrawList *draw, ImVec2 a, ImVec2 b, float rounding) {
 
 } // namespace
 
+std::vector<std::string> DiskDrives::recentNames(int drive) const {
+  std::vector<std::string> names;
+  for (const RecentEntry &entry : store_.recent(drive)) names.push_back(entry.filename);
+  return names;
+}
+
+void DiskDrives::insertRecent(int drive, size_t index) {
+  const std::vector<RecentEntry> recent = store_.recent(drive);
+  if (index >= recent.size()) return;
+  if (auto image = store_.loadRecent(drive, recent[index])) {
+    insertImage(drive, image->filename, image->data, true);
+  } else {
+    reportError("Could not read the recent disk " + recent[index].filename + ".");
+  }
+}
+
+void DiskDrives::clearRecent(int drive) { store_.clearRecent(drive); }
+
 void DiskDrives::drawRecentPopup(int index) {
   const std::string id = "##recent" + std::to_string(index);
   if (!ImGui::BeginPopup(id.c_str())) return;

@@ -148,8 +148,14 @@ private:
   void runMenuActions();
   MenuItem machineMenu();
   MenuItem viewMenu();
-  // Absent when the machine has nothing to debug through it yet.
   std::optional<MenuItem> debugMenu();
+  MenuItem windowMenu();
+  MenuItem helpMenu();
+  // The tool window that has the keyboard, by its show flag, for File >
+  // Close Window; null when that is the screen or nothing that can close.
+  bool *focusedToolWindow();
+  void closeFocusedWindow();
+  void copyScreenText();
   void drawDockSpace();
   void drawScreenWindow();
   void drawFullPage();

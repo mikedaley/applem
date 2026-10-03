@@ -74,6 +74,10 @@ NSEventModifierFlags modifierMask(unsigned modifiers) {
   item.keyEquivalentModifierMask = modifierMask(model.modifiers);
   item.enabled = model.enabled;
   item.state = model.checked ? NSControlStateValueOn : NSControlStateValueOff;
+  if (model.hidden) {
+    item.hidden = YES;
+    item.allowsKeyEquivalentWhenHidden = YES;
+  }
   if (!model.children.empty()) {
     NSMenu *menu = [[NSMenu alloc] initWithTitle:@(model.title.c_str())];
     menu.autoenablesItems = NO;
@@ -108,12 +112,17 @@ NSEventModifierFlags modifierMask(unsigned modifiers) {
   [NSApp activateIgnoringOtherApps:YES];
 }
 
-- (NSMenuItem *)applicationMenu {
+- (NSMenuItem *)applicationMenu:(const MenuItem *)extra {
   NSMenuItem *appItem = [[NSMenuItem alloc] init];
   NSMenu *menu = [[NSMenu alloc] init];
+  menu.autoenablesItems = NO;
   NSMenuItem *about = [menu addItemWithTitle:@"About ApplEm" action:@selector(showAbout:) keyEquivalent:@""];
   about.target = self;
   [menu addItem:[NSMenuItem separatorItem]];
+  if (extra && !extra->children.empty()) {
+    for (const MenuItem &child : extra->children) [menu addItem:[self itemFor:child]];
+    [menu addItem:[NSMenuItem separatorItem]];
+  }
   NSMenuItem *services = [menu addItemWithTitle:@"Services" action:nil keyEquivalent:@""];
   services.submenu = [[NSMenu alloc] init];
   NSApp.servicesMenu = services.submenu;
@@ -128,12 +137,16 @@ NSEventModifierFlags modifierMask(unsigned modifiers) {
   return appItem;
 }
 
-- (NSMenuItem *)windowMenu {
+- (NSMenuItem *)windowMenu:(const MenuItem *)extra {
   NSMenuItem *windowItem = [[NSMenuItem alloc] init];
   NSMenu *menu = [[NSMenu alloc] initWithTitle:@"Window"];
   [menu addItemWithTitle:@"Minimize" action:@selector(performMiniaturize:) keyEquivalent:@"m"];
   [menu addItemWithTitle:@"Zoom" action:@selector(performZoom:) keyEquivalent:@""];
   [menu addItem:[NSMenuItem separatorItem]];
+  if (extra && !extra->children.empty()) {
+    for (const MenuItem &child : extra->children) [menu addItem:[self itemFor:child]];
+    [menu addItem:[NSMenuItem separatorItem]];
+  }
   [menu addItemWithTitle:@"Bring All to Front" action:@selector(arrangeInFront:) keyEquivalent:@""];
   windowItem.submenu = menu;
   NSApp.windowsMenu = menu;
@@ -146,10 +159,24 @@ NSEventModifierFlags modifierMask(unsigned modifiers) {
   if (_tracking) return; // next time, once the menu has closed
   _signature = signature;
 
+  const MenuItem *application = nullptr, *window = nullptr, *help = nullptr;
+  for (const MenuItem &menu : bar) {
+    if (menu.title == a2e::native::APPLICATION_MENU) application = &menu;
+    else if (menu.title == a2e::native::WINDOW_MENU) window = &menu;
+    else if (menu.title == a2e::native::HELP_MENU) help = &menu;
+  }
   NSMenu *main = [[NSMenu alloc] init];
-  [main addItem:[self applicationMenu]];
-  for (const MenuItem &menu : bar) [main addItem:[self itemFor:menu]];
-  [main addItem:[self windowMenu]];
+  [main addItem:[self applicationMenu:application]];
+  for (const MenuItem &menu : bar) {
+    if (&menu == application || &menu == window || &menu == help) continue;
+    [main addItem:[self itemFor:menu]];
+  }
+  [main addItem:[self windowMenu:window]];
+  if (help) {
+    NSMenuItem *helpItem = [self itemFor:*help];
+    [main addItem:helpItem];
+    NSApp.helpMenu = helpItem.submenu;
+  }
   NSApp.mainMenu = main;
 }
 

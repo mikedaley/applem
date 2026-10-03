@@ -566,10 +566,36 @@ defaults; the native order avoids that.
 The app is meant to feel like a Mac app rather than an ImGui tool:
 
 - **The menus are the macOS menu bar** (`menu_model.*`, `native_menu.mm`).
-  The App describes File, Edit, Machine and View as a C++ model each frame;
-  the bar is rebuilt only when that changes and never while a menu is open,
-  around the system's application and Window menus. A chosen item runs at
-  the start of the next frame, where ImGui can be used. Command keys go past
+  The App describes every menu as a C++ model each frame; the bar is rebuilt
+  only when that changes and never while a menu is open. The application
+  and Window menus are the system's, and the model's "ApplEm" and "Window"
+  menus add to them; its "Help" menu becomes the system's Help menu, with
+  its search field. They are laid out as a Mac app's are:
+  - **ApplEm**: Settings (⌘,), which is Display Settings for now.
+  - **File**: media in and out (both drives, Open Recent, the SmartPort's
+    two devices when there is one) and Close Window (⌘W), which closes the
+    tool window that has the keyboard and never the screen.
+  - **Edit**: Copy Screen Text (⇧⌘C) and Paste to Machine (⌘V). The usual
+    Undo, Cut, Copy and Select All are left out: a text field being typed
+    into takes those keys itself, so the items would act on nothing.
+  - **Machine**: power, reset, which machine, its speed, standard and (on a
+    IIgs) memory, then Keyboard (Command as Open Apple, Cursor Keys as
+    Joystick, the //e's UK Character Set) and Sound (Mute, Volume,
+    Equalizer).
+  - **View**: how the picture and the window look: Status Bar, Appearance,
+    Full Page, Full Screen.
+  - **Debug**: the three debug windows, then the run controls on the
+    browser's F5, F10, F11 and Shift-F11, with Xcode's ⌃⌘Y, F6, F7 and F8
+    as hidden items beside them (`MenuItem::hidden`, a key equivalent that
+    works while the item is not shown), because macOS takes F11 for Show
+    Desktop. The Dear ImGui demo is offered in debug builds only.
+  - **Window**: every tool window, ticked while open, ⌘1 to ⌘4 for the
+    first four, and Window Docking.
+  - **Help**: the wiki.
+
+  AppKit's automatic window tabbing is off (`main.mm`), or it adds tab
+  commands to View and Window for windows that are not documents. A chosen
+  item runs at the start of the next frame, where ImGui can be used. Command keys go past
   the menus to the window when the machine takes Command as Open Apple and
   has the keyboard, or an ImGui text field is being typed into; Command-Q
   always quits.

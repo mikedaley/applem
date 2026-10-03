@@ -70,6 +70,10 @@ public:
 
   static bool isBlockImage(const std::string &path, size_t size);
   void insertFile(int device, const std::string &path);
+  // For the File menu: choose an image for a device, and eject one, asking
+  // first as the window's own Eject does.
+  void chooseImage(int device);
+  void ejectDevice(int device) { requestEject(device); }
   int dropTarget() const;
   // The device whose card is at a point, as last drawn, or -1.
   int deviceAt(ImVec2 point) const;

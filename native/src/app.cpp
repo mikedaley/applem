@@ -17,6 +17,7 @@
 #include "video/video.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -451,6 +452,9 @@ void App::runMenuActions() {
   for (const std::string &action : actions) {
     auto it = menuActions_.find(action);
     if (it != menuActions_.end()) it->second();
+    // An action nothing answers is a menu item or a toolbar button whose
+    // id was renamed on one side only, which otherwise fails in silence.
+    else assert(!"a menu or toolbar action with nothing registered under it");
   }
 }
 
@@ -460,32 +464,82 @@ void App::runMenuActions() {
 void App::buildMenus() {
   menuActions_.clear();
   auto &a = menuActions_;
-  auto toggle = [](bool &flag) {
-    return [&flag] {
-      flag = !flag;
-      ImGui::MarkIniSettingsDirty();
-    };
-  };
 
-  MenuItem file = submenu("File", {
-      item(a, "disk.insert.1", "Insert Disk…", [this] { drives_->chooseDisk(0); }, "o", MOD_COMMAND),
-      item(a, "disk.insert.2", "Insert Disk in Drive 2…", [this] { drives_->chooseDisk(1); }, "o",
-           MOD_COMMAND | MOD_SHIFT),
-      item(a, "disk.eject.1", "Eject Drive 1", [this] { drives_->ejectDrive(0); }, "e", MOD_COMMAND, false,
-           drives_->hasDisk(0)),
-      item(a, "disk.eject.2", "Eject Drive 2", [this] { drives_->ejectDrive(1); }, "e", MOD_COMMAND | MOD_SHIFT,
-           false, drives_->hasDisk(1)),
-      MenuItem::separatorItem(),
-      item(a, "states.show", "Save States…", toggle(settings_.showSaveStates), "s", MOD_COMMAND | MOD_SHIFT,
-           settings_.showSaveStates),
+  // ApplEm: Settings, which are the display's for now, where every Mac app
+  // keeps them.
+  MenuItem application = submenu(APPLICATION_MENU, {
+      item(a, "app.settings", "Settings…", [this] {
+             settings_.showDisplaySettings = true;
+             ImGui::SetWindowFocus("Display Settings");
+             ImGui::MarkIniSettingsDirty();
+           }, ",", MOD_COMMAND),
   });
 
+  // File: media in and out, and closing a window.
+  std::vector<MenuItem> fileItems = {
+      item(a, "disk.insert.1", "Insert in Drive 1…", [this] { drives_->chooseDisk(0); }, "o", MOD_COMMAND),
+      item(a, "disk.insert.2", "Insert in Drive 2…", [this] { drives_->chooseDisk(1); }, "o",
+           MOD_COMMAND | MOD_SHIFT),
+  };
+  std::vector<MenuItem> recent;
+  for (int drive = 0; drive < 2; drive++) {
+    const std::vector<std::string> names = drives_->recentNames(drive);
+    if (names.empty()) continue;
+    if (!recent.empty()) recent.push_back(MenuItem::separatorItem());
+    MenuItem heading = item(a, "disk.recent.heading." + std::to_string(drive),
+                            "Drive " + std::to_string(drive + 1), [] {}, "", 0, false, false);
+    recent.push_back(heading);
+    for (size_t i = 0; i < names.size(); i++) {
+      recent.push_back(item(a, "disk.recent." + std::to_string(drive) + "." + std::to_string(i), names[i],
+                            [this, drive, i] { drives_->insertRecent(drive, i); }));
+    }
+  }
+  if (!recent.empty()) {
+    recent.push_back(MenuItem::separatorItem());
+    recent.push_back(item(a, "disk.recent.clear", "Clear Menu", [this] {
+                            drives_->clearRecent(0);
+                            drives_->clearRecent(1);
+                          }));
+  }
+  fileItems.push_back(submenu("Open Recent", recent, !recent.empty()));
+  fileItems.push_back(MenuItem::separatorItem());
+  fileItems.push_back(item(a, "disk.eject.1", "Eject Drive 1", [this] { drives_->ejectDrive(0); }, "e", MOD_COMMAND,
+                           false, drives_->hasDisk(0)));
+  fileItems.push_back(item(a, "disk.eject.2", "Eject Drive 2", [this] { drives_->ejectDrive(1); }, "e",
+                           MOD_COMMAND | MOD_SHIFT, false, drives_->hasDisk(1)));
+  // The SmartPort's, when there is one: a IIgs's, or a card.
+  if (hardDrives_->available()) {
+    fileItems.push_back(MenuItem::separatorItem());
+    std::vector<MenuItem> inserts, ejects;
+    for (int device = 0; device < 2; device++) {
+      const std::string unit = "Device " + std::to_string(device + 1);
+      inserts.push_back(item(a, "hd.insert." + std::to_string(device), unit + "…",
+                             [this, device] { hardDrives_->chooseImage(device); }));
+      ejects.push_back(item(a, "hd.eject." + std::to_string(device), unit,
+                            [this, device] { hardDrives_->ejectDevice(device); }, "", 0, false,
+                            hardDrives_->hasImage(device)));
+    }
+    fileItems.push_back(submenu("Insert Hard Disk Image", inserts));
+    fileItems.push_back(submenu("Eject Hard Disk Image", ejects, hardDrives_->hasImage(0) || hardDrives_->hasImage(1)));
+  }
+  fileItems.push_back(MenuItem::separatorItem());
+  fileItems.push_back(item(a, "window.close", "Close Window", [this] { closeFocusedWindow(); }, "w", MOD_COMMAND,
+                           false, focusedToolWindow() != nullptr));
+  MenuItem file = submenu("File", fileItems);
+
+  // Edit: text in and out of the machine. The usual Undo, Cut, Copy and
+  // Select All are left out because there is nothing for them to act on: a
+  // text field that is being typed into takes those keys itself.
   MenuItem edit = submenu("Edit", {
+      item(a, "edit.copyscreen", "Copy Screen Text", [this] { copyScreenText(); }, "c", MOD_COMMAND | MOD_SHIFT,
+           false, emulation_.powered()),
       item(a, "edit.paste", "Paste to Machine", [this] { paste(); }, "v", MOD_COMMAND),
   });
 
-  menuBar_ = {file, edit, machineMenu(), viewMenu()};
+  menuBar_ = {application, file, edit, machineMenu(), viewMenu()};
   if (std::optional<MenuItem> debug = debugMenu()) menuBar_.push_back(*debug);
+  menuBar_.push_back(windowMenu());
+  menuBar_.push_back(helpMenu());
 
   // The toolbar: the same actions, and the machine choices from the menu.
   toolbar_.powered = emulation_.powered();
@@ -493,8 +547,11 @@ void App::buildMenus() {
   toolbar_.hardDrives = hardDrives_->available();
   toolbar_.expansionSlots = profile_ && profile_->caps.hasExpansionSlots;
   toolbar_.machines.clear();
-  for (const MenuItem &entry : menuBar_[2].children) {
-    if (entry.action.rfind("machine.select.", 0) == 0) toolbar_.machines.push_back(entry);
+  for (const MenuItem &menu : menuBar_) {
+    if (menu.title != "Machine") continue;
+    for (const MenuItem &entry : menu.children) {
+      if (entry.action.rfind("machine.select.", 0) == 0) toolbar_.machines.push_back(entry);
+    }
   }
 }
 
@@ -506,7 +563,7 @@ MenuItem App::machineMenu() {
              releaseKeys();
              emulation_.setPowered(!emulation_.powered());
            }, "", 0, powered),
-      item(a, "machine.ctrlreset", "Ctrl+Reset", [this] {
+      item(a, "machine.ctrlreset", "Control-Reset", [this] {
              emulation_.withMachine([](host::MachineHost &host) { host.warmReset(); });
            }, "F12", MOD_CONTROL, false, powered),
       item(a, "machine.reboot", "Reboot", [this] {
@@ -555,63 +612,90 @@ MenuItem App::machineMenu() {
     }));
   }
 
-  std::vector<MenuItem> memory;
-  for (const MemorySize &size : IIGS_MEMORY_SIZES) {
-    const int kb = size.kb;
-    memory.push_back(item(a, "machine.iigsmemory." + std::to_string(kb), size.label, [this, kb] {
-                            if (settings_.iigsMemoryKB == kb) return;
-                            // Changing it rebuilds a running IIgs, as
-                            // switching machines does, and is only
-                            // remembered by any other machine.
-                            settings_.iigsMemoryKB = kb;
-                            ImGui::MarkIniSettingsDirty();
-                            releaseKeys();
-                            saveBatteryRamIfChanged(-1);
-                            emulation_.setIIgsFastRam(static_cast<size_t>(kb) * 1024);
-                            display_.machineRebuilt();
-                            slots_.apply();
-                            restoreBatteryRam();
-                            joystick_.machineRebuilt();
-                            if (profile_) {
-                              debugger_.setMachine(*profile_);
-                              memory_.setMachine(*profile_);
-                            }
-                          }, "", 0, settings_.iigsMemoryKB == kb));
+  // Only while a IIgs is running: on any other machine the choice would do
+  // nothing that could be seen.
+  if (profile_ && profile_->family == MachineFamily::AppleIIgs) {
+    std::vector<MenuItem> memory;
+    for (const MemorySize &size : IIGS_MEMORY_SIZES) {
+      const int kb = size.kb;
+      memory.push_back(item(a, "machine.iigsmemory." + std::to_string(kb), size.label, [this, kb] {
+                              if (settings_.iigsMemoryKB == kb) return;
+                              // Changing it rebuilds the IIgs, as switching
+                              // machines does.
+                              settings_.iigsMemoryKB = kb;
+                              ImGui::MarkIniSettingsDirty();
+                              releaseKeys();
+                              saveBatteryRamIfChanged(-1);
+                              emulation_.setIIgsFastRam(static_cast<size_t>(kb) * 1024);
+                              display_.machineRebuilt();
+                              slots_.apply();
+                              restoreBatteryRam();
+                              joystick_.machineRebuilt();
+                              if (profile_) {
+                                debugger_.setMachine(*profile_);
+                                memory_.setMachine(*profile_);
+                              }
+                            }, "", 0, settings_.iigsMemoryKB == kb));
+    }
+    items.push_back(submenu("IIgs Memory", memory));
   }
-  items.push_back(submenu("IIgs Memory", memory));
 
-  // Not on a //c, whose every slot is soldered down.
-  if (profile_ && profile_->caps.hasExpansionSlots) {
-    items.push_back(MenuItem::separatorItem());
-    items.push_back(item(a, "slots.show", "Expansion Slots…", [this] {
-                           settings_.showExpansionSlots = !settings_.showExpansionSlots;
-                           ImGui::MarkIniSettingsDirty();
-                         }, "", 0, settings_.showExpansionSlots));
+  // How the host's keyboard reaches the machine.
+  std::vector<MenuItem> keyboard = {
+      item(a, "machine.commandapple", "Command as Open Apple", [this] {
+             releaseKeys();
+             settings_.commandIsOpenApple[profile_->key] = !commandIsOpenApple();
+             ImGui::MarkIniSettingsDirty();
+           }, "", 0, commandIsOpenApple()),
+      item(a, "machine.cursorkeys", "Cursor Keys as Joystick", [this] {
+             joystick_.cursorKeys = !joystick_.cursorKeys;
+           }, "", 0, joystick_.cursorKeys),
+  };
+  // The //e's generator alone holds a second set.
+  if (profile_ && profile_->caps.hasUkCharSet) {
+    keyboard.push_back(item(a, "machine.ukcharset", "UK Character Set", [this] {
+                              settings_.ukCharacterSet = !settings_.ukCharacterSet;
+                              applyMachineDisplay();
+                              ImGui::MarkIniSettingsDirty();
+                            }, "", 0, settings_.ukCharacterSet));
   }
+  items.push_back(MenuItem::separatorItem());
+  items.push_back(submenu("Keyboard", keyboard));
+
+  std::vector<MenuItem> volumes;
+  for (int percent : {25, 50, 75, 100}) {
+    volumes.push_back(item(a, "machine.volume." + std::to_string(percent), std::to_string(percent) + "%",
+                           [this, percent] {
+                             settings_.volume = percent / 100.0f;
+                             emulation_.setVolume(settings_.volume);
+                             ImGui::MarkIniSettingsDirty();
+                           }, "", 0, std::lround(settings_.volume * 100) == percent));
+  }
+  items.push_back(submenu("Sound", {
+      item(a, "machine.mute", "Mute", [this] {
+             settings_.muted = !settings_.muted;
+             emulation_.setMuted(settings_.muted);
+             ImGui::MarkIniSettingsDirty();
+           }, "", 0, settings_.muted),
+      submenu("Volume", volumes),
+      MenuItem::separatorItem(),
+      item(a, "machine.equalizer", "Equalizer", [this] {
+             settings_.showEqualizer = !settings_.showEqualizer;
+             ImGui::MarkIniSettingsDirty();
+           }, "", 0, settings_.showEqualizer),
+  }));
   return submenu("Machine", items);
 }
 
+// How the picture and the main window look.
 MenuItem App::viewMenu() {
   auto &a = menuActions_;
-  auto window = [&a](const std::string &id, const std::string &title, bool &flag, const std::string &key,
-                     unsigned modifiers = MOD_COMMAND) {
-    return item(a, id, title, [&flag] {
-      flag = !flag;
-      ImGui::MarkIniSettingsDirty();
-    }, key, modifiers, flag);
-  };
-
   std::vector<MenuItem> items = {
-      window("view.screen", "Screen", settings_.showScreen, "1"),
-      window("view.drives", "Disk Drives", settings_.showDiskDrives, "2"),
+      item(a, "view.statusbar", "Status Bar", [this] {
+             settings_.showStatusBar = !settings_.showStatusBar;
+             ImGui::MarkIniSettingsDirty();
+           }, "/", MOD_COMMAND, settings_.showStatusBar),
   };
-  // Offered only when there is a SmartPort: a IIgs's, or a card.
-  if (hardDrives_->available()) {
-    items.push_back(window("view.harddrives", "SmartPort Drives", settings_.showHardDrives, "3"));
-  }
-  items.push_back(window("view.joystick", "Joystick", settings_.showJoystick, "4"));
-  items.push_back(window("view.display", "Display Settings…", settings_.showDisplaySettings, ","));
-  items.push_back(window("view.statusbar", "Status Bar", settings_.showStatusBar, "/"));
   // Light, dark, or whatever the system is, as the browser's theme offers.
   std::vector<MenuItem> appearances;
   const char *names[] = {"System", "Light", "Dark"};
@@ -623,58 +707,12 @@ MenuItem App::viewMenu() {
                                }, "", 0, settings_.appearance == choice));
   }
   items.push_back(submenu("Appearance", appearances));
-  // Off, every window stays a window: none docks into another or into the
-  // main window, and one already docked comes back out.
-  items.push_back(item(a, "view.docking", "Window Docking", [this] {
-                         settings_.windowDocking = !settings_.windowDocking;
-                         ImGui::MarkIniSettingsDirty();
-                       }, "", 0, settings_.windowDocking));
   items.push_back(MenuItem::separatorItem());
   items.push_back(item(a, "view.fullpage", fullPage_ ? "Leave Full Page" : "Full Page", [this] {
                          fullPage_ = !fullPage_;
                          enterFullPage_ = fullPage_;
                        }, "Escape", MOD_CONTROL, fullPage_));
   items.push_back(item(a, "toggleFullScreen", "Enter Full Screen", [] {}, "f", MOD_CONTROL | MOD_COMMAND));
-  items.push_back(MenuItem::separatorItem());
-
-  if (profile_ && profile_->caps.hasUkCharSet) {
-    items.push_back(item(a, "view.ukcharset", "UK Character Set", [this] {
-                           settings_.ukCharacterSet = !settings_.ukCharacterSet;
-                           applyMachineDisplay();
-                           ImGui::MarkIniSettingsDirty();
-                         }, "", 0, settings_.ukCharacterSet));
-  }
-  items.push_back(item(a, "view.commandapple", "Command as Open Apple", [this] {
-                         releaseKeys();
-                         settings_.commandIsOpenApple[profile_->key] = !commandIsOpenApple();
-                         ImGui::MarkIniSettingsDirty();
-                       }, "", 0, commandIsOpenApple()));
-  items.push_back(item(a, "view.cursorkeys", "Cursor Keys as Joystick", [this] {
-                         joystick_.cursorKeys = !joystick_.cursorKeys;
-                       }, "", 0, joystick_.cursorKeys));
-  items.push_back(MenuItem::separatorItem());
-
-  items.push_back(item(a, "view.mute", "Mute", [this] {
-                         settings_.muted = !settings_.muted;
-                         emulation_.setMuted(settings_.muted);
-                         ImGui::MarkIniSettingsDirty();
-                       }, "", 0, settings_.muted));
-  std::vector<MenuItem> volumes;
-  for (int percent : {25, 50, 75, 100}) {
-    volumes.push_back(item(a, "view.volume." + std::to_string(percent), std::to_string(percent) + "%",
-                           [this, percent] {
-                             settings_.volume = percent / 100.0f;
-                             emulation_.setVolume(settings_.volume);
-                             ImGui::MarkIniSettingsDirty();
-                           }, "", 0, std::lround(settings_.volume * 100) == percent));
-  }
-  items.push_back(submenu("Volume", volumes));
-  items.push_back(item(a, "view.equalizer", "Equalizer", [this] {
-                         settings_.showEqualizer = !settings_.showEqualizer;
-                         ImGui::MarkIniSettingsDirty();
-                       }, "", 0, settings_.showEqualizer));
-  items.push_back(MenuItem::separatorItem());
-  items.push_back(item(a, "view.imguidemo", "Dear ImGui Demo", [this] { showDemo_ = !showDemo_; }, "", 0, showDemo_));
   return submenu("View", items);
 }
 
@@ -692,27 +730,125 @@ std::optional<MenuItem> App::debugMenu() {
              settings_.showMemoryViewer = !settings_.showMemoryViewer;
              ImGui::MarkIniSettingsDirty();
            }, "m", MOD_COMMAND | MOD_SHIFT, settings_.showMemoryViewer),
+  };
+  if (mockingboard_.available()) {
+    items.push_back(item(a, "debug.mockingboard", "Mockingboard", [this] {
+                           settings_.showMockingboard = !settings_.showMockingboard;
+                           ImGui::MarkIniSettingsDirty();
+                         }, "", 0, settings_.showMockingboard));
+  }
+  // The browser's keys, which are Visual Studio's, and Xcode's beside them
+  // as hidden items: macOS takes F11 for Show Desktop, so on most Macs Step
+  // Into's F11 never arrives and F7 does.
+  auto alternate = [&a](const std::string &id, const std::string &key, unsigned modifiers, bool enabled,
+                        std::function<void()> run) {
+    MenuItem hidden = item(a, id, id, std::move(run), key, modifiers, false, enabled);
+    hidden.hidden = true;
+    return hidden;
+  };
+  const std::vector<MenuItem> run = {
       MenuItem::separatorItem(),
       item(a, "debug.continue", debugger_.paused() ? "Continue" : "Pause", [this] { debugger_.continueOrPause(); },
            "F5", 0, false, on),
-      item(a, "debug.stepinto", "Step Into", [this] { debugger_.stepInto(); }, "F11", 0, false, on),
+      alternate("debug.continue.xcode", "y", MOD_CONTROL | MOD_COMMAND, on, [this] { debugger_.continueOrPause(); }),
       item(a, "debug.stepover", "Step Over", [this] { debugger_.stepOver(); }, "F10", 0, false, on),
+      alternate("debug.stepover.xcode", "F6", 0, on, [this] { debugger_.stepOver(); }),
+      item(a, "debug.stepinto", "Step Into", [this] { debugger_.stepInto(); }, "F11", 0, false, on),
+      alternate("debug.stepinto.xcode", "F7", 0, on, [this] { debugger_.stepInto(); }),
       item(a, "debug.stepout", "Step Out", [this] { debugger_.stepOut(); }, "F11", MOD_SHIFT, false, on),
+      alternate("debug.stepout.xcode", "F8", 0, on, [this] { debugger_.stepOut(); }),
       MenuItem::separatorItem(),
       item(a, "debug.back", "Back", [this] { debugger_.back(); }, "[", MOD_COMMAND, false,
            settings_.showCpuDebugger && debugger_.canGoBack()),
       item(a, "debug.forward", "Forward", [this] { debugger_.forward(); }, "]", MOD_COMMAND, false,
            settings_.showCpuDebugger && debugger_.canGoForward()),
   };
-  if (mockingboard_.available()) {
-    items.push_back(MenuItem::separatorItem());
-    items.push_back(item(a, "debug.mockingboard", "Mockingboard", [this] {
-                           settings_.showMockingboard = !settings_.showMockingboard;
-                           ImGui::MarkIniSettingsDirty();
-                         }, "", 0, settings_.showMockingboard));
-  }
-  if (items.empty()) return std::nullopt;
+  items.insert(items.end(), run.begin(), run.end());
+#ifndef NDEBUG
+  items.push_back(MenuItem::separatorItem());
+  items.push_back(item(a, "debug.imguidemo", "Dear ImGui Demo", [this] { showDemo_ = !showDemo_; }, "", 0, showDemo_));
+#endif
   return submenu("Debug", items);
+}
+
+// The app's windows, added to the system's Window menu: each shows or hides
+// its window, and is ticked while it is open.
+MenuItem App::windowMenu() {
+  auto &a = menuActions_;
+  auto window = [&a](const std::string &id, const std::string &title, bool &flag, const std::string &key = "",
+                     unsigned modifiers = 0) {
+    return item(a, id, title, [&flag] {
+      flag = !flag;
+      ImGui::MarkIniSettingsDirty();
+    }, key, modifiers, flag);
+  };
+  std::vector<MenuItem> items = {
+      window("window.screen", "Screen", settings_.showScreen, "1", MOD_COMMAND),
+      window("window.drives", "Disk Drives", settings_.showDiskDrives, "2", MOD_COMMAND),
+  };
+  if (hardDrives_->available()) {
+    items.push_back(window("window.harddrives", "SmartPort Drives", settings_.showHardDrives, "3", MOD_COMMAND));
+  }
+  items.push_back(window("window.joystick", "Joystick", settings_.showJoystick, "4", MOD_COMMAND));
+  // Not on a //c, whose every slot is soldered down.
+  if (profile_ && profile_->caps.hasExpansionSlots) {
+    items.push_back(window("window.slots", "Expansion Slots", settings_.showExpansionSlots));
+  }
+  items.push_back(window("window.states", "Save States", settings_.showSaveStates, "s", MOD_COMMAND | MOD_SHIFT));
+  items.push_back(window("window.display", "Display Settings", settings_.showDisplaySettings));
+  items.push_back(window("window.equalizer", "Equalizer", settings_.showEqualizer));
+  items.push_back(MenuItem::separatorItem());
+  // Off, every window stays a window: none docks into another or into the
+  // main window, and one already docked comes back out.
+  items.push_back(window("window.docking", "Window Docking", settings_.windowDocking));
+  return submenu(WINDOW_MENU, items);
+}
+
+MenuItem App::helpMenu() {
+  auto &a = menuActions_;
+  return submenu(HELP_MENU, {
+      item(a, "help.wiki", "ApplEm Help", [this] {
+             if (platform_.openURL) platform_.openURL("https://github.com/mikedaley/web-a2e/wiki");
+           }),
+  });
+}
+
+// The window ⌘W closes: the app window that has the keyboard, if it is one
+// that can be shut. The screen cannot, and the main window is not one.
+bool *App::focusedToolWindow() {
+  const ImGuiWindow *focused = GImGui ? GImGui->NavWindow : nullptr;
+  if (!focused || !focused->RootWindow) return nullptr;
+  const std::string name = focused->RootWindow->Name;
+  const std::pair<const char *, bool *> windows[] = {
+      {"Disk Drives", &settings_.showDiskDrives},
+      {"SmartPort Drives", &settings_.showHardDrives},
+      {"Joystick", &settings_.showJoystick},
+      {"Expansion Slots", &settings_.showExpansionSlots},
+      {"Save States", &settings_.showSaveStates},
+      {"Display Settings", &settings_.showDisplaySettings},
+      {"Equalizer", &settings_.showEqualizer},
+      {"Mockingboard", &settings_.showMockingboard},
+      {"CPU Debugger", &settings_.showCpuDebugger},
+      {"Memory Viewer", &settings_.showMemoryViewer},
+  };
+  for (const auto &[title, flag] : windows) {
+    if (name == title) return *flag ? flag : nullptr;
+  }
+  return nullptr;
+}
+
+void App::closeFocusedWindow() {
+  if (bool *flag = focusedToolWindow()) {
+    *flag = false;
+    ImGui::MarkIniSettingsDirty();
+  }
+}
+
+// The text screen onto the clipboard, as the browser's text selection copies
+// it, forty or eighty columns.
+void App::copyScreenText() {
+  const std::string text = emulation_.withMachine([](host::MachineHost &host) { return host.screenText(); });
+  if (!text.empty()) ImGui::SetClipboardText(text.c_str());
 }
 
 // Switching is destructive, so it asks first, as the browser build's machine

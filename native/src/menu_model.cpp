@@ -20,6 +20,7 @@ void sign(const MenuItem &item, std::string &out) {
   out += static_cast<char>('0' + item.modifiers);
   out += item.checked ? 'c' : '_';
   out += item.enabled ? 'e' : '_';
+  out += item.hidden ? 'h' : '_';
   out += '{';
   for (const MenuItem &child : item.children) sign(child, out);
   out += '}';

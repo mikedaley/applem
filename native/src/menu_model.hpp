@@ -34,6 +34,9 @@ struct MenuItem {
   bool checked = false;
   bool enabled = true;
   bool separator = false;
+  // Not shown, but its key equivalent still works: a second key for an item
+  // that is shown, such as Xcode's F7 beside Step Into's F11.
+  bool hidden = false;
   std::vector<MenuItem> children;
 
   static MenuItem separatorItem() {
@@ -43,9 +46,15 @@ struct MenuItem {
   }
 };
 
-// The top-level menus, File onwards; the application menu and the Window
-// menu are the platform's own.
+// The top-level menus, File onwards. Three titles are the platform's own
+// menus rather than menus of their own: "ApplEm" adds its items to the
+// application menu after About, "Window" adds its items to the Window menu
+// after Zoom, and "Help" becomes the Help menu, which the system gives its
+// search field.
 using MenuBar = std::vector<MenuItem>;
+inline constexpr const char *APPLICATION_MENU = "ApplEm";
+inline constexpr const char *WINDOW_MENU = "Window";
+inline constexpr const char *HELP_MENU = "Help";
 
 // What the toolbar shows. Its buttons send the same actions as the menu
 // items they stand for.

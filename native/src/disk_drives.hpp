@@ -87,6 +87,11 @@ public:
   // For the menus.
   void chooseDisk(int drive);
   void ejectDrive(int drive) { requestEject(drive); }
+  // For File > Open Recent: a drive's recent disks, newest first, putting
+  // one back in, and forgetting them.
+  std::vector<std::string> recentNames(int drive) const;
+  void insertRecent(int drive, size_t index);
+  void clearRecent(int drive);
   bool hasDisk(int drive) const { return drives_[drive].filename.has_value(); }
   const std::optional<std::string> &diskName(int drive) const { return drives_[drive].filename; }
   // For the status bar's lights: turning under the head, and writing.

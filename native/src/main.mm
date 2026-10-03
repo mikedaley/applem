@@ -302,6 +302,9 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
       done(result == NSModalResponseOK ? std::string(panel.URL.path.UTF8String) : std::string());
     }];
   };
+  platform.openURL = [](const std::string &url) {
+    if (NSURL *target = [NSURL URLWithString:@(url.c_str())]) [NSWorkspace.sharedWorkspace openURL:target];
+  };
   platform.resourceDirectory = NSBundle.mainBundle.resourcePath.UTF8String;
   id<MTLDevice> device = _device;
   platform.makeTexture = [device](const uint8_t *rgba, int width, int height) -> ImTextureID {
@@ -599,6 +602,10 @@ int main(int argc, const char *argv[]) {
   @autoreleasepool {
     NSApplication *app = [NSApplication sharedApplication];
     [app setActivationPolicy:NSApplicationActivationPolicyRegular];
+    // The windows are not documents, so there are no tabs to show: without
+    // this AppKit adds Show Tab Bar to the View menu and tab commands to the
+    // Window menu.
+    NSWindow.allowsAutomaticWindowTabbing = NO;
     AppDelegate *delegate = [[AppDelegate alloc] init];
     app.delegate = delegate;
     [app run];

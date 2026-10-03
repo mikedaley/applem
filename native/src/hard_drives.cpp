@@ -224,6 +224,14 @@ void HardDrives::insertImage(int device, const std::string &filename,
   if (pending) notice("Image inserted. Press Ctrl+Reset or Reboot to start from it.");
 }
 
+void HardDrives::chooseImage(int device) {
+  if (!platform_.openFile) return;
+  platform_.openFile("Insert an image into SmartPort device " + std::to_string(device + 1), {"hdv", "po", "2mg"},
+                     [this, device](const std::string &path) {
+                       if (!path.empty()) insertFile(device, path);
+                     });
+}
+
 void HardDrives::insertFile(int device, const std::string &path) {
   auto data = readFile(path);
   if (!data) {
@@ -674,10 +682,7 @@ void HardDrives::drawDevice(int index) {
   const float buttonsY = cardEnd.y - CARD_PADDING - ImGui::GetFrameHeight();
   ImGui::SetCursorScreenPos(ImVec2(card.x + CARD_PADDING, buttonsY));
   if (ui::Button("Insert", ImVec2(0, 0), present ? ui::ButtonKind::Normal : ui::ButtonKind::Primary)) {
-    platform_.openFile("Insert an image into SmartPort device " + std::to_string(index + 1),
-                       {"hdv", "po", "2mg"}, [this, index](const std::string &path) {
-                         if (!path.empty()) insertFile(index, path);
-                       });
+    chooseImage(index);
   }
   ImGui::SameLine();
   const std::string recentId = "##hdrecent" + std::to_string(index);
