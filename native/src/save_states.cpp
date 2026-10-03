@@ -483,7 +483,7 @@ void SaveStates::drawSlot(int slot, ImVec2 at, ImVec2 size) {
   } else {
     draw->AddText(ImVec2(x, y), secondary(), label.c_str());
     y += ImGui::GetTextLineHeight() + 2;
-    draw->AddText(ImVec2(x, y), text(0.3f), "Empty");
+    draw->AddText(ImVec2(x, y), secondary(), "Empty");
   }
   drawFlash(id, screen, screenSize);
   ImGui::PopID();
@@ -528,7 +528,7 @@ void SaveStates::draw(bool *open) {
 
     ui::BeforeWindow("Save States");
 
-    if (ImGui::Begin("Save States", open, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (ui::BeginWindow("Save States", open, ImGuiWindowFlags_AlwaysAutoResize)) {
       dialogs_.note();
       const float width = CARD_WIDTH * 3 + COLUMN_GAP * 2;
       drawAutosave(width);

@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cstdio>
 #include <type_traits>
+#include <unordered_map>
 
 namespace a2e::native::ui {
 
@@ -546,6 +547,145 @@ void BeforeWindow(const char *name) {
   if (ImGuiWindow *window = ImGui::FindWindowByName(name); window && window->DockId != 0) {
     ImGui::SetNextWindowDockID(0, ImGuiCond_Always);
   }
+}
+
+namespace {
+
+// A macOS title bar's measures, in points: its height, and the three
+// buttons' size, the first one's centre from the window's left edge, and the
+// distance between centres.
+constexpr float TITLE_BAR_HEIGHT = 28.0f;
+constexpr float LIGHT_DIAMETER = 12.0f;
+constexpr float LIGHT_FIRST = 18.0f;
+constexpr float LIGHT_PITCH = 20.0f;
+
+// Where a zoomed window was, to go back to.
+std::unordered_map<ImGuiID, ImRect> g_unzoomed;
+
+enum class Light { Close, Minimise, Zoom };
+
+void drawLight(ImDrawList *draw, ImVec2 c, Light light, bool active, bool enabled, bool showGlyph, bool held) {
+  const float r = LIGHT_DIAMETER * 0.5f;
+  // AppKit's own colours for the three, with the darker rim it draws.
+  static const ImU32 FILL[3] = {IM_COL32(0xFF, 0x5F, 0x57, 255), IM_COL32(0xFE, 0xBC, 0x2E, 255),
+                                IM_COL32(0x28, 0xC8, 0x40, 255)};
+  static const ImU32 RIM[3] = {IM_COL32(0xE2, 0x46, 0x3F, 255), IM_COL32(0xE1, 0xA1, 0x16, 255),
+                               IM_COL32(0x14, 0xAE, 0x2C, 255)};
+  static const ImU32 GLYPH[3] = {IM_COL32(0x4D, 0x00, 0x00, 255), IM_COL32(0x99, 0x57, 0x00, 255),
+                                 IM_COL32(0x00, 0x65, 0x00, 255)};
+  const int i = static_cast<int>(light);
+  if (!active || !enabled) {
+    // An inactive window's buttons, and a button that does nothing here, are
+    // grey, as AppKit draws them.
+    const ImU32 grey = isDark() ? IM_COL32(255, 255, 255, 52) : IM_COL32(0, 0, 0, 40);
+    draw->AddCircleFilled(c, r, grey, 24);
+    if (!(showGlyph && enabled)) return;
+  } else {
+    draw->AddCircleFilled(c, r, FILL[i], 24);
+    draw->AddCircle(c, r - 0.25f, RIM[i], 24, 0.5f);
+    if (held) draw->AddCircleFilled(c, r, IM_COL32(0, 0, 0, 40), 24);
+  }
+  if (!showGlyph || !enabled) return;
+  const ImU32 g = active ? GLYPH[i] : (isDark() ? IM_COL32(255, 255, 255, 170) : IM_COL32(0, 0, 0, 130));
+  const float k = r * 0.45f;
+  const float t = 1.1f;
+  switch (light) {
+  case Light::Close:
+    draw->AddLine(ImVec2(c.x - k, c.y - k), ImVec2(c.x + k, c.y + k), g, t);
+    draw->AddLine(ImVec2(c.x + k, c.y - k), ImVec2(c.x - k, c.y + k), g, t);
+    break;
+  case Light::Minimise:
+    draw->AddLine(ImVec2(c.x - k * 1.2f, c.y), ImVec2(c.x + k * 1.2f, c.y), g, t + 0.2f);
+    break;
+  case Light::Zoom:
+    draw->AddLine(ImVec2(c.x - k * 1.2f, c.y), ImVec2(c.x + k * 1.2f, c.y), g, t + 0.2f);
+    draw->AddLine(ImVec2(c.x, c.y - k * 1.2f), ImVec2(c.x, c.y + k * 1.2f), g, t + 0.2f);
+    break;
+  }
+}
+
+// Fill the screen the window is on, or put it back where it was.
+void toggleZoom(ImGuiWindow *window) {
+  if (auto it = g_unzoomed.find(window->ID); it != g_unzoomed.end()) {
+    ImGui::SetWindowPos(window, it->second.Min);
+    ImGui::SetWindowSize(window, it->second.GetSize());
+    g_unzoomed.erase(it);
+    return;
+  }
+  ImVec2 pos = ImGui::GetMainViewport()->WorkPos, size = ImGui::GetMainViewport()->WorkSize;
+  const ImGuiPlatformIO &io = ImGui::GetPlatformIO();
+  const int monitor = window->Viewport ? window->Viewport->PlatformMonitor : -1;
+  if (monitor >= 0 && monitor < io.Monitors.Size) {
+    pos = io.Monitors[monitor].WorkPos;
+    size = io.Monitors[monitor].WorkSize;
+  }
+  g_unzoomed[window->ID] = ImRect(window->Pos, ImVec2(window->Pos.x + window->SizeFull.x, window->Pos.y + window->SizeFull.y));
+  ImGui::SetWindowPos(window, pos);
+  ImGui::SetWindowSize(window, size);
+}
+
+} // namespace
+
+bool BeginWindow(const char *name, bool *open, ImGuiWindowFlags flags) {
+  // A docked window is a tab, and closes from it.
+  const ImGuiWindow *existing = ImGui::FindWindowByName(name);
+  const bool docked = existing && existing->DockIsActive;
+
+  // The title bar is the frame padding either side of a line of text, so the
+  // padding is what makes it AppKit's height; it is put back before anything
+  // in the window is drawn.
+  const float titlePad = std::max(ImGui::GetStyle().FramePadding.y, (TITLE_BAR_HEIGHT - ImGui::GetFontSize()) * 0.5f);
+  ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(ImGui::GetStyle().FramePadding.x, titlePad));
+  const bool visible = ImGui::Begin(name, docked ? open : nullptr, flags);
+  ImGui::PopStyleVar();
+
+  ImGuiWindow *window = ImGui::GetCurrentWindow();
+  if (docked || window->DockIsActive || (flags & ImGuiWindowFlags_NoTitleBar) || window->TitleBarHeight <= 0) {
+    return visible;
+  }
+
+  ImGuiContext &g = *GImGui;
+  const ImRect bar = window->TitleBarRect();
+  const bool active = g.NavWindow && g.NavWindow->RootWindow == window->RootWindow;
+  const bool canMinimise = !(flags & ImGuiWindowFlags_NoCollapse);
+  const bool canZoom = !(flags & (ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoResize));
+  const float cy = (bar.Min.y + bar.Max.y) * 0.5f;
+  const ImRect group(ImVec2(bar.Min.x + LIGHT_FIRST - LIGHT_PITCH * 0.5f, bar.Min.y),
+                     ImVec2(bar.Min.x + LIGHT_FIRST + LIGHT_PITCH * 2.5f, bar.Max.y));
+  // macOS shows all three symbols while the pointer is over any of them.
+  const bool overGroup = g.HoveredWindow && g.HoveredWindow->RootWindow == window->RootWindow &&
+                         ImGui::IsMouseHoveringRect(group.Min, group.Max, false);
+
+  // The buttons are items in the title bar, as ImGui's own close button is:
+  // on the menu layer, never taking keyboard focus, and clipped to the
+  // window rather than to its contents.
+  const ImGuiItemFlags itemFlags = g.CurrentItemFlags;
+  g.CurrentItemFlags |= static_cast<ImGuiItemFlags>(ImGuiItemFlags_NoNavDefaultFocus) | static_cast<ImGuiItemFlags>(ImGuiItemFlags_NoFocus);
+  window->DC.NavLayerCurrent = ImGuiNavLayer_Menu;
+  ImGui::PushClipRect(window->OuterRectClipped.Min, window->OuterRectClipped.Max, false);
+  const Light lights[3] = {Light::Close, Light::Minimise, Light::Zoom};
+  const bool enabled[3] = {open != nullptr, canMinimise, canZoom};
+  for (int i = 0; i < 3; i++) {
+    const ImVec2 c(bar.Min.x + LIGHT_FIRST + LIGHT_PITCH * i, cy);
+    const float hit = LIGHT_PITCH * 0.5f;
+    const ImRect bb(ImVec2(c.x - hit, c.y - hit), ImVec2(c.x + hit, c.y + hit));
+    static const char *const IDS[3] = {"#TL_CLOSE", "#TL_MINIMISE", "#TL_ZOOM"};
+    const ImGuiID id = window->GetID(IDS[i]);
+    bool hovered = false, held = false;
+    bool pressed = false;
+    if (ImGui::ItemAdd(bb, id) && enabled[i]) pressed = ImGui::ButtonBehavior(bb, id, &hovered, &held);
+    drawLight(window->DrawList, c, lights[i], active, enabled[i], overGroup, held);
+    if (!pressed) continue;
+    switch (lights[i]) {
+    case Light::Close: *open = false; break;
+    case Light::Minimise: ImGui::SetWindowCollapsed(window, !window->Collapsed); break;
+    case Light::Zoom: toggleZoom(window); break;
+    }
+  }
+  ImGui::PopClipRect();
+  window->DC.NavLayerCurrent = ImGuiNavLayer_Main;
+  g.CurrentItemFlags = itemFlags;
+  return visible;
 }
 
 } // namespace a2e::native::ui

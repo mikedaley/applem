@@ -17,6 +17,8 @@
 
 #import <QuartzCore/QuartzCore.h>
 
+#include <algorithm>
+#include <cmath>
 #include <map>
 #include <string>
 
@@ -49,6 +51,42 @@ ImVec4 withAlpha(ImVec4 colour, float alpha) {
 ImVec4 mix(ImVec4 a, ImVec4 b, float t) {
   return ImVec4(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t, a.w + (b.w - a.w) * t);
 }
+
+// A colour with its alpha laid over an opaque background, as it will be seen.
+ImVec4 over(ImVec4 colour, ImVec4 background) {
+  const float a = colour.w;
+  return ImVec4(colour.x * a + background.x * (1 - a), colour.y * a + background.y * (1 - a),
+                colour.z * a + background.z * (1 - a), 1.0f);
+}
+
+// WCAG 2's relative luminance of an sRGB colour, and the contrast between two.
+float luminance(ImVec4 c) {
+  auto linear = [](float v) { return v <= 0.04045f ? v / 12.92f : std::pow((v + 0.055f) / 1.055f, 2.4f); };
+  return 0.2126f * linear(c.x) + 0.7152f * linear(c.y) + 0.0722f * linear(c.z);
+}
+
+float contrast(ImVec4 a, ImVec4 b) {
+  const float la = luminance(a), lb = luminance(b);
+  return (std::max(la, lb) + 0.05f) / (std::min(la, lb) + 0.05f);
+}
+
+// The colour moved towards `towards` only as far as it takes to reach the
+// ratio against the background, so it keeps as much of itself as it can.
+ImVec4 legible(ImVec4 colour, ImVec4 background, float ratio, ImVec4 towards) {
+  colour = over(colour, background);
+  for (int step = 0; step <= 100; step++) {
+    const ImVec4 tried = mix(colour, towards, step / 100.0f);
+    if (contrast(tried, background) >= ratio) return tried;
+  }
+  return towards;
+}
+
+ImVec4 fromU32(ImU32 c) { return ImGui::ColorConvertU32ToFloat4(c); }
+
+// What the measurements came to, for the current appearance.
+Palette g_palette{};
+ImVec4 g_accentText(0, 0, 0, 1);
+ImU32 g_faint = 0;
 
 // What decides the palette: light or dark, and which accent.
 std::string appearanceKey() {
@@ -89,7 +127,7 @@ void apply() {
   style.WindowBorderSize = 1;
   style.ChildBorderSize = 1;
   style.PopupBorderSize = 1;
-  style.FrameBorderSize = 0;
+  style.FrameBorderSize = 1;
   style.TabBorderSize = 0;
   style.SeparatorTextBorderSize = 1;
   style.SeparatorTextPadding = ImVec2(0, 4); // a title then its rule, no stub before it
@@ -115,14 +153,41 @@ void apply() {
   const ImVec4 titleBar = g_dark ? mix(window, ImVec4(0, 0, 0, 1), 0.25f) : mix(window, ImVec4(0, 0, 0, 1), 0.05f);
 
   ImVec4 *c = style.Colors;
+  // Secondary text everywhere is TextDisabled, so it is the colour that
+  // decides whether a window's labels can be read: the system's secondary
+  // label, darkened or lightened to 5:1 against the window, a little over
+  // WCAG's 4.5 so it still passes on a card's tint. The system's tertiary
+  // label is a quarter of the text colour, about 2:1, which is what made
+  // captions and quiet values hard to read.
+  const ImVec4 ink = over(text, window);
+  const ImVec4 secondaryText = legible(secondary, window, 5.0f, ink);
+  g_faint = ImGui::ColorConvertFloat4ToU32(legible(tertiary, window, 3.2f, ink));
+  g_accentText = legible(accent, window, 4.8f, ink);
+  // The stripes, each moved along its own hue towards black on a light
+  // window and towards white on a dark one.
+  static const ImVec4 STRIPES[6] = {
+      ImVec4(0x61 / 255.0f, 0xBB / 255.0f, 0x46 / 255.0f, 1), ImVec4(0xFD / 255.0f, 0xB8 / 255.0f, 0x27 / 255.0f, 1),
+      ImVec4(0xF5 / 255.0f, 0x82 / 255.0f, 0x1F / 255.0f, 1), ImVec4(0xE0 / 255.0f, 0x3A / 255.0f, 0x3E / 255.0f, 1),
+      ImVec4(0x96 / 255.0f, 0x3D / 255.0f, 0x97 / 255.0f, 1), ImVec4(0x00 / 255.0f, 0x9D / 255.0f, 0xDC / 255.0f, 1)};
+  const ImVec4 away = g_dark ? ImVec4(1, 1, 1, 1) : ImVec4(0, 0, 0, 1);
+  ImU32 stripes[6];
+  for (int i = 0; i < 6; i++) stripes[i] = ImGui::ColorConvertFloat4ToU32(legible(STRIPES[i], window, 4.8f, away));
+  g_palette = {stripes[0], stripes[1], stripes[2], stripes[3], stripes[4], stripes[5]};
+
+  // A control's edge and a card's: the system's separator is a tenth of the
+  // text colour, which leaves a text field or a card barely there on a light
+  // window. 1.6:1 outlines without drawing attention.
+  const ImVec4 edge = legible(separator, window, g_dark ? 1.6f : 1.45f, ink);
+
   c[ImGuiCol_Text] = text;
-  c[ImGuiCol_TextDisabled] = tertiary;
+  c[ImGuiCol_TextDisabled] = secondaryText;
   c[ImGuiCol_WindowBg] = window;
   c[ImGuiCol_ChildBg] = ImVec4(0, 0, 0, 0);
   c[ImGuiCol_PopupBg] = g_dark ? mix(window, ImVec4(1, 1, 1, 1), 0.06f) : control;
-  c[ImGuiCol_Border] = separator;
+  c[ImGuiCol_Border] = edge;
   c[ImGuiCol_BorderShadow] = ImVec4(0, 0, 0, 0);
-  c[ImGuiCol_FrameBg] = fill;
+  // A text field is white on a light window, as AppKit's are, with an edge.
+  c[ImGuiCol_FrameBg] = g_dark ? fill : control;
   c[ImGuiCol_FrameBgHovered] = fillHover;
   c[ImGuiCol_FrameBgActive] = fillActive;
   c[ImGuiCol_TitleBg] = titleBar;
@@ -168,7 +233,7 @@ void apply() {
   c[ImGuiCol_TableRowBg] = ImVec4(0, 0, 0, 0);
   // Alternating rows, as an NSTableView draws them.
   c[ImGuiCol_TableRowBgAlt] = withAlpha(text, g_dark ? 0.035f : 0.03f);
-  c[ImGuiCol_TextLink] = accent;
+  c[ImGuiCol_TextLink] = g_accentText;
   c[ImGuiCol_TextSelectedBg] = withAlpha(selection, 0.6f);
   c[ImGuiCol_DragDropTarget] = accent;
   c[ImGuiCol_NavCursor] = accent;
@@ -216,6 +281,27 @@ void followSystemAppearance() {
 }
 
 bool isDark() { return g_dark; }
+
+const Palette &palette() { return g_palette; }
+
+ImU32 accentText(float alpha) {
+  ImVec4 c = g_accentText;
+  c.w = alpha;
+  return ImGui::ColorConvertFloat4ToU32(c);
+}
+
+ImU32 faintText() { return g_faint; }
+
+ImU32 textOn(ImU32 fill) {
+  const ImVec4 f = fromU32(fill);
+  const ImVec4 black(0.07f, 0.07f, 0.07f, 1), white(1, 1, 1, 1);
+  return contrast(black, f) >= contrast(white, f) ? IM_COL32(18, 18, 18, 255) : IM_COL32_WHITE;
+}
+
+float contrastRatio(ImU32 foreground, ImU32 background) {
+  const ImVec4 bg = over(fromU32(background), ImVec4(0, 0, 0, 1));
+  return contrast(over(fromU32(foreground), bg), bg);
+}
 
 namespace {
 

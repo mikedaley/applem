@@ -72,6 +72,16 @@ float SwitchWidth(const char *label);
 void SetWindowDocking(bool allowed);
 void BeforeWindow(const char *name);
 
+// ImGui::Begin, with a macOS window's title bar: the window's own close,
+// minimise and zoom buttons on the left, as the main window has them, and the
+// title centred in a bar as tall as AppKit's. Close clears *open; minimise
+// rolls the window up to its title bar and back; zoom fills the screen the
+// window is on and puts it back, and is greyed out on a window that sizes
+// itself. The buttons are grey while the window is not the active one, and
+// show what they do when the pointer is over them. A docked window keeps
+// ImGui's tab and its close button.
+bool BeginWindow(const char *name, bool *open, ImGuiWindowFlags flags = 0);
+
 // Where a window's dialogs open: over the window, while it is showing, and
 // over the main window when it is not (an action from a menu with the
 // window shut). note() inside the window's Begin each frame; placeNext()

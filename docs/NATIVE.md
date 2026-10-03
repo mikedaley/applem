@@ -497,6 +497,59 @@ generated from `symbols.js` into `apple2_symbols.inc`
 breakpoint list, and the rules' expressions in both directions and through
 the evaluator.
 
+Debug > Memory Viewer (`memory_viewer.*`, Shift-Command-M) is a hex view
+for someone writing software for the machine. What it browses is a
+`MemorySpace` from `MachineHost::memorySpaces()`: on the 8-bit machines the
+processor's view (what a program sees, switches and all), then main RAM,
+auxiliary RAM and the ROM as they are, whatever the switches say; on a
+IIgs, a bank at a time. Main and auxiliary RAM are each laid out as a IIgs
+lays out a bank, with the language card's bank 1 at `$C000` and bank 2 and
+the rest of the card above, so all 64K of each half is in one place.
+Edits go through `pokeSpace`, which writes where `peekSpace` reads (the
+new `MMU::poke` and `IIgsMemory::poke`): no soft switch is touched, the
+language card's write protect is not asked, a IIgs write is shadowed and
+no clock is charged, and I/O and ROM refuse. `test_machine_host` pins every
+space on a //e, a II+ and a IIgs.
+
+- **Every byte is drawn as it changes**, lit and fading over a second and
+  a half, and the text column shows Apple's screen codes (inverse and
+  flashing cells drawn still, a flashing one tinted rather than flashed,
+  within the shader's photosensitivity limits) or seven-bit ASCII. Zero
+  is a dim dot in both, because a page of inverse `@` hides the text in it.
+- **Activity** (a //e's processor view) lights each byte the processor
+  reads in blue and writes in orange. The MMU counts accesses per address
+  and the viewer takes and clears the counts every frame
+  (`MachineHost::memoryActivity`), keeping its own exponential fade, so
+  how long a byte stays lit is the viewer's choice and not the machine's.
+- **The map** down the right is the whole space, a pixel a byte and a row
+  a page, coloured by value through the logo's stripes (nothing for zero,
+  grey for `$FF`), repainted as a texture a few times a second. Regions,
+  breakpoints, the selection, matches, bookmarks, the stack pointer and
+  the PC are marked on it, and dragging it scrolls the view.
+- **Editing**: hex digits at the caret (two to a byte, one undo), text in
+  the text column (Tab moves between them), a bit at a time in the
+  inspector, Fill with a byte or a pattern, Paste Hex, and Load File,
+  which takes a CiderPress name's load address (`PROG#062000`). Undo and
+  Redo cover all of it.
+- **Reading**: the inspector shows the bytes at the caret as a byte, a
+  character, bits, a word either way round, a long, a dword, an Applesoft
+  float and a pointer to follow; the selection card sums it, XORs it and
+  takes its CRC-16; the memory map card says which bank each part of the
+  map reads and writes as the switches stand.
+- **Finding and following**: hex with `??` wildcards or text with the top
+  bit either way, Back and Forward, names and addresses through the CPU
+  debugger's symbols, the places worth jumping to on each machine,
+  bookmarks, and Follow (the PC, the stack pointer or any watch
+  expression, such as `PEEK($06)+PEEK($07)*256`).
+- **The CPU debugger's breakpoints** are marked on the bytes they watch,
+  and the context menu adds read, write, access and execute breakpoints
+  to its list, copies a range as hex, Merlin `HEX`, `DFB` or a C array,
+  and opens the listing at an address.
+
+The rows in view and a few either side are read once a frame under one
+lock, and the map a few times a second; a closed viewer reads nothing and
+turns the access counting off.
+
 ## IIgs battery RAM
 
 The 256 bytes are kept in `iigs-battery-ram.bin`, written when the core
@@ -537,6 +590,26 @@ The app is meant to feel like a Mac app rather than an ImGui tool:
   ordinary ImGui item, so keyboard focus and IDs work as ImGui's own do.
   Window code calls `ui::` rather than `ImGui::` for any of these; a stock
   ImGui control in a window stands out at once.
+- **Colours are measured, not chosen by eye** (`ui_theme.mm`). Every
+  colour that carries text is checked against the window's background by
+  WCAG 2's contrast ratio and moved along its own hue until it passes:
+  secondary text (`TextDisabled`, which every window's labels and captions
+  use) to 5:1, from the system's tertiary label at about 2:1; quiet text
+  such as a zero byte to 3:1 (`ui::faintText`); the accent as text to 4.8:1
+  (`ui::accentText`); and the logo's six stripes (`ui::palette`) to 4.8:1,
+  darkened on a light window and lightened on a dark one. Text on a coloured
+  fill is black or white by whichever contrasts more (`ui::textOn`), never a
+  fixed dark grey. Text fields are white with an edge on a light window, as
+  AppKit's are. Windows take these rather than keeping their own copies, so a
+  change of appearance or accent reaches every one of them.
+- **Every window has a macOS title bar** (`ui::BeginWindow`, which window
+  code calls instead of `ImGui::Begin`): 28 points tall, the title centred,
+  and close, minimise and zoom on the left in AppKit's colours, grey while
+  the window is not the active one and showing their symbols while the
+  pointer is over them. Minimise rolls the window up to its title bar and
+  back; zoom fills the screen the window is on and puts it back, and is
+  greyed out on a window that sizes itself. A docked window keeps ImGui's tab
+  and its close button.
 - **SF Pro** for the interface and **SF Mono** for figures.
 - A dock area holding one window hides its tab, so the screen has none.
 - **The pointer is read from macOS every frame** (`reportHoveredViewport`
@@ -608,7 +681,7 @@ different things.
 4. Media and configuration: disk drives, SmartPort and expansion slots
    IIgs battery RAM, save states, CPU speed and the game port. Done.
 5. Display fidelity: the CRT shaders in Metal, display settings and profiles. Done.
-6. Debugger: memory, zero page and soft switches. The CPU debugger (with the stack and the trace) is done.
+6. Debugger: zero page and soft switches. The CPU debugger (with the stack and the trace) and the memory viewer are done.
 7. The remaining debug views. The Disk Inspector and the Mockingboard are done.
 8. The tools that are JavaScript today: printers, editors, file explorer.
 9. Signing, notarisation and CI.

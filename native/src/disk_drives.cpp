@@ -1405,7 +1405,7 @@ void DiskDrives::drawSectorChips(float width) {
     if (picked) draw->AddRect(a, b, accent(), 6.0f, 0, 1.5f);
     char label[8];
     std::snprintf(label, sizeof(label), "%X", s.sector);
-    centredText(draw, ImVec2((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f), picked ? IM_COL32(20, 20, 20, 255) : colour, label);
+    centredText(draw, ImVec2((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f), picked ? ui::textOn(colour) : colour, label);
     if (hovered) {
       ImGui::SetTooltip("Sector %d, %d%s past the index\nVolume %d, track %d\n%s%s", s.sector, static_cast<int>(i) + 1,
                         i == 0 ? "st" : i == 1 ? "nd" : i == 2 ? "rd" : "th", s.volume, s.track, state,
@@ -1706,7 +1706,7 @@ void DiskDrives::draw(bool *open) {
   if (open && *open) {
     for (Drive &d : drives_) paintPlatters(d);
     ui::BeforeWindow("Disk Drives");
-    if (ImGui::Begin("Disk Drives", open, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (ui::BeginWindow("Disk Drives", open, ImGuiWindowFlags_AlwaysAutoResize)) {
       dialogs_.note();
       const ImVec2 top = ImGui::GetCursorScreenPos();
       ui::Switch("Inspector", &inspectorShown);

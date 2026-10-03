@@ -76,6 +76,14 @@ public:
   // blanking has no column, so only the horizontal line is drawn.
   void beamOnScreen(bool windowOpen, float &x, float &y) const;
 
+  // What the memory viewer shares: the names it shows, the breakpoints it
+  // marks and adds to, and the listing it opens at an address.
+  const DebugSymbols &symbols() const { return symbols_; }
+  const Breakpoints &breakpoints() const { return breakpoints_; }
+  // False if one of that kind already starts there.
+  bool addBreakpoint(Breakpoint::Kind kind, uint32_t start, uint32_t end);
+  void showInListing(uint32_t address);
+
   // Settings, under their own section of the ini file.
   void writeSettings(std::string &out) const;
   void readSetting(const char *line);

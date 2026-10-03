@@ -67,6 +67,12 @@ App::App(std::string settingsDirectory, Platform platform)
   registerDisplayHandler();
   registerSlotsHandler();
   registerDebuggerHandler();
+  registerMemoryHandler();
+  memory_.showDebugger = [this] {
+    settings_.showCpuDebugger = true;
+    ImGui::SetWindowFocus("CPU Debugger");
+    ImGui::MarkIniSettingsDirty();
+  };
   joystick_.setGamepadSource(platform_.gamepads);
   // Refitting can rebuild the SmartPort, and its images with it.
   slots_.setAppliedCallback([this] { hardDrives_->syncWithMachine(); });
@@ -131,6 +137,7 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "ShowJoystick=%d", &value) == 1) s.showJoystick = value;
     else if (std::sscanf(line, "ShowMockingboard=%d", &value) == 1) s.showMockingboard = value;
     else if (std::sscanf(line, "ShowCpuDebugger=%d", &value) == 1) s.showCpuDebugger = value;
+    else if (std::sscanf(line, "ShowMemoryViewer=%d", &value) == 1) s.showMemoryViewer = value;
     else if (std::sscanf(line, "MockingboardMutes=%d", &value) == 1) s.mockingboardMutes = value & 0x3F;
     else if (std::sscanf(line, "ShowEqualizer=%d", &value) == 1) s.showEqualizer = value;
     else if (std::sscanf(line, "Equalizer=%d", &value) == 1) s.equalizer.enabled = value;
@@ -176,6 +183,7 @@ void App::registerSettingsHandler() {
     out->appendf("ShowJoystick=%d\n", s.showJoystick ? 1 : 0);
     out->appendf("ShowMockingboard=%d\n", s.showMockingboard ? 1 : 0);
     out->appendf("ShowCpuDebugger=%d\n", s.showCpuDebugger ? 1 : 0);
+    out->appendf("ShowMemoryViewer=%d\n", s.showMemoryViewer ? 1 : 0);
     out->appendf("MockingboardMutes=%d\n", s.mockingboardMutes);
     out->appendf("ShowEqualizer=%d\n", s.showEqualizer ? 1 : 0);
     out->appendf("Equalizer=%d\n", s.equalizer.enabled ? 1 : 0);
@@ -260,6 +268,28 @@ void App::registerDebuggerHandler() {
   ImGui::AddSettingsHandler(&handler);
 }
 
+// The memory viewer's view and bookmarks, under [ApplEmMemory][State].
+void App::registerMemoryHandler() {
+  ImGuiSettingsHandler handler;
+  handler.TypeName = "ApplEmMemory";
+  handler.TypeHash = ImHashStr("ApplEmMemory");
+  handler.UserData = &memory_;
+  handler.ReadOpenFn = [](ImGuiContext *, ImGuiSettingsHandler *, const char *name) -> void * {
+    return std::strcmp(name, "State") == 0 ? reinterpret_cast<void *>(1) : nullptr;
+  };
+  handler.ReadLineFn = [](ImGuiContext *, ImGuiSettingsHandler *h, void *, const char *line) {
+    static_cast<MemoryViewer *>(h->UserData)->readSetting(line);
+  };
+  handler.WriteAllFn = [](ImGuiContext *, ImGuiSettingsHandler *h, ImGuiTextBuffer *out) {
+    std::string text;
+    static_cast<const MemoryViewer *>(h->UserData)->writeSettings(text);
+    out->appendf("[%s][State]\n", h->TypeName);
+    out->append(text.c_str());
+    out->append("\n");
+  };
+  ImGui::AddSettingsHandler(&handler);
+}
+
 // Started on the first frame rather than in the constructor, because ImGui
 // reads the ini, and so the settings, inside the first NewFrame.
 void App::startEmulation() {
@@ -303,6 +333,7 @@ void App::startEmulation() {
   joystick_.machineRebuilt();
   mockingboard_.mutes = settings_.mockingboardMutes;
   debugger_.setMachine(*wanted);
+  memory_.setMachine(*wanted);
   applySpeed();
   emulation_.setPowered(true);
   started_ = true;
@@ -322,6 +353,7 @@ void App::frame() {
   hardDrives_->update();
   mockingboard_.update();
   debugger_.update();
+  memory_.update(settings_.showMemoryViewer);
 
   // The decoder and character set live in the machine's video, which a
   // rebuild replaces, so they are told again whenever they may have gone.
@@ -540,7 +572,10 @@ MenuItem App::machineMenu() {
                             slots_.apply();
                             restoreBatteryRam();
                             joystick_.machineRebuilt();
-                            if (profile_) debugger_.setMachine(*profile_);
+                            if (profile_) {
+                              debugger_.setMachine(*profile_);
+                              memory_.setMachine(*profile_);
+                            }
                           }, "", 0, settings_.iigsMemoryKB == kb));
   }
   items.push_back(submenu("IIgs Memory", memory));
@@ -653,6 +688,10 @@ std::optional<MenuItem> App::debugMenu() {
              settings_.showCpuDebugger = !settings_.showCpuDebugger;
              ImGui::MarkIniSettingsDirty();
            }, "d", MOD_COMMAND | MOD_SHIFT, settings_.showCpuDebugger),
+      item(a, "debug.memory", "Memory Viewer", [this] {
+             settings_.showMemoryViewer = !settings_.showMemoryViewer;
+             ImGui::MarkIniSettingsDirty();
+           }, "m", MOD_COMMAND | MOD_SHIFT, settings_.showMemoryViewer),
       MenuItem::separatorItem(),
       item(a, "debug.continue", debugger_.paused() ? "Continue" : "Pause", [this] { debugger_.continueOrPause(); },
            "F5", 0, false, on),
@@ -722,6 +761,7 @@ bool App::switchMachine(MachineId id) {
   applySpeed();
   joystick_.machineRebuilt();
   debugger_.setMachine(*profile_);
+  memory_.setMachine(*profile_);
   drives_->machineChanged();
   hardDrives_->machineChanged();
   noSignalStale_ = true;
@@ -892,6 +932,8 @@ void App::drawDiskDrives() {
   drawEqualizer();
   firstPosition(60, 40);
   debugger_.draw(&settings_.showCpuDebugger);
+  firstPosition(100, 70);
+  memory_.draw(&settings_.showMemoryViewer);
   firstPosition(80, 60);
   states_->draw(&settings_.showSaveStates);
   if (states_->autosave != settings_.autosave) {
@@ -1098,6 +1140,7 @@ void App::setVideoStandard(VideoStandard standard) {
   ImGui::MarkIniSettingsDirty();
   profile_ = &machineProfile(profile_->id, standard);
   debugger_.setMachine(*profile_);
+  memory_.setMachine(*profile_);
   emulation_.resetMeasurement();
   dropNotice(standard == VideoStandard::PAL ? "PAL, 50Hz: reboot to start a program afresh"
                                             : "NTSC, 60Hz: reboot to start a program afresh",
@@ -1296,7 +1339,7 @@ void App::drawScreenWindow() {
     ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, FLT_MAX), keepScreenShape, &shape);
   }
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-  const bool visible = ImGui::Begin(
+  const bool visible = ui::BeginWindow(
       SCREEN_WINDOW, &settings_.showScreen,
       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
   ImGui::PopStyleVar();

@@ -58,19 +58,9 @@ constexpr int STACK_ROWS = 256;
 constexpr int TRACE_ROWS_MAX = 100000;
 
 // The Apple logo's six stripes, which every colour in the app comes from,
-// brightened for a dark background.
-struct Palette {
-  ImU32 green, yellow, orange, red, purple, blue;
-};
-
-Palette palette() {
-  if (ui::isDark()) {
-    return {IM_COL32(0x7E, 0xD3, 0x6A, 255), IM_COL32(0xFD, 0xC8, 0x4A, 255), IM_COL32(0xF8, 0x9A, 0x48, 255),
-            IM_COL32(0xF0, 0x5C, 0x60, 255), IM_COL32(0xC8, 0x7A, 0xC9, 255), IM_COL32(0x3D, 0xB8, 0xF0, 255)};
-  }
-  return {IM_COL32(0x3F, 0x8F, 0x2A, 255), IM_COL32(0xA8, 0x74, 0x00, 255), IM_COL32(0xD0, 0x62, 0x05, 255),
-          IM_COL32(0xD0, 0x2A, 0x2E, 255), IM_COL32(0x86, 0x2D, 0x87, 255), IM_COL32(0x00, 0x7F, 0xB8, 255)};
-}
+// made readable for the current appearance by the theme.
+using ui::Palette;
+using ui::palette;
 
 ImU32 text(float alpha = 1.0f) { return ImGui::GetColorU32(ImGuiCol_Text, alpha); }
 ImU32 secondary() { return ImGui::GetColorU32(ImGuiCol_TextDisabled); }
@@ -104,7 +94,7 @@ float pill(ImDrawList *draw, ImVec2 at, const char *label, bool lit, ImU32 colou
   const ImVec2 size = ImGui::CalcTextSize(label);
   const ImVec2 end(at.x + size.x + 12, at.y + size.y + 4);
   draw->AddRectFilled(at, end, lit ? colour : text(0.07f), (end.y - at.y) * 0.5f);
-  draw->AddText(ImVec2(at.x + 6, at.y + 2), lit ? IM_COL32(20, 20, 20, 255) : secondary(), label);
+  draw->AddText(ImVec2(at.x + 6, at.y + 2), lit ? ui::textOn(colour) : secondary(), label);
   ImGui::PopFont();
   return end.x - at.x;
 }
@@ -709,6 +699,20 @@ void CpuDebugger::goTo(uint32_t address) {
   selected_ = address;
 }
 
+bool CpuDebugger::addBreakpoint(Breakpoint::Kind kind, uint32_t start, uint32_t end) {
+  Breakpoint b;
+  b.kind = kind;
+  b.start = start & addressMask();
+  b.end = std::max(b.start, end & addressMask());
+  if (!breakpoints_.add(b)) return false;
+  applyBreakpoints(false);
+  tab_ = 0;
+  ImGui::MarkIniSettingsDirty();
+  return true;
+}
+
+void CpuDebugger::showInListing(uint32_t address) { goTo(address & addressMask()); }
+
 // ---------------------------------------------------------------------------
 // Drawing
 // ---------------------------------------------------------------------------
@@ -833,7 +837,7 @@ void CpuDebugger::drawRegisters() {
       }
       ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 1.6f);
       const std::string pc = formatAddress(c.pc);
-      draw->AddText(ImVec2(a.x + 10, a.y + 15), lit && c.pc != before.pc ? accent() : text(), pc.c_str());
+      draw->AddText(ImVec2(a.x + 10, a.y + 15), lit && c.pc != before.pc ? ui::accentText() : text(), pc.c_str());
       const float pcWidth = ImGui::CalcTextSize(pc.c_str()).x;
       ImGui::PopFont();
       // The nearest name at or before the PC, as "COUT+3".
@@ -908,7 +912,7 @@ void CpuDebugger::drawRegisters() {
       char value[8];
       std::snprintf(value, sizeof value, "%0*X", t.digits, t.value);
       ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 1.3f);
-      draw->AddText(ImVec2(a.x + 9, a.y + 17), changed ? accent() : text(), value);
+      draw->AddText(ImVec2(a.x + 9, a.y + 17), changed ? ui::accentText() : text(), value);
       ImGui::PopFont();
       // The value in decimal, or where the stack pointer points; the
       // character it would print as is in the tooltip, for want of room.
@@ -976,7 +980,7 @@ void CpuDebugger::drawFlags() {
     ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.95f);
     const ImVec2 ls = ImGui::CalcTextSize(letter);
     draw->AddText(ImVec2(a.x + (size - ls.x) * 0.5f, a.y + (size - ls.y) * 0.5f),
-                  set && !unused ? IM_COL32(20, 20, 20, 255) : secondary(), letter);
+                  set && !unused ? ui::textOn(colour) : secondary(), letter);
     ImGui::PopFont();
     if (hovered) {
       if (isE) ImGui::SetTooltip("Emulation mode: %s", set ? "on" : "off");
@@ -1612,7 +1616,7 @@ void CpuDebugger::drawCode(ImVec2 size) {
       const host::CycleCost &c = snapshot_.costs[i];
       const std::string cost = formatCost(c);
       const bool exact = isPC && snapshot_.paused;
-      draw->AddText(ImVec2(cyclesX, textY), exact ? accent() : text(0.45f * ink), cost.c_str());
+      draw->AddText(ImVec2(cyclesX, textY), exact ? ui::accentText() : text(0.45f * ink), cost.c_str());
       if (overCycles) {
         std::string tip;
         if (c.perByte) tip = "7 cycles for every byte moved";
@@ -2383,7 +2387,7 @@ void CpuDebugger::drawWatches() {
     std::snprintf(hex, sizeof hex, value > 0xFF || value < 0 ? "$%04X" : "$%02X", static_cast<uint32_t>(value) & 0xFFFF);
     std::snprintf(dec, sizeof dec, "%d", value);
     const float vx = rowA.x + width * 0.5f;
-    draw->AddText(ImVec2(vx, ty), changed ? accent() : p.green, hex);
+    draw->AddText(ImVec2(vx, ty), changed ? ui::accentText() : p.green, hex);
     draw->AddText(ImVec2(vx + 80, ty), secondary(), dec);
     ImGui::PopFont();
     ImGui::SetCursorScreenPos(ImVec2(rowA.x + width - ImGui::GetTextLineHeight() - 8, ty));
@@ -2615,7 +2619,7 @@ void CpuDebugger::draw(bool *open) {
   // Tall enough that the column's cards and a few stack entries always fit,
   // and wide enough for the beam form's widest row beside the column.
   ImGui::SetNextWindowSizeConstraints(ImVec2(960, wide_ ? 640.0f : 580.0f), ImVec2(FLT_MAX, FLT_MAX));
-  if (!ImGui::Begin("CPU Debugger", open, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
+  if (!ui::BeginWindow("CPU Debugger", open, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
     ImGui::End();
     return;
   }

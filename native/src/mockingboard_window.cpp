@@ -76,7 +76,7 @@ float pill(ImDrawList *draw, ImVec2 at, const char *label, bool lit, ImU32 colou
   const ImVec2 size = ImGui::CalcTextSize(label);
   const ImVec2 end(at.x + size.x + 10, at.y + size.y + 4);
   draw->AddRectFilled(at, end, lit ? colour : text(0.07f), (end.y - at.y) * 0.5f);
-  draw->AddText(ImVec2(at.x + 5, at.y + 2), lit ? IM_COL32(20, 20, 20, 255) : secondary(), label);
+  draw->AddText(ImVec2(at.x + 5, at.y + 2), lit ? ui::textOn(colour) : secondary(), label);
   ImGui::PopFont();
   return end.x - at.x;
 }
@@ -454,7 +454,7 @@ void MockingboardWindow::draw(bool *open) {
   if (!open || !*open || !fitted_) return;
   take();
   ui::BeforeWindow("Mockingboard");
-  if (ImGui::Begin("Mockingboard", open, ImGuiWindowFlags_AlwaysAutoResize)) {
+  if (ui::BeginWindow("Mockingboard", open, ImGuiWindowFlags_AlwaysAutoResize)) {
     if (!enabled_) {
       ImGui::TextDisabled("The card is fitted but switched off.");
       ImGui::Spacing();

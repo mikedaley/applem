@@ -87,7 +87,7 @@ void sources(ImDrawList *draw, ImVec2 at, int active) {
     const ImVec2 end(x + size.x + 16, at.y + size.y + 6);
     const bool lit = s == active;
     draw->AddRectFilled(ImVec2(x, at.y), end, lit ? accent() : text(0.07f), (end.y - at.y) * 0.5f);
-    draw->AddText(ImVec2(x + 8, at.y + 3), lit ? IM_COL32_WHITE : secondary(), sourceName(s));
+    draw->AddText(ImVec2(x + 8, at.y + 3), lit ? ui::textOn(accent()) : secondary(), sourceName(s));
     x = end.x + 6;
   }
   ImGui::PopFont();
@@ -390,13 +390,13 @@ void Joystick::drawJoyport() {
       const ImVec2 sz = ImGui::CalcTextSize(s.label);
       const ImU32 colour = s.bit == SWITCH_FIRE ? RED : GREEN;
       draw->AddRectFilled(ImVec2(x, y), ImVec2(x + sz.x + 12, y + sz.y + 6), lit ? colour : text(0.07f), 6.0f);
-      draw->AddText(ImVec2(x + 6, y + 3), lit ? IM_COL32(20, 20, 20, 255) : secondary(), s.label);
+      draw->AddText(ImVec2(x + 6, y + 3), lit ? ui::textOn(colour) : secondary(), s.label);
       x += sz.x + 18;
     }
     ImGui::PopFont();
     char driven[48];
     std::snprintf(driven, sizeof(driven), "%s", sourceName(static_cast<int>(stickSources_[stick])));
-    draw->AddText(ImVec2(origin.x + 4, y + 30), stickSources_[stick] == Source::None ? secondary() : accent(), driven);
+    draw->AddText(ImVec2(origin.x + 4, y + 30), stickSources_[stick] == Source::None ? secondary() : ui::accentText(), driven);
     ImGui::PopID();
   }
   ImGui::SetCursorScreenPos(start);
@@ -473,7 +473,7 @@ void Joystick::draw(bool *open) {
     return;
   }
   ui::BeforeWindow("Joystick");
-  if (ImGui::Begin("Joystick", open, ImGuiWindowFlags_AlwaysAutoResize)) {
+  if (ui::BeginWindow("Joystick", open, ImGuiWindowFlags_AlwaysAutoResize)) {
     ImDrawList *draw = ImGui::GetWindowDrawList();
     const ImVec2 top = ImGui::GetCursorScreenPos();
     ImGui::SetCursorScreenPos(ImVec2(top.x + (WIDTH - 340) * 0.5f, top.y));

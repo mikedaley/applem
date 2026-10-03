@@ -18,6 +18,7 @@
 #include "cpu_debugger.hpp"
 #include "menu_model.hpp"
 #include "equalizer_window.hpp"
+#include "memory_viewer.hpp"
 #include "mockingboard_window.hpp"
 #include "platform.hpp"
 
@@ -52,6 +53,7 @@ struct Settings {
   bool showJoystick = false;
   bool showMockingboard = false;
   bool showCpuDebugger = false;
+  bool showMemoryViewer = false;
   int mockingboardMutes = 0; // a bit a channel, PSG 1's A B C then PSG 2's
   bool showEqualizer = false;
   Equalizer::Settings equalizer; // the tone controls over the output
@@ -139,6 +141,7 @@ private:
   void registerDisplayHandler();
   void registerSlotsHandler();
   void registerDebuggerHandler();
+  void registerMemoryHandler();
   void startEmulation();
 
   void buildMenus();
@@ -194,6 +197,7 @@ private:
   MockingboardWindow mockingboard_{emulation_};
   EqualizerWindow equalizer_{emulation_};
   CpuDebugger debugger_{emulation_, platform_};
+  MemoryViewer memory_{emulation_, platform_, debugger_};
   bool started_ = false;
 
   // The machine profile currently built, for drawing; refreshed on a switch.

@@ -719,7 +719,7 @@ void HardDrives::drawDevice(int index) {
 void HardDrives::draw(bool *open) {
   if (open && *open) {
     ui::BeforeWindow("SmartPort Drives");
-    if (ImGui::Begin("SmartPort Drives", open, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (ui::BeginWindow("SmartPort Drives", open, ImGuiWindowFlags_AlwaysAutoResize)) {
       dialogs_.note();
       drawHeader();
       drawDevice(0);

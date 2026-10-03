@@ -404,7 +404,7 @@ void ExpansionSlots::draw(bool *open) {
 
   ui::BeforeWindow("Expansion Slots");
 
-  if (!ImGui::Begin("Expansion Slots", open, ImGuiWindowFlags_AlwaysAutoResize)) {
+  if (!ui::BeginWindow("Expansion Slots", open, ImGuiWindowFlags_AlwaysAutoResize)) {
     ImGui::End();
     return;
   }
@@ -507,7 +507,7 @@ void ExpansionSlots::draw(bool *open) {
           const ImVec2 size = ImGui::CalcTextSize(idle.c_str());
           const ImVec2 chip(cardAt.x + CARD_WIDTH - size.x - 24, cardAt.y - 6);
           draw->AddRectFilled(chip, ImVec2(chip.x + size.x + 10, chip.y + size.y + 4), rgb(info->color), 6.0f);
-          draw->AddText(ImVec2(chip.x + 5, chip.y + 2), IM_COL32(20, 20, 20, 255), idle.c_str());
+          draw->AddText(ImVec2(chip.x + 5, chip.y + 2), ui::textOn(rgb(info->color)), idle.c_str());
           ImGui::PopFont();
         }
       } else if (info) {

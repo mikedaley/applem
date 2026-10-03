@@ -381,7 +381,7 @@ bool Display::drawTile(const char *id, const std::string &name, const SettingVal
   const ImVec2 nameSize = ImGui::CalcTextSize(name.c_str());
   const float nameY = monitor.y + monitorWidth * 0.68f + 5;
   draw->PushClipRect(ImVec2(at.x + 6, nameY), ImVec2(end.x - 6, end.y), true);
-  draw->AddText(ImVec2(std::max(at.x + 6, at.x + (size.x - nameSize.x) * 0.5f), nameY), selected ? accent() : text(),
+  draw->AddText(ImVec2(std::max(at.x + 6, at.x + (size.x - nameSize.x) * 0.5f), nameY), selected ? ui::accentText() : text(),
                 name.c_str());
   draw->PopClipRect();
   ImGui::PopFont();
@@ -684,7 +684,7 @@ void Display::drawPage(int page) {
 
 void Display::drawWindow(bool *open) {
   ui::BeforeWindow("Display Settings");
-  if (ImGui::Begin("Display Settings", open, ImGuiWindowFlags_AlwaysAutoResize)) {
+  if (ui::BeginWindow("Display Settings", open, ImGuiWindowFlags_AlwaysAutoResize)) {
     dialogs_.note();
     DisplayState &state = current();
     ImDrawList *draw = ImGui::GetWindowDrawList();

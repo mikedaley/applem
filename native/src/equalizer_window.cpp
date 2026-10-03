@@ -137,7 +137,7 @@ void EqualizerWindow::drawBands() {
     std::snprintf(value, sizeof(value), "%+.0f", std::round(settings.gainDb[i]));
     ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.8f);
     const ImVec2 size = ImGui::CalcTextSize(value);
-    draw->AddText(ImVec2(x + (column - size.x) * 0.5f, start.y), settings.gainDb[i] != 0 ? accent() : secondary(), value);
+    draw->AddText(ImVec2(x + (column - size.x) * 0.5f, start.y), settings.gainDb[i] != 0 ? ui::accentText() : secondary(), value);
     ImGui::PopFont();
 
     ImGui::SetCursorScreenPos(ImVec2(x, start.y + textHeight + 4));
@@ -190,7 +190,7 @@ void EqualizerWindow::draw(bool *open) {
   changed_ = false;
   if (!open || !*open) return;
   ui::BeforeWindow("Equalizer");
-  if (ImGui::Begin("Equalizer", open, ImGuiWindowFlags_AlwaysAutoResize)) {
+  if (ui::BeginWindow("Equalizer", open, ImGuiWindowFlags_AlwaysAutoResize)) {
     caption(ImGui::GetWindowDrawList(), ImGui::GetCursorScreenPos(), "RESPONSE", secondary());
     ImGui::Dummy(ImVec2(0, ImGui::GetFontSize() * 0.72f + 2));
     drawResponse(WIDTH, RESPONSE_HEIGHT);

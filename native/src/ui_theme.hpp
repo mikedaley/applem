@@ -7,6 +7,8 @@
 
 #pragma once
 
+#include "imgui.h"
+
 struct ImFont;
 
 namespace a2e::native::ui {
@@ -28,6 +30,30 @@ void followSystemAppearance();
 
 // Whether the current appearance is dark.
 bool isDark();
+
+// Colours chosen to be read, in either appearance. Each is measured against
+// the window's background by WCAG 2's contrast ratio and moved, along its own
+// hue, until it reaches the ratio its use needs: 4.5:1 for text, the level
+// WCAG asks of body text, and 3:1 for what is deliberately quiet but must
+// still be legible. Recomputed whenever the appearance or the accent changes.
+
+// The Apple logo's six stripes, every one readable as text on the window and
+// as a fill under textOn(): darkened for a light window, lightened for a
+// dark one.
+struct Palette {
+  ImU32 green, yellow, orange, red, purple, blue;
+};
+const Palette &palette();
+
+// The accent colour, readable as text: a link, a selected value, a caret.
+ImU32 accentText(float alpha = 1.0f);
+// Text that is meant to recede (a placeholder, a zero byte) but is still
+// legible, at 3:1.
+ImU32 faintText();
+// Black or white, whichever reads better on the fill.
+ImU32 textOn(ImU32 fill);
+// WCAG 2's contrast ratio between two colours, the first over the second.
+float contrastRatio(ImU32 foreground, ImU32 background);
 
 // The corner radius a macOS window has here, which floating windows match:
 // measured on macOS 27, about 12 points.
