@@ -212,6 +212,7 @@ add_executable(test_native_media
     src/media_store.cpp
     src/audio_output.mm
     src/emulation.cpp
+    src/equalizer.cpp
     src/ui_controls.cpp
     src/ui_theme.mm
     src/platform_paths.mm
