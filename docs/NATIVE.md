@@ -450,6 +450,29 @@ said the same). The mutes are kept in the settings and put
 back on any card that is new, since a rebuilt machine or a refitted slot
 starts with every channel on.
 
+Debug > Ensoniq (`ensoniq_window.*`), offered while a IIgs is running, is
+the same idea for the IIgs's 5503 DOC. A card for the chip: how many
+oscillators it scans and the sample rate that gives, the IRQ line and
+`$E0`, and the window at `$C03C-$C03F` (RAM or registers, auto-increment,
+the address pointer and the volume nibble). A card for the 64K of sound
+RAM, a column a page as tall as its loudest byte, with every running
+oscillator's table bracketed under it in that oscillator's colour and its
+playhead across it. Then the oscillators, in the pairs swap and sync act
+on, even beside odd: a mute button, the number filled while it runs, the
+mode and the interrupt enable (red with one waiting), the pitch its table
+plays at, its volume, and the table itself drawn from the sound RAM with
+the playhead on it and a red line where a zero byte would stop it. The
+pitch is the scan rate times the frequency register over
+2^(17 + resolution), which is the table's repetition rate whatever its
+size, and so its pitch when it holds one cycle of a wave. Only the
+oscillators the chip is scanning are shown unless Show all 32 is on.
+
+A mute is `IIgsSound::setOscillatorMuted`: the oscillator still walks its
+table, halts, swaps and interrupts exactly as before and only its sample
+is left out of the mix, so a program cannot tell. The mutes are kept in
+the settings and put back on a rebuilt machine's chip, as the
+Mockingboard's are, and `test_iigs_devices` pins them.
+
 Debug > CPU Debugger (`cpu_debugger.*`) is the browser's window for either
 processor: registers, flags, the clock, the beam and the stack down the
 left, the machine's own disassembly in the middle, and Breakpoints, Watch,

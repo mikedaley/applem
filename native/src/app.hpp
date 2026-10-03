@@ -20,6 +20,7 @@
 #include "equalizer_window.hpp"
 #include "memory_viewer.hpp"
 #include "mockingboard_window.hpp"
+#include "ensoniq_window.hpp"
 #include "platform.hpp"
 
 #include <functional>
@@ -55,6 +56,8 @@ struct Settings {
   bool showCpuDebugger = false;
   bool showMemoryViewer = false;
   int mockingboardMutes = 0; // a bit a channel, PSG 1's A B C then PSG 2's
+  bool showEnsoniq = false;
+  uint32_t ensoniqMutes = 0; // a bit an oscillator
   bool showEqualizer = false;
   Equalizer::Settings equalizer; // the tone controls over the output
   int gamePort = 0; // 0 the Apple joystick, 1 the Joyport
@@ -170,6 +173,7 @@ private:
   void drawDiskDrives();
   void drawJoystick();
   void drawMockingboard();
+  void drawEnsoniq();
   void drawEqualizer();
   void drawSwitchConfirmation();
 
@@ -207,6 +211,7 @@ private:
   std::unique_ptr<SaveStates> states_;
   Joystick joystick_{emulation_};
   MockingboardWindow mockingboard_{emulation_};
+  EnsoniqWindow ensoniq_{emulation_};
   EqualizerWindow equalizer_{emulation_};
   CpuDebugger debugger_{emulation_, platform_};
   MemoryViewer memory_{emulation_, platform_, debugger_};

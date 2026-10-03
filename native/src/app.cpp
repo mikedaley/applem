@@ -137,6 +137,8 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "WindowDocking=%d", &value) == 1) s.windowDocking = value;
     else if (std::sscanf(line, "ShowJoystick=%d", &value) == 1) s.showJoystick = value;
     else if (std::sscanf(line, "ShowMockingboard=%d", &value) == 1) s.showMockingboard = value;
+    else if (std::sscanf(line, "ShowEnsoniq=%d", &value) == 1) s.showEnsoniq = value;
+    else if (unsigned mutes = 0; std::sscanf(line, "EnsoniqMutes=%u", &mutes) == 1) s.ensoniqMutes = mutes;
     else if (std::sscanf(line, "ShowCpuDebugger=%d", &value) == 1) s.showCpuDebugger = value;
     else if (std::sscanf(line, "ShowMemoryViewer=%d", &value) == 1) s.showMemoryViewer = value;
     else if (std::sscanf(line, "MockingboardMutes=%d", &value) == 1) s.mockingboardMutes = value & 0x3F;
@@ -183,6 +185,8 @@ void App::registerSettingsHandler() {
     out->appendf("WindowDocking=%d\n", s.windowDocking ? 1 : 0);
     out->appendf("ShowJoystick=%d\n", s.showJoystick ? 1 : 0);
     out->appendf("ShowMockingboard=%d\n", s.showMockingboard ? 1 : 0);
+    out->appendf("ShowEnsoniq=%d\n", s.showEnsoniq ? 1 : 0);
+    out->appendf("EnsoniqMutes=%u\n", static_cast<unsigned>(s.ensoniqMutes));
     out->appendf("ShowCpuDebugger=%d\n", s.showCpuDebugger ? 1 : 0);
     out->appendf("ShowMemoryViewer=%d\n", s.showMemoryViewer ? 1 : 0);
     out->appendf("MockingboardMutes=%d\n", s.mockingboardMutes);
@@ -333,6 +337,7 @@ void App::startEmulation() {
   joystick_.deadzone = settings_.deadzone;
   joystick_.machineRebuilt();
   mockingboard_.mutes = settings_.mockingboardMutes;
+  ensoniq_.mutes = settings_.ensoniqMutes;
   debugger_.setMachine(*wanted);
   memory_.setMachine(*wanted);
   applySpeed();
@@ -353,6 +358,7 @@ void App::frame() {
   joystick_.update(screenHadKeyboard_);
   hardDrives_->update();
   mockingboard_.update();
+  ensoniq_.update();
   debugger_.update();
   memory_.update(settings_.showMemoryViewer);
   updateMouse();
@@ -744,6 +750,13 @@ std::optional<MenuItem> App::debugMenu() {
                            ImGui::MarkIniSettingsDirty();
                          }, "", 0, settings_.showMockingboard));
   }
+  // A IIgs's sound chip.
+  if (ensoniq_.available()) {
+    items.push_back(item(a, "debug.ensoniq", "Ensoniq", [this] {
+                           settings_.showEnsoniq = !settings_.showEnsoniq;
+                           ImGui::MarkIniSettingsDirty();
+                         }, "", 0, settings_.showEnsoniq));
+  }
   // The browser's keys, which are Visual Studio's, and Xcode's beside them
   // as hidden items: macOS takes F11 for Show Desktop, so on most Macs Step
   // Into's F11 never arrives and F7 does.
@@ -835,6 +848,7 @@ bool *App::focusedToolWindow() {
       {"Display Settings", &settings_.showDisplaySettings},
       {"Equalizer", &settings_.showEqualizer},
       {"Mockingboard", &settings_.showMockingboard},
+      {"Ensoniq", &settings_.showEnsoniq},
       {"CPU Debugger", &settings_.showCpuDebugger},
       {"Memory Viewer", &settings_.showMemoryViewer},
   };
@@ -1077,9 +1091,20 @@ void App::drawEqualizer() {
   }
 }
 
+// Its mutes are the user's too.
+void App::drawEnsoniq() {
+  firstPosition(440, 60);
+  ensoniq_.draw(&settings_.showEnsoniq);
+  if (ensoniq_.mutes != settings_.ensoniqMutes) {
+    settings_.ensoniqMutes = ensoniq_.mutes;
+    ImGui::MarkIniSettingsDirty();
+  }
+}
+
 void App::drawDiskDrives() {
   drawJoystick();
   drawMockingboard();
+  drawEnsoniq();
   drawEqualizer();
   firstPosition(60, 40);
   debugger_.draw(&settings_.showCpuDebugger);

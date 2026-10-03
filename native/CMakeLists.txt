@@ -44,6 +44,7 @@ set(NATIVE_SOURCES
     src/display_settings.cpp
     src/drive_sounds.cpp
     src/emulation.cpp
+    src/ensoniq_window.cpp
     src/equalizer.cpp
     src/equalizer_window.cpp
     src/expansion_slots.cpp
