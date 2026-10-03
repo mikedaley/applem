@@ -262,6 +262,15 @@ TEST_CASE("A condition reads back into the tree that wrote it", "[debugger][rule
   REQUIRE_FALSE(fromExpression("(A == 1"));
 }
 
+TEST_CASE("A condition reads as one line, however many rules it holds", "[debugger][rules]") {
+  // The BASIC window labels a rule with the whole tree, as the browser's
+  // toDisplayLabel, rather than only when it holds a single rule.
+  const auto tree = fromExpression("((BV(201,128)==3) && (((C==1) || (PEEK($0024)>10))))");
+  REQUIRE(tree);
+  REQUIRE(describe(*tree) == "I% == 3 and (flag C == 1 or PEEK($0024) > 10)");
+  REQUIRE(describe(ConditionNode::group()).empty());
+}
+
 TEST_CASE("A rule that cannot be evaluated says why", "[debugger][rules]") {
   ConditionNode r = ConditionNode::rule(ConditionNode::Subject::Byte);
   r.value = "1";

@@ -21,6 +21,7 @@
 #include "memory_viewer.hpp"
 #include "mockingboard_window.hpp"
 #include "ensoniq_window.hpp"
+#include "basic_window.hpp"
 #include "platform.hpp"
 
 #include <functional>
@@ -58,6 +59,7 @@ struct Settings {
   bool showMemoryViewer = false;
   int mockingboardMutes = 0; // a bit a channel, PSG 1's A B C then PSG 2's
   bool showEnsoniq = false;
+  bool showBasic = false;
   uint32_t ensoniqMutes = 0; // a bit an oscillator
   bool showEqualizer = false;
   Equalizer::Settings equalizer; // the tone controls over the output
@@ -146,6 +148,7 @@ private:
   void registerSlotsHandler();
   void registerDebuggerHandler();
   void registerMemoryHandler();
+  void registerBasicHandler();
   void startEmulation();
 
   void buildMenus();
@@ -216,6 +219,7 @@ private:
   Joystick joystick_{emulation_};
   MockingboardWindow mockingboard_{emulation_};
   EnsoniqWindow ensoniq_{emulation_};
+  BasicWindow basic_{emulation_, platform_};
   EqualizerWindow equalizer_{emulation_};
   CpuDebugger debugger_{emulation_, platform_};
   MemoryViewer memory_{emulation_, platform_, debugger_};

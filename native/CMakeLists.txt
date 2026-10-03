@@ -33,6 +33,9 @@ set(NATIVE_SOURCES
     src/main.mm
     src/app.cpp
     src/audio_output.mm
+    src/basic_language.cpp
+    src/basic_window.cpp
+    src/code_editor.cpp
     src/cpu_debugger.cpp
     src/disk_drives.cpp
     src/disk_inspector_data.cpp
@@ -54,6 +57,7 @@ set(NATIVE_SOURCES
     src/key_mapper.cpp
     src/media_store.cpp
     src/memory_viewer.cpp
+    src/rule_builder.cpp
     src/menu_model.cpp
     src/mockingboard_window.cpp
     src/native_menu.mm
@@ -158,6 +162,20 @@ target_include_directories(test_native_debugger PRIVATE
 target_compile_options(test_native_debugger PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(test_native_debugger PRIVATE a2e_core)
 add_test(NAME test_native_debugger COMMAND test_native_debugger
+         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+# The BASIC editor's language: colours, statements, Format, Renum, completion.
+add_executable(test_native_basic
+    tests/test_native_basic.cpp
+    src/basic_language.cpp
+)
+target_include_directories(test_native_basic PRIVATE
+    ${CMAKE_SOURCE_DIR}/tests/catch2
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_compile_options(test_native_basic PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(test_native_basic PRIVATE a2e_core)
+add_test(NAME test_native_basic COMMAND test_native_basic
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 # The output equaliser's filters, response and settings.

@@ -455,6 +455,48 @@ said the same). The mutes are kept in the settings and put
 back on any card that is new, since a rebuilt machine or a refitted slot
 starts with every channel on.
 
+Debug > Applesoft BASIC (`basic_window.*`, Shift-Command-B), offered on the
+8-bit machines, is the browser's BASIC window with everything it does: an
+editor with the browser's colours, Return numbering the next line, Format
+when the caret leaves a changed line, Renum, and completion of keywords and
+the program's own variables, line numbers and functions; Read and Write
+between the editor and memory; Run, Pause, Stop, Step and Step Line;
+breakpoints on a line (a click in the gutter) or a statement (an Option
+click), with conditions and condition-only rules from the shared
+`RuleBuilder` (`rule_builder.*`, also the CPU debugger's); the line running
+traced, a heat map in the gutter, the runtime error marked on its line, and
+the variables and arrays, editable while the program is stopped. Command-R
+runs, Command-period stops and Command-backslash toggles a breakpoint on the
+caret's line.
+
+Everything that runs is the core's, caught at the ROM's statement dispatch
+($D820), and the window reads it once a frame; a breakpoint's condition is
+checked here, as the browser checks it. Closed, the window reads nothing
+unless it has breakpoints, and then only to hand them to a new machine and
+check a condition when one stops it. Seven things differ from the browser,
+each a fix: Run, Read and Write are offered only while Applesoft is waiting
+at its prompt (`Emulator::isAtBasicPrompt`, which finds RESTART's call to
+read the line on the stack), where the browser tests the prompt character,
+which stays ] while a program or machine code started from the prompt runs;
+Run writes the editor's program first when it has changed, and
+a chip says whether the editor and memory agree (In memory, Edited, Memory
+changed); the error status stays until the program runs again; Return with
+the completion list open accepts the completion and nothing else; Renum keeps
+breakpoint conditions; an edited string keeps Applesoft's plain ASCII rather
+than gaining the top bit; and a step that lands on a breakpoint whose
+condition is false still stops. Format also leaves text after REM and in
+DATA as it was typed.
+
+The editor is `code_editor.*`, which knows nothing of BASIC: lines of ASCII,
+a caret and selection, undo that merges typing, the clipboard, and a Mac's
+keys, with the owner colouring each line and drawing its gutter and
+decorations. It says it wants text input while it has the keyboard, as an
+ImGui text field does, so Command keys reach it and the machine hears none
+of its typing. The language (`basic_language.*`) is plain C++ with no ImGui
+in it, and `test_native_basic` pins the colours, the statement split (the
+core's own rule: colons outside quotes, none after REM), Format, Renum,
+the next line's number and completion.
+
 Debug > Ensoniq (`ensoniq_window.*`), offered while a IIgs is running, is
 the same idea for the IIgs's 5503 DOC. A card for the chip: how many
 oscillators it scans and the sample rate that gives, the IRQ line and
@@ -650,7 +692,7 @@ The app is meant to feel like a Mac app rather than an ImGui tool:
     Equalizer).
   - **View**: how the picture and the window look: Status Bar, Appearance,
     Full Page, Full Screen.
-  - **Debug**: the three debug windows, then the run controls on the
+  - **Debug**: the debug windows, then the run controls on the
     browser's F5, F10, F11 and Shift-F11, with Xcode's ⌃⌘Y, F6, F7 and F8
     as hidden items beside them (`MenuItem::hidden`, a key equivalent that
     works while the item is not shown), because macOS takes F11 for Show

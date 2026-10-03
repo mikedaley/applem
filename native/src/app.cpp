@@ -70,6 +70,7 @@ App::App(std::string settingsDirectory, Platform platform)
   registerSlotsHandler();
   registerDebuggerHandler();
   registerMemoryHandler();
+  registerBasicHandler();
   memory_.showDebugger = [this] {
     settings_.showCpuDebugger = true;
     ImGui::SetWindowFocus("CPU Debugger");
@@ -139,6 +140,7 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "ShowJoystick=%d", &value) == 1) s.showJoystick = value;
     else if (std::sscanf(line, "ShowMockingboard=%d", &value) == 1) s.showMockingboard = value;
     else if (std::sscanf(line, "ShowEnsoniq=%d", &value) == 1) s.showEnsoniq = value;
+    else if (std::sscanf(line, "ShowBasic=%d", &value) == 1) s.showBasic = value;
     else if (unsigned mutes = 0; std::sscanf(line, "EnsoniqMutes=%u", &mutes) == 1) s.ensoniqMutes = mutes;
     else if (std::sscanf(line, "ShowCpuDebugger=%d", &value) == 1) s.showCpuDebugger = value;
     else if (std::sscanf(line, "ShowMemoryViewer=%d", &value) == 1) s.showMemoryViewer = value;
@@ -188,6 +190,7 @@ void App::registerSettingsHandler() {
     out->appendf("ShowJoystick=%d\n", s.showJoystick ? 1 : 0);
     out->appendf("ShowMockingboard=%d\n", s.showMockingboard ? 1 : 0);
     out->appendf("ShowEnsoniq=%d\n", s.showEnsoniq ? 1 : 0);
+    out->appendf("ShowBasic=%d\n", s.showBasic ? 1 : 0);
     out->appendf("EnsoniqMutes=%u\n", static_cast<unsigned>(s.ensoniqMutes));
     out->appendf("ShowCpuDebugger=%d\n", s.showCpuDebugger ? 1 : 0);
     out->appendf("ShowMemoryViewer=%d\n", s.showMemoryViewer ? 1 : 0);
@@ -298,6 +301,29 @@ void App::registerMemoryHandler() {
   ImGui::AddSettingsHandler(&handler);
 }
 
+// The BASIC window's program, breakpoints and layout, under
+// [ApplEmBasic][State].
+void App::registerBasicHandler() {
+  ImGuiSettingsHandler handler;
+  handler.TypeName = "ApplEmBasic";
+  handler.TypeHash = ImHashStr("ApplEmBasic");
+  handler.UserData = &basic_;
+  handler.ReadOpenFn = [](ImGuiContext *, ImGuiSettingsHandler *, const char *name) -> void * {
+    return std::strcmp(name, "State") == 0 ? reinterpret_cast<void *>(1) : nullptr;
+  };
+  handler.ReadLineFn = [](ImGuiContext *, ImGuiSettingsHandler *h, void *, const char *line) {
+    static_cast<BasicWindow *>(h->UserData)->readSetting(line);
+  };
+  handler.WriteAllFn = [](ImGuiContext *, ImGuiSettingsHandler *h, ImGuiTextBuffer *out) {
+    std::string text;
+    static_cast<const BasicWindow *>(h->UserData)->writeSettings(text);
+    out->appendf("[%s][State]\n", h->TypeName);
+    out->append(text.c_str());
+    out->append("\n");
+  };
+  ImGui::AddSettingsHandler(&handler);
+}
+
 // Started on the first frame rather than in the constructor, because ImGui
 // reads the ini, and so the settings, inside the first NewFrame.
 void App::startEmulation() {
@@ -363,6 +389,7 @@ void App::frame() {
   hardDrives_->update();
   mockingboard_.update();
   ensoniq_.update();
+  basic_.update(settings_.showBasic);
   debugger_.update();
   memory_.update(settings_.showMemoryViewer);
   updateMouse();
@@ -759,6 +786,13 @@ std::optional<MenuItem> App::debugMenu() {
                            ImGui::MarkIniSettingsDirty();
                          }, "", 0, settings_.showMockingboard));
   }
+  // Applesoft, on the 8-bit machines.
+  if (basic_.available()) {
+    items.insert(items.begin() + 2, item(a, "debug.basic", "Applesoft BASIC", [this] {
+                                           settings_.showBasic = !settings_.showBasic;
+                                           ImGui::MarkIniSettingsDirty();
+                                         }, "b", MOD_COMMAND | MOD_SHIFT, settings_.showBasic));
+  }
   // A IIgs's sound chip.
   if (ensoniq_.available()) {
     items.push_back(item(a, "debug.ensoniq", "Ensoniq", [this] {
@@ -858,6 +892,7 @@ bool *App::focusedToolWindow() {
       {"Equalizer", &settings_.showEqualizer},
       {"Mockingboard", &settings_.showMockingboard},
       {"Ensoniq", &settings_.showEnsoniq},
+      {"Applesoft BASIC", &settings_.showBasic},
       {"CPU Debugger", &settings_.showCpuDebugger},
       {"Memory Viewer", &settings_.showMemoryViewer},
   };
@@ -1119,6 +1154,8 @@ void App::drawDiskDrives() {
   drawJoystick();
   drawMockingboard();
   drawEnsoniq();
+  firstPosition(120, 50);
+  basic_.draw(&settings_.showBasic);
   drawEqualizer();
   firstPosition(60, 40);
   debugger_.draw(&settings_.showCpuDebugger);

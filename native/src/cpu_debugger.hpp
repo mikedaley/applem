@@ -9,6 +9,7 @@
 
 #include "machine_poll.hpp"
 #include "condition_rules.hpp"
+#include "rule_builder.hpp"
 #include "debug_breakpoints.hpp"
 #include "debug_symbols.hpp"
 #include "platform.hpp"
@@ -168,8 +169,6 @@ private:
   void drawEditPopup();
   void openRuleBuilder(size_t index);
   void drawRuleBuilder();
-  bool drawRuleGroup(ConditionNode &group, int depth);
-  bool drawRuleRow(ConditionNode &rule);
   void drawScrollbar(ImVec2 origin, ImVec2 size);
   void navigate(uint32_t target);
   void drawBookmarks();
@@ -264,13 +263,9 @@ private:
   char editText_[128] = "";
   bool openEdit_ = false;
   std::vector<std::array<char, 512>> conditionText_;
-  // The rule builder: the breakpoint whose condition is being built, and the
-  // tree, read from that condition as it opens. `rulesReplace_` says the
-  // condition was not one the builder could read, so Apply replaces it.
+  // The rule builder, and the breakpoint whose condition it is building.
   int ruleTarget_ = -1;
-  bool openRules_ = false;
-  bool rulesReplace_ = false;
-  ConditionNode ruleTree_;
+  RuleBuilder rules_;
   std::string importMessage_;
 };
 
