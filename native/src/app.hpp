@@ -53,6 +53,7 @@ struct Settings {
   int speed = 1; // 1, 2, 4 or 8 times the machine's clock
   bool showJoystick = false;
   bool showMockingboard = false;
+  bool mockingboardPhaseLock = true; // MockingboardCard::setPhaseLock
   bool showCpuDebugger = false;
   bool showMemoryViewer = false;
   int mockingboardMutes = 0; // a bit a channel, PSG 1's A B C then PSG 2's
@@ -173,6 +174,9 @@ private:
   void drawDiskDrives();
   void drawJoystick();
   void drawMockingboard();
+  // Hand the Mockingboard Phase Lock preference to the core, on the emulation
+  // thread's side of the lock.
+  void applyMockingboardPhaseLock();
   void drawEnsoniq();
   void drawEqualizer();
   void drawSwitchConfirmation();

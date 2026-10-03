@@ -15,6 +15,7 @@
 #include "imgui_internal.h" // DockBuilder, the status bar's viewport side bar
 
 #include "video/video.hpp"
+#include "cards/mockingboard/mockingboard_card.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -142,6 +143,7 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "ShowCpuDebugger=%d", &value) == 1) s.showCpuDebugger = value;
     else if (std::sscanf(line, "ShowMemoryViewer=%d", &value) == 1) s.showMemoryViewer = value;
     else if (std::sscanf(line, "MockingboardMutes=%d", &value) == 1) s.mockingboardMutes = value & 0x3F;
+    else if (std::sscanf(line, "MockingboardPhaseLock=%d", &value) == 1) s.mockingboardPhaseLock = value;
     else if (std::sscanf(line, "ShowEqualizer=%d", &value) == 1) s.showEqualizer = value;
     else if (std::sscanf(line, "Equalizer=%d", &value) == 1) s.equalizer.enabled = value;
     else if (std::sscanf(line, "EqualizerPreamp=%f", &number) == 1) s.equalizer.preampDb = number;
@@ -190,6 +192,7 @@ void App::registerSettingsHandler() {
     out->appendf("ShowCpuDebugger=%d\n", s.showCpuDebugger ? 1 : 0);
     out->appendf("ShowMemoryViewer=%d\n", s.showMemoryViewer ? 1 : 0);
     out->appendf("MockingboardMutes=%d\n", s.mockingboardMutes);
+    out->appendf("MockingboardPhaseLock=%d\n", s.mockingboardPhaseLock ? 1 : 0);
     out->appendf("ShowEqualizer=%d\n", s.showEqualizer ? 1 : 0);
     out->appendf("Equalizer=%d\n", s.equalizer.enabled ? 1 : 0);
     out->appendf("EqualizerPreamp=%.1f\n", s.equalizer.preampDb);
@@ -337,6 +340,7 @@ void App::startEmulation() {
   joystick_.deadzone = settings_.deadzone;
   joystick_.machineRebuilt();
   mockingboard_.mutes = settings_.mockingboardMutes;
+  applyMockingboardPhaseLock();
   ensoniq_.mutes = settings_.ensoniqMutes;
   debugger_.setMachine(*wanted);
   memory_.setMachine(*wanted);
@@ -692,6 +696,11 @@ MenuItem App::machineMenu() {
            }, "", 0, settings_.muted),
       submenu("Volume", volumes),
       MenuItem::separatorItem(),
+      item(a, "machine.mockingboardPhaseLock", "Mockingboard Phase Lock", [this] {
+             settings_.mockingboardPhaseLock = !settings_.mockingboardPhaseLock;
+             applyMockingboardPhaseLock();
+             ImGui::MarkIniSettingsDirty();
+           }, "", 0, settings_.mockingboardPhaseLock),
       item(a, "machine.equalizer", "Equalizer", [this] {
              settings_.showEqualizer = !settings_.showEqualizer;
              ImGui::MarkIniSettingsDirty();
@@ -1072,6 +1081,11 @@ void App::drawJoystick() {
 }
 
 // Its mutes are the user's, and are kept whenever they change.
+void App::applyMockingboardPhaseLock() {
+  const bool on = settings_.mockingboardPhaseLock;
+  emulation_.withMachine([on](host::MachineHost &) { a2e::MockingboardCard::setPhaseLock(on); });
+}
+
 void App::drawMockingboard() {
   firstPosition(420, 80);
   mockingboard_.draw(&settings_.showMockingboard);
