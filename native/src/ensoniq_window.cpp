@@ -17,6 +17,7 @@
 #include "imgui.h"
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -524,7 +525,14 @@ void EnsoniqWindow::draw(bool *open) {
   if (!open || !*open || !present_) return;
   take();
   ui::BeforeWindow("Ensoniq");
-  if (ui::BeginWindow("Ensoniq", open, ImGuiWindowFlags_AlwaysAutoResize)) {
+  // The cards are drawn to a fixed width, so only the height is the user's:
+  // shorter than its contents, the window scrolls. The width leaves room for
+  // the scrollbar, so the cards never sit under it.
+  const ImGuiStyle &style = ImGui::GetStyle();
+  const float width = WIDTH + style.WindowPadding.x * 2 + style.ScrollbarSize;
+  ImGui::SetNextWindowSizeConstraints(ImVec2(width, 240), ImVec2(width, FLT_MAX));
+  ImGui::SetNextWindowSize(ImVec2(width, 720), ImGuiCond_FirstUseEver);
+  if (ui::BeginWindow("Ensoniq", open)) {
     drawChip(WIDTH);
     ImGui::Dummy(ImVec2(0, 2));
     drawRam(WIDTH);
