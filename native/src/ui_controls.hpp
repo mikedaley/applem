@@ -65,6 +65,12 @@ bool Disclosure(const char *label, bool *open);
 // How wide Switch draws with this label, for placing one at a right edge.
 float SwitchWidth(const char *label);
 
+// Call after ImGui::NewFrame. A click on a window that is not focused only
+// focuses it, as a Mac's does: the controls under it do not hear the click,
+// its release, or the wheel. A click on a title bar still drags the window,
+// and while a popup is open ImGui deals with clicks itself.
+void ClickToFocus();
+
 // Whether the app's windows may dock into one another and into the main
 // window. When not, call BeforeWindow before each window's Begin: it gives
 // the window a docking class of its own, which nothing else shares, so it

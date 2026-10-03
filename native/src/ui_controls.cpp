@@ -688,4 +688,39 @@ bool BeginWindow(const char *name, bool *open, ImGuiWindowFlags flags) {
   return visible;
 }
 
+void ClickToFocus() {
+  ImGuiContext &g = *GImGui;
+  ImGuiIO &io = g.IO;
+  // A click swallowed here is swallowed until its button comes up.
+  static bool swallowed[ImGuiMouseButton_COUNT] = {};
+  for (int b = 0; b < ImGuiMouseButton_COUNT; b++) {
+    if (swallowed[b] && io.MouseReleased[b]) {
+      io.MouseReleased[b] = false;
+      swallowed[b] = false;
+    }
+  }
+
+  ImGuiWindow *hovered = g.HoveredWindow;
+  if (!hovered || g.OpenPopupStack.Size > 0) return;
+  ImGuiWindow *root = hovered->RootWindow;
+  if (g.NavWindow && g.NavWindow->RootWindow == root) return;
+
+  bool clicked = false;
+  for (int b = 0; b < ImGuiMouseButton_COUNT; b++) clicked |= io.MouseClicked[b];
+  if (!clicked) {
+    io.MouseWheel = 0;
+    io.MouseWheelH = 0;
+    return;
+  }
+  if (!(root->Flags & ImGuiWindowFlags_NoTitleBar) && root->TitleBarRect().Contains(io.MousePos)) return;
+  ImGui::FocusWindow(hovered);
+  for (int b = 0; b < ImGuiMouseButton_COUNT; b++) {
+    if (!io.MouseClicked[b]) continue;
+    io.MouseClicked[b] = false;
+    io.MouseDoubleClicked[b] = false;
+    io.MouseClickedCount[b] = 0;
+    swallowed[b] = true;
+  }
+}
+
 } // namespace a2e::native::ui

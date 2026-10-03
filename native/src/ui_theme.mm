@@ -325,10 +325,17 @@ float radiusFor(ImGuiViewport *viewport) {
 
 void createWindow(ImGuiViewport *viewport) {
   g_createWindow(viewport);
-  if (!(viewport->Flags & ImGuiViewportFlags_NoDecoration)) return;
   NSWindow *window = windowOf(viewport);
   NSView *view = window.contentView;
   if (!window || !view.layer) return;
+  // A window that changes size (one sized to what it holds, as the drive
+  // windows are when the inspector opens) is resized before its next frame
+  // is drawn. Left to stretch, the layer showed the last frame scaled to the
+  // new size for a moment; pinned to the top left, it is only cropped or
+  // extended until the new frame arrives.
+  view.layer.contentsGravity = kCAGravityTopLeft;
+  view.layerContentsPlacement = NSViewLayerContentsPlacementTopLeft;
+  if (!(viewport->Flags & ImGuiViewportFlags_NoDecoration)) return;
   // Transparent outside the rounded shape, which the layer clips to.
   window.opaque = NO;
   window.backgroundColor = NSColor.clearColor;

@@ -10,6 +10,7 @@
 #include "disk_drives.hpp"
 #include "display.hpp"
 #include "hard_drives.hpp"
+#include "disk35_drives.hpp"
 #include "joystick.hpp"
 #include "save_states.hpp"
 #include "emulation.hpp"
@@ -46,8 +47,10 @@ struct Settings {
   bool showStatusBar = true;
   bool showDiskDrives = true;
   bool diskInspector = false; // hidden until first shown
+  bool disk35Inspector = false;
   bool driveSounds = true;
   bool showHardDrives = false;
+  bool showDisk35Drives = false;
   bool showExpansionSlots = false;
   bool showSaveStates = false;
   bool autosave = false;
@@ -216,6 +219,7 @@ private:
   Emulation emulation_;
   std::unique_ptr<DiskDrives> drives_;
   std::unique_ptr<HardDrives> hardDrives_;
+  std::unique_ptr<Disk35Drives> disk35_;
   ExpansionSlots slots_{emulation_};
   std::unique_ptr<SaveStates> states_;
   Joystick joystick_{emulation_};
@@ -238,7 +242,7 @@ private:
   // Where a dropped file goes: the first disk image among the files, into
   // the drive or SmartPort device under the point, or the first empty one.
   struct DropPlan {
-    enum class Kind { None, Floppy, SmartPort } kind = Kind::None;
+    enum class Kind { None, Floppy, SmartPort, Disk35 } kind = Kind::None;
     int unit = 0;
     std::string path; // the image, or with Kind::None the first file
   };

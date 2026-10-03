@@ -57,8 +57,8 @@ struct DiskSummary {
   int good = 0;
   int bad = 0;
   int fluxTracks = 0;
-  int nonStandardTracks = 0;
-  std::string format = "Empty"; // "16 sector", "13 sector", "Non-standard"…
+  int nonStandardTracks = 0; // in a format the analyser does not know
+  std::string format = "Empty"; // "16 sector", "13 sector", "Unknown format"…
 };
 DiskSummary summariseDisk(const Overview &overview);
 
@@ -73,7 +73,9 @@ struct TrackDetail {
   std::vector<uint8_t> bits;     // the cells, packed, top bit first
   std::vector<uint8_t> cellTime; // per cell; empty unless flux
 };
-TrackDetail readTrackDetail(DiskImage &image, int quarterTrack);
+// `quarterTrack` is the image's own entry: a 3.5" WOZ's track * 2 + side.
+TrackDetail readTrackDetail(DiskImage &image, int quarterTrack,
+                            inspect::Recording recording = inspect::Recording::FiveInch);
 
 // Whether a cell holds a flux transition.
 inline bool cellBit(const std::vector<uint8_t> &bits, uint32_t cell) {

@@ -63,6 +63,7 @@ struct ToolbarState {
   std::string machineName;
   std::vector<MenuItem> machines; // the Machine menu's choices
   bool hardDrives = false;        // there is a SmartPort to show
+  bool drives35 = false;          // there are 3.5" drives as well as 5.25" ones
   bool expansionSlots = false;    // the machine has sockets (not a //c)
 };
 

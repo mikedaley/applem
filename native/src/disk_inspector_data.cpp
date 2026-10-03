@@ -77,14 +77,14 @@ DiskSummary summariseDisk(const Overview &overview) {
     else if (t.sectorsFound > 0) sixteen = true;
   }
   if (summary.tracks == 0) summary.format = "Empty";
-  else if (summary.sectors == 0) summary.format = "Non-standard";
+  else if (summary.sectors == 0) summary.format = "Unknown format";
   else if (thirteen && sixteen) summary.format = "13 and 16 sector";
   else if (thirteen) summary.format = "13 sector";
   else summary.format = "16 sector";
   return summary;
 }
 
-TrackDetail readTrackDetail(DiskImage &image, int quarterTrack) {
+TrackDetail readTrackDetail(DiskImage &image, int quarterTrack, inspect::Recording recording) {
   TrackDetail detail;
   detail.quarterTrack = quarterTrack;
   DiskImage::TrackView view;
@@ -92,7 +92,7 @@ TrackDetail readTrackDetail(DiskImage &image, int quarterTrack) {
   detail.present = true;
   detail.flux = view.flux;
   detail.trackId = view.track_id;
-  detail.analysis = inspect::analyzeTrack(view.bits.data(), view.bit_count);
+  detail.analysis = inspect::analyzeTrack(view.bits.data(), view.bit_count, recording);
   detail.bits = std::move(view.bits);
   detail.cellTime = std::move(view.cell_time);
   return detail;
@@ -117,7 +117,7 @@ std::string trackLabel(int quarterTrack) {
 std::string kindName(uint8_t kind) {
   static const char *const names[] = {"Unread",        "Sync",          "Address prologue",
                                       "Address field", "Address epilogue", "Data prologue",
-                                      "Data field",    "Data epilogue", "Non-standard",
+                                      "Data field",    "Data epilogue", "Unknown",
                                       "Noise"};
   const int k = kind & inspect::KIND_MASK;
   std::string name = k < inspect::KIND_COUNT ? names[k] : "Unknown";

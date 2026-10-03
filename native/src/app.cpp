@@ -65,7 +65,8 @@ App::App(std::string settingsDirectory, Platform platform)
       platform_(std::move(platform)),
       display_(settingsDirectory_ + "/display-profiles.ini"),
       drives_(std::make_unique<DiskDrives>(emulation_, platform_, settingsDirectory_ + "/Media")),
-      hardDrives_(std::make_unique<HardDrives>(emulation_, platform_, settingsDirectory_ + "/Media")) {
+      hardDrives_(std::make_unique<HardDrives>(emulation_, platform_, settingsDirectory_ + "/Media")),
+      disk35_(std::make_unique<Disk35Drives>(emulation_, platform_, settingsDirectory_ + "/Media")) {
   registerSettingsHandler();
   registerDisplayHandler();
   registerSlotsHandler();
@@ -87,6 +88,7 @@ App::App(std::string settingsDirectory, Platform platform)
   hooks.loaded = [this] {
     drives_->syncWithMachine();
     hardDrives_->syncWithMachine();
+    disk35_->syncWithMachine();
   };
   states_ = std::make_unique<SaveStates>(emulation_, platform_, settingsDirectory_ + "/States", std::move(hooks));
 }
@@ -130,8 +132,10 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "UKCharacterSet=%d", &value) == 1) s.ukCharacterSet = value;
     else if (std::sscanf(line, "ShowDiskDrives=%d", &value) == 1) s.showDiskDrives = value;
     else if (std::sscanf(line, "DiskInspector=%d", &value) == 1) s.diskInspector = value;
+    else if (std::sscanf(line, "Disk35Inspector=%d", &value) == 1) s.disk35Inspector = value;
     else if (std::sscanf(line, "DriveSounds=%d", &value) == 1) s.driveSounds = value;
     else if (std::sscanf(line, "ShowHardDrives=%d", &value) == 1) s.showHardDrives = value;
+    else if (std::sscanf(line, "ShowDisk35Drives=%d", &value) == 1) s.showDisk35Drives = value;
     else if (std::sscanf(line, "ShowExpansionSlots=%d", &value) == 1) s.showExpansionSlots = value;
     else if (std::sscanf(line, "ShowSaveStates=%d", &value) == 1) s.showSaveStates = value;
     else if (std::sscanf(line, "Autosave=%d", &value) == 1) s.autosave = value;
@@ -181,8 +185,10 @@ void App::registerSettingsHandler() {
     out->appendf("UKCharacterSet=%d\n", s.ukCharacterSet ? 1 : 0);
     out->appendf("ShowDiskDrives=%d\n", s.showDiskDrives ? 1 : 0);
     out->appendf("DiskInspector=%d\n", s.diskInspector ? 1 : 0);
+    out->appendf("Disk35Inspector=%d\n", s.disk35Inspector ? 1 : 0);
     out->appendf("DriveSounds=%d\n", s.driveSounds ? 1 : 0);
     out->appendf("ShowHardDrives=%d\n", s.showHardDrives ? 1 : 0);
+    out->appendf("ShowDisk35Drives=%d\n", s.showDisk35Drives ? 1 : 0);
     out->appendf("ShowExpansionSlots=%d\n", s.showExpansionSlots ? 1 : 0);
     out->appendf("ShowSaveStates=%d\n", s.showSaveStates ? 1 : 0);
     out->appendf("Autosave=%d\n", app->states_ && app->states_->autosave ? 1 : 0);
@@ -355,12 +361,15 @@ void App::startEmulation() {
   slots_.apply();
   restoreBatteryRam();
   drives_->inspectorShown = settings_.diskInspector;
+  disk35_->inspectorShown = settings_.disk35Inspector;
   emulation_.driveSounds().setEnabled(settings_.driveSounds);
   drives_->restore();
   // After the slot layout: fitting it can rebuild the SmartPort, taking an
   // image with it.
   hardDrives_->update();
   hardDrives_->restore();
+  disk35_->update();
+  disk35_->restore();
   states_->autosave = settings_.autosave;
   if (platform_.setAppearance) platform_.setAppearance(settings_.appearance);
   joystick_.device = settings_.gamePort;
@@ -390,6 +399,7 @@ void App::frame() {
   states_->update(ImGui::GetTime());
   joystick_.update(screenHadKeyboard_);
   hardDrives_->update();
+  disk35_->update();
   mockingboard_.update();
   ensoniq_.update();
   basic_.update(settings_.showBasic);
@@ -550,6 +560,20 @@ void App::buildMenus() {
                            false, drives_->hasDisk(0)));
   fileItems.push_back(item(a, "disk.eject.2", "Eject Drive 2", [this] { drives_->ejectDrive(1); }, "e",
                            MOD_COMMAND | MOD_SHIFT, false, drives_->hasDisk(1)));
+  // A IIgs's 3.5" drives.
+  if (disk35_->available()) {
+    fileItems.push_back(MenuItem::separatorItem());
+    std::vector<MenuItem> inserts, ejects;
+    for (int drive = 0; drive < Disk35Drives::DRIVES; drive++) {
+      const std::string unit = "3.5\" Drive " + std::to_string(drive + 1);
+      inserts.push_back(item(a, "d35.insert." + std::to_string(drive), unit + "…",
+                             [this, drive] { disk35_->chooseDisk(drive); }));
+      ejects.push_back(item(a, "d35.eject." + std::to_string(drive), unit,
+                            [this, drive] { disk35_->ejectDrive(drive); }, "", 0, false, disk35_->hasDisk(drive)));
+    }
+    fileItems.push_back(submenu("Insert 3.5\" Disk", inserts));
+    fileItems.push_back(submenu("Eject 3.5\" Disk", ejects, disk35_->hasDisk(0) || disk35_->hasDisk(1)));
+  }
   // The SmartPort's, when there is one: a IIgs's, or a card.
   if (hardDrives_->available()) {
     fileItems.push_back(MenuItem::separatorItem());
@@ -588,6 +612,7 @@ void App::buildMenus() {
   toolbar_.powered = emulation_.powered();
   toolbar_.machineName = profile_ ? profile_->name : "";
   toolbar_.hardDrives = hardDrives_->available();
+  toolbar_.drives35 = disk35_->available();
   toolbar_.expansionSlots = profile_ && profile_->caps.hasExpansionSlots;
   toolbar_.machines.clear();
   for (const MenuItem &menu : menuBar_) {
@@ -861,8 +886,11 @@ MenuItem App::windowMenu() {
   };
   std::vector<MenuItem> items = {
       window("window.screen", "Screen", settings_.showScreen, "1", MOD_COMMAND),
-      window("window.drives", "Disk Drives", settings_.showDiskDrives, "2", MOD_COMMAND),
+      window("window.drives", "5.25\" Drives", settings_.showDiskDrives, "2", MOD_COMMAND),
   };
+  if (disk35_->available()) {
+    items.push_back(window("window.disk35", "3.5\" Drives", settings_.showDisk35Drives));
+  }
   if (hardDrives_->available()) {
     items.push_back(window("window.harddrives", "SmartPort Drives", settings_.showHardDrives, "3", MOD_COMMAND));
   }
@@ -897,8 +925,9 @@ bool *App::focusedToolWindow() {
   if (!focused || !focused->RootWindow) return nullptr;
   const std::string name = focused->RootWindow->Name;
   const std::pair<const char *, bool *> windows[] = {
-      {"Disk Drives", &settings_.showDiskDrives},
+      {DiskDrives::WINDOW_NAME, &settings_.showDiskDrives},
       {"SmartPort Drives", &settings_.showHardDrives},
+      {"3.5\" Drives", &settings_.showDisk35Drives},
       {"Joystick", &settings_.showJoystick},
       {"Expansion Slots", &settings_.showExpansionSlots},
       {"Save States", &settings_.showSaveStates},
@@ -1008,6 +1037,7 @@ bool App::switchMachine(MachineId id) {
   memory_.setMachine(*profile_);
   drives_->machineChanged();
   hardDrives_->machineChanged();
+  disk35_->machineChanged();
   noSignalStale_ = true;
   ImGui::MarkIniSettingsDirty();
   // The new machine starts as if switched on, as the old one was.
@@ -1085,6 +1115,12 @@ void App::drawStatusBar() {
       };
       light("Disk 1", drives_->hasDisk(0), drives_->isActive(0), drives_->isWriting(0));
       light("Disk 2", drives_->hasDisk(1), drives_->isActive(1), drives_->isWriting(1));
+      if (disk35_->available()) {
+        for (int drive = 0; drive < Disk35Drives::DRIVES; drive++) {
+          const std::string label = "3.5 " + std::to_string(drive + 1);
+          light(label.c_str(), disk35_->hasDisk(drive), disk35_->isBusy(drive), false);
+        }
+      }
       if (hardDrives_->available()) {
         for (int device = 0; device < HardDrives::DEVICES; device++) {
           const std::string label = "HD " + std::to_string(device + 1);
@@ -1224,6 +1260,14 @@ void App::drawDiskDrives() {
   bool showHard = settings_.showHardDrives && hardDrives_->available();
   hardDrives_->draw(&showHard);
   if (hardDrives_->available()) settings_.showHardDrives = showHard;
+  firstPosition(300, 200);
+  bool show35 = settings_.showDisk35Drives && disk35_->available();
+  disk35_->draw(&show35);
+  if (disk35_->available()) settings_.showDisk35Drives = show35;
+  if (disk35_->inspectorShown != settings_.disk35Inspector) {
+    settings_.disk35Inspector = disk35_->inspectorShown;
+    ImGui::MarkIniSettingsDirty();
+  }
   const bool sounds = emulation_.driveSounds().enabled();
   if (drives_->inspectorShown != settings_.diskInspector || sounds != settings_.driveSounds) {
     settings_.diskInspector = drives_->inspectorShown;
@@ -1238,6 +1282,11 @@ App::DropPlan App::planDrop(const std::vector<std::string> &paths, std::optional
     std::error_code error;
     const size_t size = static_cast<size_t>(std::filesystem::file_size(path, error));
     if (error) continue;
+    // On a IIgs an 800K disk goes in a 3.5" drive, as on the machine.
+    if (disk35_->available() && Disk35Drives::isDisk35Image(path)) {
+      const int drive = at ? disk35_->driveAt(*at) : -1;
+      return {DropPlan::Kind::Disk35, drive >= 0 ? drive : disk35_->dropTarget(), path};
+    }
     if (HardDrives::isBlockImage(path, size)) {
       const int device = at ? hardDrives_->deviceAt(*at) : -1;
       return {DropPlan::Kind::SmartPort, device >= 0 ? device : hardDrives_->dropTarget(), path};
@@ -1275,12 +1324,17 @@ void App::filesDropped(const std::vector<std::string> &paths, std::optional<ImVe
     hardDrives_->insertFile(plan.unit, plan.path);
     if (hardDrives_->imageName(plan.unit) == name) dropNotice(name + " is in SmartPort " + unit, false);
     return;
+  case DropPlan::Kind::Disk35:
+    disk35_->insertFile(plan.unit, plan.path);
+    if (disk35_->diskName(plan.unit) == name) dropNotice(name + " is in 3.5\" drive " + unit, false);
+    return;
   }
 }
 
 bool App::dragHover(std::optional<ImVec2> at, const std::vector<std::string> &paths) {
   drives_->dragOver = at;
   hardDrives_->dragOver = at;
+  disk35_->dragOver = at;
   dragOver_ = at;
   dragPlan_ = at ? planDrop(paths, at) : DropPlan{};
   return dragPlan_.kind != DropPlan::Kind::None;
@@ -1327,6 +1381,9 @@ void App::drawScreenDrop(ImVec2 min, ImVec2 max) {
       prompt = !hardDrives_->available() ? "There is no SmartPort to take this image"
                : hardDrives_->hasImage(plan.unit) ? "Drop to replace the image in SmartPort " + unit
                                                   : "Drop to insert into SmartPort " + unit;
+      break;
+    case DropPlan::Kind::Disk35:
+      prompt = (disk35_->hasDisk(plan.unit) ? "Drop to replace the disk in 3.5\" drive " : "Drop to insert into 3.5\" drive ") + unit;
       break;
     }
     pill(prompt, colour);

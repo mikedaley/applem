@@ -53,6 +53,8 @@ set(NATIVE_SOURCES
     src/expansion_slots.cpp
     src/game_port.cpp
     src/hard_drives.cpp
+    src/disk35_drives.cpp
+    src/disk_inspector.cpp
     src/joystick.cpp
     src/key_mapper.cpp
     src/media_store.cpp
@@ -228,6 +230,8 @@ add_executable(test_native_media
     src/disk_inspector_data.cpp
     src/disk_platter.cpp
     src/hard_drives.cpp
+    src/disk35_drives.cpp
+    src/disk_inspector.cpp
     src/drive_sounds.cpp
     src/media_store.cpp
     src/audio_output.mm

@@ -117,9 +117,10 @@ void reportHoveredViewport() {
   // was wherever it last saw it, and a first click in a window just opened
   // (the SmartPort window's Insert) landed there instead. In ImGui's
   // coordinates: the primary screen's top left, y down.
-  io.AddMousePosEvent(static_cast<float>(mouse.x),
-                      static_cast<float>(NSScreen.screens[0].frame.size.height - mouse.y));
+  const ImVec2 position(static_cast<float>(mouse.x),
+                       static_cast<float>(NSScreen.screens[0].frame.size.height - mouse.y));
   ImGuiID hovered = 0;
+  bool overAnotherApp = false;
   NSInteger below = 0;
   for (int depth = 0; depth < 8; depth++) {
     const NSInteger number = [NSWindow windowNumberAtPoint:mouse belowWindowWithWindowNumber:below];
@@ -132,13 +133,28 @@ void reportHoveredViewport() {
         break;
       }
     }
-    if (!match) break; // another app's window, or one of ours ImGui does not own
+    if (!match) {
+      // Another app's window, or one of ours ImGui does not own.
+      overAnotherApp = true;
+      break;
+    }
     if (match->Flags & ImGuiViewportFlags_NoInputs) {
       below = number;
       continue;
     }
     hovered = match->ID;
     break;
+  }
+  // Over another app's window, or while another app is active, the pointer
+  // is over nothing of ours. ImGui, told that no viewport is hovered, goes on
+  // using the last one that was, and showed that window's tooltips over
+  // whatever covered it. A drag in progress keeps its pointer, so a slider
+  // or a window can be dragged out over anything.
+  const bool elsewhere = overAnotherApp || !NSApp.active;
+  if (elsewhere && !ImGui::IsAnyMouseDown()) {
+    io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
+  } else {
+    io.AddMousePosEvent(position.x, position.y);
   }
   io.AddMouseViewportEvent(hovered);
 }
@@ -494,6 +510,7 @@ void watchMouse() {
   ImGui_ImplOSX_NewFrame(view);
   reportHoveredViewport();
   ImGui::NewFrame();
+  a2e::native::ui::ClickToFocus();
 
   _app->frame();
 

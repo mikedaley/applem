@@ -21,7 +21,7 @@ const Button BUTTONS[] = {
     {@"power", @"Power", @"power", @"machine.power", @"Switch the machine on or off"},
     {@"reset", @"Reset", @"arrow.uturn.backward.circle", @"machine.ctrlreset", @"Control-Reset"},
     {@"reboot", @"Reboot", @"arrow.clockwise.circle", @"machine.reboot", @"Restart the machine from cold"},
-    {@"drives", @"Disks", @"opticaldiscdrive", @"window.drives", @"Disk Drives"},
+    {@"drives", @"Disks", @"opticaldiscdrive", @"window.drives", @"5.25\" Drives"},
     {@"harddrives", @"SmartPort", @"externaldrive", @"window.harddrives", @"SmartPort Drives"},
     {@"slots", @"Slots", @"memorychip", @"window.slots", @"Expansion Slots"},
     {@"joystick", @"Joystick", @"gamecontroller", @"window.joystick", @"Joystick"},
@@ -40,6 +40,7 @@ NSString *const MACHINE = @"machine";
   NSMenuToolbarItem *_machine;
   std::string _signature;
   BOOL _hardDrives;
+  BOOL _drives35;
   BOOL _expansionSlots;
   BOOL _powered;
   BOOL _poweredKnown;
@@ -70,6 +71,19 @@ NSString *const MACHINE = @"machine";
   if ([sender isKindOfClass:NSMenuItem.class]) action = [(NSMenuItem *)sender representedObject];
   else if ([sender isKindOfClass:NSToolbarItem.class]) action = [(NSToolbarItem *)sender itemIdentifier];
   if (!action) return;
+  // Two kinds of drive, two windows: ask which, under the pointer.
+  if ([sender isKindOfClass:NSToolbarItem.class] && [action isEqualToString:@"drives"] && _drives35) {
+    NSMenu *menu = [[NSMenu alloc] init];
+    for (NSArray<NSString *> *choice in @[ @[ @"5.25\" Drives", @"window.drives" ],
+                                           @[ @"3.5\" Drives", @"window.disk35" ] ]) {
+      NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:choice[0] action:@selector(chosen:) keyEquivalent:@""];
+      item.target = self;
+      item.representedObject = choice[1];
+      [menu addItem:item];
+    }
+    [menu popUpMenuPositioningItem:nil atLocation:NSEvent.mouseLocation inView:nil];
+    return;
+  }
   for (const Button &button : BUTTONS) {
     if ([button.identifier isEqualToString:action]) action = button.action;
   }
@@ -125,6 +139,10 @@ NSString *const MACHINE = @"machine";
 
 - (void)update:(const a2e::native::ToolbarState &)state {
   _hardDrives = state.hardDrives;
+  if (state.drives35 != _drives35) {
+    _drives35 = state.drives35;
+    _items[@"drives"].toolTip = _drives35 ? @"5.25\" or 3.5\" Drives" : @"5.25\" Drives";
+  }
   _expansionSlots = state.expansionSlots;
 
   // Power wears green while the machine is on.

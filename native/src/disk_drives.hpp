@@ -11,6 +11,8 @@
 #include "ui_controls.hpp"
 
 #include "disk_inspector_data.hpp"
+#include "disk_inspector.hpp"
+#include "drive_ui.hpp"
 #include "disk_platter.hpp"
 #include "media_store.hpp"
 #include "platform.hpp"
@@ -49,14 +51,15 @@ class Emulation;
 //   seek click plays when an active drive's head crosses a whole track.
 //
 // The window is the browser's Disk Drives and Disk Inspector in one: a card
-// per drive, with its disk turning as the real one does, and below them the
-// inspector for whichever card was picked: the platter coloured by what is
-// recorded on every quarter track, one track unrolled, its sectors and their
-// bytes. A disk is re-read only when the controller's revision for it moves,
-// and at most twice a second while it is being written.
+// per drive, the same card as the 3.5" window's, with its disk turning as the
+// real one does and the head on a bar across the tracks, and below them the
+// inspector (DiskInspector) for whichever card was picked. A disk is re-read
+// only when the controller's revision for it moves, and at most twice a
+// second while it is being written.
 class DiskDrives {
 public:
   static constexpr int DRIVES = 2;
+  static constexpr const char *WINDOW_NAME = "5.25\" Drives###Disk Drives";
 
   DiskDrives(Emulation &emulation, Platform &platform, std::string mediaDirectory);
   ~DiskDrives();
@@ -119,14 +122,9 @@ private:
     // How far round the disk is under the head, as a fraction of a turn:
     // the core's own, so the platter turns as the disk does.
     double rotation = 0;
-    // The turn drawn. It is the core's while the disk turns there; when the
-    // core's stops, the picture coasts down as a drive's spindle does, and
-    // it is in step again the moment the motor starts.
-    double spin = 0;
-    double spinSpeed = 0; // turns a second
-    double spinAt = -1;
-    double spinCore = 0; // the core's turn last frame
-    double spinMovedAt = -1;
+    // The turn drawn: the core's while the disk turns there, coasting down
+    // as a drive's spindle does when the motor stops (drive_ui::Spin).
+    drive_ui::Spin spin;
 
     // What is recorded on it, read again when the controller's revision
     // for the drive moves.
@@ -136,11 +134,11 @@ private:
     std::optional<Overview> overview;
     DiskSummary summary;
 
-    // The platter painted from the overview, large for the inspector and
-    // small for the card, repainted when the overview or the mode changes.
-    ImTextureID platter = ImTextureID_Invalid;
+    // The card's picture of it, painted from the overview when it changes,
+    // and how many times it has been read, for the inspector's own.
     ImTextureID thumbnail = ImTextureID_Invalid;
     bool paintStale = true;
+    uint32_t overviewSerial = 0;
   };
 
   struct PendingSave {
@@ -164,24 +162,10 @@ private:
 
   void drawDeck(int index);
   void drawRecentPopup(int index);
-  void drawInspector();
-  void drawPlatter(ImVec2 origin, float size);
-  void drawLegend(float width);
-  void drawTrackDetail(float width);
-  void drawStrip(float width);
-  void drawSectorChips(float width);
-  void drawSectorBytes(float width, float height);
-  void drawNibbles(float width, float height);
   void paintPlatters(Drive &drive);
   void releasePlatters(Drive &drive);
-  // Read the inspected track again if it is a different one, or the disk
-  // has changed under it. Under the machine's lock.
-  void refreshDetail(DiskController &disk, double now);
-  // Read in full the quarter tracks the zoomed platter shows, a few a frame.
-  // Under the machine's lock.
-  void refreshRings(DiskController &disk, double now);
-  void paintView(int pixels);
-  void fitPlatter();
+  // What the inspector is to show, from the drive it is on.
+  InspectedDisk inspected() const;
   void drawSavePopup();
   void drawErrorPopup();
 
@@ -196,39 +180,9 @@ private:
   uint8_t lastByte_ = 0;
   int phase_ = 0;
   bool motorOn_ = false;
-  // The inspector: which drive and quarter track, how it is drawn, and the
-  // track read in full.
+  // The inspector, and the drive it is on.
   int inspected_ = 0;
-  int selectedQt_ = 0;
-  bool followHead_ = true;
-  // Where the head was last seen and since when: Follow head moves to a
-  // track only once the head has stayed on it a moment.
-  int headSeen_ = -1;
-  double headSeenAt_ = 0;
-  PlatterMode mode_ = PlatterMode::Structure;
-  int pane_ = 0; // 0 the sector's bytes, 1 the nibbles
-  int selectedSector_ = 0;
-  TrackDetail detail_;
-  int detailDrive_ = -1;
-  uint32_t detailRevision_ = 0;
-  double detailAt_ = -1;
-  // The unrolled track's view, in cells: where it starts and how many show.
-  double stripStart_ = 0;
-  double stripSpan_ = 0;
-  bool stripWhole_ = true; // showing the whole track, whatever its length
-  int stripQt_ = -1;
-
-  // The platter zoomed in: the part of the disk shown, painted afresh when
-  // it moves, and the quarter tracks it shows read in full.
-  PlatterView view_;
-  ImTextureID viewTexture_ = ImTextureID_Invalid;
-  int viewPixels_ = 0;
-  bool viewStale_ = true;
-  std::map<int, Ring> rings_;
-  std::vector<int> wantedRings_;
-  int ringsDrive_ = -1;
-  uint32_t ringsRevision_ = 0;
-  double ringsAt_ = -1;
+  DiskInspector inspector_;
 
   // Each drive's card as last drawn, and in which frame, for drops.
   std::array<ImVec2, DRIVES * 2> deckRects_{};
