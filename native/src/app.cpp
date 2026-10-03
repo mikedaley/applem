@@ -32,6 +32,7 @@ constexpr const char *SCREEN_WINDOW = "Screen";
 constexpr const char *FULL_PAGE_WINDOW = "##FullPage";
 constexpr const char *DOCKSPACE_ID = "ApplEmDockSpace";
 constexpr const char *SWITCH_POPUP = "Switch machine?";
+constexpr const char *BATTERY_POPUP = "Reset battery RAM?";
 
 // What the IIgs may be fitted with, as the browser build offers it
 // (src/js/machine/iigs-memory.js).
@@ -146,8 +147,8 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "ShowMemoryViewer=%d", &value) == 1) s.showMemoryViewer = value;
     else if (std::sscanf(line, "MockingboardMutes=%d", &value) == 1) s.mockingboardMutes = value & 0x3F;
     else if (std::sscanf(line, "MockingboardPhaseLock=%d", &value) == 1) s.mockingboardPhaseLock = value;
-    else if (std::sscanf(line, "ShowEqualizer=%d", &value) == 1) s.showEqualizer = value;
     else if (std::sscanf(line, "MockingboardMono=%d", &value) == 1) s.mockingboardMono = value;
+    else if (std::sscanf(line, "ShowEqualizer=%d", &value) == 1) s.showEqualizer = value;
     else if (std::sscanf(line, "Equalizer=%d", &value) == 1) s.equalizer.enabled = value;
     else if (std::sscanf(line, "EqualizerPreamp=%f", &number) == 1) s.equalizer.preampDb = number;
     else if (std::sscanf(line, "EqualizerBand.%d=%f", &value, &number) == 2) {
@@ -197,8 +198,8 @@ void App::registerSettingsHandler() {
     out->appendf("ShowMemoryViewer=%d\n", s.showMemoryViewer ? 1 : 0);
     out->appendf("MockingboardMutes=%d\n", s.mockingboardMutes);
     out->appendf("MockingboardPhaseLock=%d\n", s.mockingboardPhaseLock ? 1 : 0);
-    out->appendf("ShowEqualizer=%d\n", s.showEqualizer ? 1 : 0);
     out->appendf("MockingboardMono=%d\n", s.mockingboardMono ? 1 : 0);
+    out->appendf("ShowEqualizer=%d\n", s.showEqualizer ? 1 : 0);
     out->appendf("Equalizer=%d\n", s.equalizer.enabled ? 1 : 0);
     out->appendf("EqualizerPreamp=%.1f\n", s.equalizer.preampDb);
     for (int i = 0; i < Equalizer::BANDS; i++) out->appendf("EqualizerBand.%d=%.1f\n", i, s.equalizer.gainDb[i]);
@@ -418,6 +419,7 @@ void App::frame() {
     drawDiskDrives();
     if (showDemo_) ImGui::ShowDemoWindow(&showDemo_);
     drawSwitchConfirmation();
+    drawBatteryResetConfirmation();
     handleAppShortcuts();
     routeKeyboard();
     buildMenus();
@@ -434,6 +436,7 @@ void App::frame() {
   drawDiskDrives();
   if (showDemo_) ImGui::ShowDemoWindow(&showDemo_);
   drawSwitchConfirmation();
+  drawBatteryResetConfirmation();
 
   handleAppShortcuts();
   routeKeyboard();
@@ -678,6 +681,10 @@ MenuItem App::machineMenu() {
                             }, "", 0, settings_.iigsMemoryKB == kb));
     }
     items.push_back(submenu("IIgs Memory", memory));
+    // The Control Panel's settings, which survive in battery RAM, back to
+    // the firmware's own. It asks first: it restarts the machine.
+    items.push_back(item(a, "machine.resetbatteryram", "Reset Battery RAM\u2026",
+                         [this] { pendingBatteryReset_ = true; }));
   }
 
   // How the host's keyboard reaches the machine.
@@ -730,6 +737,11 @@ MenuItem App::machineMenu() {
              applyMockingboardSound();
              ImGui::MarkIniSettingsDirty();
            }, "", 0, settings_.mockingboardPhaseLock),
+      item(a, "machine.mockingboardMono", "Mockingboard Mono", [this] {
+             settings_.mockingboardMono = !settings_.mockingboardMono;
+             applyMockingboardSound();
+             ImGui::MarkIniSettingsDirty();
+           }, "", 0, settings_.mockingboardMono),
       item(a, "machine.equalizer", "Equalizer", [this] {
              settings_.showEqualizer = !settings_.showEqualizer;
              ImGui::MarkIniSettingsDirty();
@@ -737,11 +749,6 @@ MenuItem App::machineMenu() {
   }));
   return submenu("Machine", items);
 }
-      item(a, "machine.mockingboardMono", "Mockingboard Mono", [this] {
-             settings_.mockingboardMono = !settings_.mockingboardMono;
-             applyMockingboardSound();
-             ImGui::MarkIniSettingsDirty();
-           }, "", 0, settings_.mockingboardMono),
 
 // How the picture and the main window look.
 MenuItem App::viewMenu() {
@@ -947,6 +954,35 @@ void App::drawSwitchConfirmation() {
   ImGui::SameLine();
   if (ui::Button("Cancel", ImVec2(120, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
     pendingMachine_.reset();
+    ImGui::CloseCurrentPopup();
+  }
+  ImGui::EndPopup();
+}
+
+// A IIgs's settings back to the firmware's defaults. Asks first, because it
+// restarts the machine; the disks stay where they are.
+void App::drawBatteryResetConfirmation() {
+  if (pendingBatteryReset_ && !ImGui::IsPopupOpen(BATTERY_POPUP)) {
+    ImGui::OpenPopup(BATTERY_POPUP);
+  }
+  ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+  if (!ImGui::BeginPopupModal(BATTERY_POPUP, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
+  ImGui::Text("Reset the IIgs's battery RAM?");
+  ImGui::TextDisabled("Every Control Panel setting goes back to its default, and the machine");
+  ImGui::TextDisabled("restarts. Disks stay in their drives; anything in memory is lost.");
+  ImGui::Spacing();
+  if (ui::Button("Reset", ImVec2(120, 0), ui::ButtonKind::Primary)) {
+    releaseKeys();
+    emulation_.withMachine([](host::MachineHost &host) { host.resetBatteryRam(); });
+    // The cleared bytes, kept, so a quit before the firmware writes its
+    // defaults still starts from them.
+    saveBatteryRamIfChanged(-1);
+    pendingBatteryReset_ = false;
+    ImGui::CloseCurrentPopup();
+  }
+  ImGui::SameLine();
+  if (ui::Button("Cancel", ImVec2(120, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+    pendingBatteryReset_ = false;
     ImGui::CloseCurrentPopup();
   }
   ImGui::EndPopup();

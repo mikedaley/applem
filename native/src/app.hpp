@@ -184,6 +184,7 @@ private:
   void drawEnsoniq();
   void drawEqualizer();
   void drawSwitchConfirmation();
+  void drawBatteryResetConfirmation();
 
   void routeKeyboard();
   // The mouse, taken for the machine (Platform::captureMouse): a click on the
@@ -304,6 +305,7 @@ private:
 
   // A machine switch waiting for the user to confirm it.
   std::optional<MachineId> pendingMachine_;
+  bool pendingBatteryReset_ = false; // Reset Battery RAM, awaiting its confirmation
 };
 
 } // namespace a2e::native
