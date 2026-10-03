@@ -597,6 +597,21 @@ space on a //e, a II+ and a IIgs.
   to its list, copies a range as hex, Merlin `HEX`, `DFB` or a C array,
   and opens the listing at an address.
 
+- **Three views** of the same memory, a switch at the start of the
+  toolbar. **Hex**, as above. **Bitmap**, the bytes as pixels from any
+  address, the way Altirra's and Mesen's viewers find graphics: hi-res bytes
+  (seven pixels, bit 0 on the left, in the Solid decoder's colours), 1 bpp
+  MSB first, 2 bpp, 4 bpp in the lo-res colours, or 8 bpp, at any width in
+  bytes, in rows or in tiles eight bytes tall (a font's glyphs), zoomed with
+  a grid between bytes. **Screen**, any display page the machine has (text
+  in 40 or 80 columns, lo-res, double lo-res, hi-res, double hi-res, and
+  Super Hi-Res on a IIgs), page 1 or 2, decoded Solid, Exact or Mono by the
+  machine's own renderer whatever the switches say
+  (`MachineHost::renderDisplayPage`). In either, the pointer names the byte
+  under it (main or auxiliary, through each page's own interleave), a click
+  puts the caret on it, in the bank it is really in, and a double click
+  opens it in hex.
+
 The rows in view and a few either side are read once a frame under one
 lock, and the map a few times a second; a closed viewer reads nothing and
 turns the access counting off.

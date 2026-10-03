@@ -111,6 +111,11 @@ private:
   };
 
   enum class Follow { Off, PC, Stack, Expression };
+  // How the bytes are shown: as hex, as a bitmap at any address in any of
+  // several pixel formats, or as one of the machine's display pages decoded
+  // by its own renderer.
+  enum class View { Hex, Bitmap, Screen };
+  enum class BitmapFormat { AppleHiRes, OneBit, TwoBit, FourBit, EightBit };
   enum class SearchKind { Hex, Text };
 
   void take();
@@ -160,6 +165,22 @@ private:
   void drawToolbar();
   void drawSearchBar();
   void drawGrid(ImVec2 size);
+  void drawViewOptions();
+  void drawBitmap(ImVec2 size);
+  void drawScreenView(ImVec2 size);
+  void paintBitmap();
+  void showTexture(ImTextureID &texture, int &width, int &height, const std::vector<uint8_t> &rgba, int w, int h);
+  // Where a pixel of the screen view came from: the address, whether it is
+  // the auxiliary bank's, and the rectangle of the byte's cell in the
+  // page's own pixels.
+  struct ScreenCell {
+    uint32_t address = 0;
+    bool aux = false;
+    float x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+  };
+  std::optional<ScreenCell> screenCellAt(int x, int y) const;
+  void goToScreenCell(const ScreenCell &cell);
+  int bitmapPixelsPerByte() const;
   void drawMap(ImVec2 origin, ImVec2 size);
   void drawSidebar(float width, float height);
   void drawInspector(float width);
@@ -255,6 +276,33 @@ private:
   bool draggingMap_ = false;
 
   float sidebarWidth_ = 300.0f;
+
+  View view_ = View::Hex;
+
+  // The bitmap: where it starts, its format and shape, and what was read.
+  uint32_t bitmapTop_ = 0;
+  BitmapFormat bitmapFormat_ = BitmapFormat::AppleHiRes;
+  int bitmapWidth_ = 8;    // bytes a row, or tiles a row
+  bool bitmapTiles_ = false; // eight bytes down a column, as a font's glyphs
+  bool bitmapColour_ = true;
+  int bitmapZoom_ = 3;
+  int bitmapRows_ = 64;    // visible, at the last draw
+  std::vector<uint8_t> bitmapBytes_;
+  uint32_t bitmapBytesFrom_ = 0;
+  ImTextureID bitmapTexture_ = ImTextureID_Invalid;
+  int bitmapTextureWidth_ = 0, bitmapTextureHeight_ = 0;
+  double bitmapPaintedAt_ = -10.0;
+
+  // The screen view: which page, page 2 or not, and how it is decoded.
+  int screenPage_ = 4; // MachineHost::DisplayPage, hi-res
+  bool screenPage2_ = false;
+  int screenColours_ = 0; // Solid, Exact, Mono
+  uint32_t availablePages_ = 0; // a bit a DisplayPage the machine has
+  std::vector<uint8_t> screenRgba_;
+  int screenWidth_ = 0, screenHeight_ = 0;
+  ImTextureID screenTexture_ = ImTextureID_Invalid;
+  int screenTextureWidth_ = 0, screenTextureHeight_ = 0;
+  double screenTakenAt_ = -10.0;
 };
 
 } // namespace a2e::native

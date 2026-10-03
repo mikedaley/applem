@@ -14,6 +14,7 @@
 #include "ui_theme.hpp"
 
 #include "basic/applesoft_vars.hpp"
+#include "video/ntsc.hpp"
 
 #include "imgui_internal.h"
 
@@ -383,7 +384,10 @@ MemoryViewer::MemoryViewer(Emulation &emulation, Platform &platform, CpuDebugger
     : emulation_(emulation), platform_(platform), debugger_(debugger) {}
 
 MemoryViewer::~MemoryViewer() {
-  if (platform_.releaseTexture && mapTexture_ != ImTextureID_Invalid) platform_.releaseTexture(mapTexture_);
+  if (!platform_.releaseTexture) return;
+  for (ImTextureID texture : {mapTexture_, bitmapTexture_, screenTexture_}) {
+    if (texture != ImTextureID_Invalid) platform_.releaseTexture(texture);
+  }
 }
 
 void MemoryViewer::setMachine(const MachineProfile &profile) {
@@ -650,6 +654,39 @@ void MemoryViewer::take() {
       host.readSpace(*current, selectionLow(), statBytes.data(), length);
     }
 
+    // The pages this machine has, for the screen view to offer.
+    availablePages_ = 0;
+    for (int page = 0; page < 7; page++) {
+      if (host.hasDisplayPage(static_cast<host::MachineHost::DisplayPage>(page))) availablePages_ |= 1u << page;
+    }
+    // The bytes the bitmap shows, from its top: as many rows as fit, of
+    // either layout.
+    if (view_ == View::Bitmap) {
+      const size_t rowBytes = static_cast<size_t>(bitmapWidth_) * (bitmapTiles_ ? 8 : 1);
+      const size_t rows = static_cast<size_t>(bitmapTiles_ ? (bitmapRows_ + 7) / 8 : bitmapRows_);
+      bitmapBytes_.resize(std::min<size_t>(rowBytes * rows, current->size));
+      host.readSpace(*current, bitmapTop_, bitmapBytes_.data(), bitmapBytes_.size());
+      bitmapBytesFrom_ = bitmapTop_;
+    }
+    // The page, decoded by the machine's own renderer, thirty times a second.
+    if (view_ == View::Screen && now - screenTakenAt_ > 1.0 / 30.0) {
+      if (!(availablePages_ & (1u << screenPage_))) {
+        for (int page = 0; page < 7; page++) {
+          if (availablePages_ & (1u << page)) {
+            screenPage_ = page;
+            break;
+          }
+        }
+      }
+      static constexpr VideoColorMode DECODES[] = {VideoColorMode::SOLID, VideoColorMode::PIXEL_EXACT,
+                                                   VideoColorMode::MONOCHROME};
+      if (host.renderDisplayPage(static_cast<host::MachineHost::DisplayPage>(screenPage_), screenPage2_,
+                                 DECODES[std::clamp(screenColours_, 0, 2)], screenRgba_, screenWidth_,
+                                 screenHeight_)) {
+        screenTakenAt_ = now;
+      }
+    }
+
     // The map, a few times a second, or more often while it is showing
     // accesses.
     const double interval = activity ? 0.1 : 0.3;
@@ -734,6 +771,13 @@ void MemoryViewer::take() {
     if (inSpace(*follow)) reveal(*follow);
   }
   if (readMap) mapDirty_ = true;
+  if (view_ == View::Bitmap && now - bitmapPaintedAt_ > 1.0 / 30.0) {
+    paintBitmap();
+    bitmapPaintedAt_ = now;
+  }
+  if (view_ == View::Screen && !screenRgba_.empty()) {
+    showTexture(screenTexture_, screenTextureWidth_, screenTextureHeight_, screenRgba_, screenWidth_, screenHeight_);
+  }
   if (mapDirty_) paintMap();
 }
 
@@ -1148,13 +1192,19 @@ void MemoryViewer::draw(bool *open) {
 
   drawToolbar();
   ImGui::Dummy(ImVec2(0, 2));
-  drawSearchBar();
+  if (view_ == View::Hex) drawSearchBar();
+  else drawViewOptions();
   ImGui::Dummy(ImVec2(0, 4));
 
   const ImVec2 avail = ImGui::GetContentRegionAvail();
   const float statusHeight = ImGui::GetFrameHeight() + 4;
   ImGui::BeginGroup();
-  drawGrid(ImVec2(layout.width, avail.y - statusHeight));
+  const ImVec2 viewSize(layout.width, avail.y - statusHeight);
+  switch (view_) {
+  case View::Hex: drawGrid(viewSize); break;
+  case View::Bitmap: drawBitmap(viewSize); break;
+  case View::Screen: drawScreenView(viewSize); break;
+  }
   drawStatus();
   ImGui::EndGroup();
   ImGui::SameLine(0, 10);
@@ -1170,6 +1220,21 @@ void MemoryViewer::drawToolbar() {
   ImGui::PushID("toolbar");
   constexpr float GROUP_GAP = 14.0f;
   constexpr float ITEM_GAP = 6.0f;
+
+  // How the bytes are shown.
+  int viewChoice = static_cast<int>(view_);
+  if (ui::SegmentedControl("##view", &viewChoice, {"Hex", "Bitmap", "Screen"}, 200)) {
+    const View was = view_;
+    view_ = static_cast<View>(viewChoice);
+    // A bitmap starts where the hex view was looking.
+    if (view_ == View::Bitmap && was != View::Bitmap) bitmapTop_ = caret_;
+    ImGui::MarkIniSettingsDirty();
+  }
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip("Hex: the bytes\nBitmap: the bytes as pixels, to find sprites, fonts and shapes\n"
+                      "Screen: a display page as the machine decodes it, whatever is on screen");
+  }
+  ImGui::SameLine(0, GROUP_GAP);
 
   // Which memory: the processor's view and the banks themselves, or a IIgs's
   // banks.
@@ -1211,6 +1276,11 @@ void MemoryViewer::drawToolbar() {
     }
   }
   if (ImGui::IsItemEdited()) gotoBad_ = false;
+
+  if (view_ != View::Hex) {
+    ImGui::PopID();
+    return;
+  }
 
   // Following something that moves.
   ImGui::SameLine(0, GROUP_GAP);
@@ -1651,7 +1721,12 @@ void MemoryViewer::drawMap(ImVec2 origin, ImVec2 size) {
   if (ImGui::IsItemActivated()) draggingMap_ = true;
   if (ImGui::IsItemActive() && draggingMap_) {
     const uint32_t at = addressAt(mouse.y);
-    topRow_ = std::clamp(rowOf(at) - visibleRows_ / 2, 0, std::max(0, rowCount() - visibleRows_ + 2));
+    if (view_ == View::Bitmap) {
+      const uint32_t rowBytes = static_cast<uint32_t>(bitmapWidth_) * (bitmapTiles_ ? 8 : 1);
+      bitmapTop_ = std::max(sp.base, at - std::min(at - sp.base, rowBytes * 8));
+    } else {
+      topRow_ = std::clamp(rowOf(at) - visibleRows_ / 2, 0, std::max(0, rowCount() - visibleRows_ + 2));
+    }
     scrollPixels_ = 0;
     follow_ = Follow::Off;
   }
@@ -1710,8 +1785,12 @@ void MemoryViewer::drawMap(ImVec2 origin, ImVec2 size) {
   }
 
   // The part in view.
-  const uint32_t first = rowAddress(topRow_);
-  const uint32_t last = std::min(rowAddress(topRow_ + visibleRows_), spaceEnd());
+  uint32_t first = rowAddress(topRow_);
+  uint32_t last = std::min(rowAddress(topRow_ + visibleRows_), spaceEnd());
+  if (view_ == View::Bitmap) {
+    first = bitmapTop_;
+    last = std::min<uint32_t>(bitmapTop_ + static_cast<uint32_t>(bitmapBytes_.size()), spaceEnd());
+  }
   const float va = yFor(first), vb = std::max(yFor(last), va + 3);
   draw->AddRectFilled(ImVec2(x0 - 1, va), ImVec2(x1 + 1, vb), accent(draggingMap_ ? 0.22f : 0.14f), 2.0f);
   draw->AddRect(ImVec2(x0 - 1, va), ImVec2(x1 + 1, vb), accent(0.9f), 2.0f, 0, 1.5f);
@@ -2266,6 +2345,451 @@ void MemoryViewer::drawLoadPopup() {
 }
 
 // ---------------------------------------------------------------------------
+// The bitmap and screen views
+// ---------------------------------------------------------------------------
+
+namespace {
+
+constexpr const char *BITMAP_FORMATS[] = {"Hi-res bytes", "1 bpp", "2 bpp", "4 bpp", "8 bpp"};
+constexpr const char *BITMAP_FORMAT_TIPS[] = {
+    "Seven pixels a byte, bit 0 on the left, as hi-res draws them; bit 7 shifts the colour",
+    "Eight pixels a byte, bit 7 on the left",
+    "Four pixels a byte, two bits each, high bits first",
+    "Two pixels a byte, a nibble each, high nibble first, in the lo-res colours",
+    "A pixel a byte, its value as its colour",
+};
+constexpr const char *PAGE_NAMES[] = {"Text, 40 columns", "Text, 80 columns", "Lo-res", "Double lo-res",
+                                      "Hi-res",           "Double hi-res",    "Super Hi-Res"};
+
+// An Apple II colour from the palette the core's decoders share, as RGB.
+void idealColour(int index, uint8_t *out) {
+  const uint32_t c = ntsc::idealPalette()[static_cast<size_t>(index & 15)];
+  out[0] = static_cast<uint8_t>(c >> 16);
+  out[1] = static_cast<uint8_t>(c >> 8);
+  out[2] = static_cast<uint8_t>(c);
+}
+
+} // namespace
+
+int MemoryViewer::bitmapPixelsPerByte() const {
+  switch (bitmapFormat_) {
+  case BitmapFormat::AppleHiRes: return 7;
+  case BitmapFormat::OneBit: return 8;
+  case BitmapFormat::TwoBit: return 4;
+  case BitmapFormat::FourBit: return 2;
+  case BitmapFormat::EightBit: return 1;
+  }
+  return 8;
+}
+
+void MemoryViewer::showTexture(ImTextureID &texture, int &width, int &height, const std::vector<uint8_t> &rgba,
+                               int w, int h) {
+  if (!platform_.makeTexture || w <= 0 || h <= 0 || rgba.size() < static_cast<size_t>(w) * h * 4) return;
+  if (platform_.releaseTexture && texture != ImTextureID_Invalid) platform_.releaseTexture(texture);
+  texture = platform_.makeTexture(rgba.data(), w, h);
+  width = w;
+  height = h;
+}
+
+// The bytes as pixels, in the chosen format and layout. A byte the view has
+// not read yet is drawn dark rather than as zero.
+void MemoryViewer::paintBitmap() {
+  const int ppb = bitmapPixelsPerByte();
+  const int w = bitmapWidth_ * ppb;
+  const int h = bitmapTiles_ ? ((bitmapRows_ + 7) / 8) * 8 : bitmapRows_;
+  if (w <= 0 || h <= 0) return;
+  std::vector<uint8_t> rgba(static_cast<size_t>(w) * h * 4, 0);
+  const bool dark = ui::isDark();
+  const uint8_t missing[3] = {static_cast<uint8_t>(dark ? 30 : 210), static_cast<uint8_t>(dark ? 30 : 210),
+                              static_cast<uint8_t>(dark ? 34 : 214)};
+  auto byteAtPixel = [&](int x, int y, int &pixel) -> std::optional<uint8_t> {
+    const int column = x / ppb;
+    pixel = x % ppb;
+    size_t index;
+    if (bitmapTiles_) index = (static_cast<size_t>(y / 8) * bitmapWidth_ + column) * 8 + static_cast<size_t>(y % 8);
+    else index = static_cast<size_t>(y) * bitmapWidth_ + column;
+    if (index >= bitmapBytes_.size()) return std::nullopt;
+    return bitmapBytes_[index];
+  };
+  for (int y = 0; y < h; y++) {
+    for (int x = 0; x < w; x++) {
+      uint8_t *px = &rgba[(static_cast<size_t>(y) * w + x) * 4];
+      px[3] = 255;
+      int pixel = 0;
+      const std::optional<uint8_t> byte = byteAtPixel(x, y, pixel);
+      if (!byte) {
+        std::memcpy(px, missing, 3);
+        continue;
+      }
+      const uint8_t b = *byte;
+      switch (bitmapFormat_) {
+      case BitmapFormat::AppleHiRes: {
+        const bool on = (b >> pixel) & 1;
+        if (!on) break;
+        if (!bitmapColour_) {
+          px[0] = px[1] = px[2] = 255;
+          break;
+        }
+        // The same rule the Solid decoder applies: a lit pixel beside a lit
+        // pixel is white, one on its own takes its column's colour, violet or
+        // green, or blue or orange when its byte's high bit is set.
+        int left = 0, right = 0;
+        const std::optional<uint8_t> lb = x > 0 ? byteAtPixel(x - 1, y, left) : std::nullopt;
+        const std::optional<uint8_t> rb = x + 1 < w ? byteAtPixel(x + 1, y, right) : std::nullopt;
+        const bool neighbour = (lb && ((*lb >> left) & 1)) || (rb && ((*rb >> right) & 1));
+        if (neighbour) {
+          px[0] = px[1] = px[2] = 255;
+          break;
+        }
+        const bool odd = x & 1;
+        idealColour((b & 0x80) ? (odd ? 9 : 6) : (odd ? 12 : 3), px);
+        break;
+      }
+      case BitmapFormat::OneBit:
+        if ((b >> (7 - pixel)) & 1) px[0] = px[1] = px[2] = 255;
+        break;
+      case BitmapFormat::TwoBit: {
+        const int v = (b >> (6 - pixel * 2)) & 3;
+        if (bitmapColour_) {
+          static const int TWO[4] = {0, 12, 3, 15};
+          idealColour(TWO[v], px);
+        } else {
+          px[0] = px[1] = px[2] = static_cast<uint8_t>(v * 85);
+        }
+        break;
+      }
+      case BitmapFormat::FourBit: {
+        const int v = pixel == 0 ? b >> 4 : b & 0x0F;
+        if (bitmapColour_) idealColour(v, px);
+        else px[0] = px[1] = px[2] = static_cast<uint8_t>(v * 17);
+        break;
+      }
+      case BitmapFormat::EightBit:
+        if (bitmapColour_) valueColour(b, true, px);
+        else px[0] = px[1] = px[2] = b;
+        break;
+      }
+    }
+  }
+  showTexture(bitmapTexture_, bitmapTextureWidth_, bitmapTextureHeight_, rgba, w, h);
+}
+
+void MemoryViewer::drawViewOptions() {
+  ImGui::PushID("viewoptions");
+  constexpr float GROUP_GAP = 14.0f;
+  constexpr float ITEM_GAP = 6.0f;
+  if (view_ == View::Bitmap) {
+    if (ui::BeginPopUpButton("##format", BITMAP_FORMATS[static_cast<int>(bitmapFormat_)], 140.0f)) {
+      for (int i = 0; i < 5; i++) {
+        if (ImGui::Selectable(BITMAP_FORMATS[i], static_cast<int>(bitmapFormat_) == i)) {
+          bitmapFormat_ = static_cast<BitmapFormat>(i);
+          ImGui::MarkIniSettingsDirty();
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", BITMAP_FORMAT_TIPS[i]);
+      }
+      ui::EndPopUpButton();
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", BITMAP_FORMAT_TIPS[static_cast<int>(bitmapFormat_)]);
+
+    // The width, in bytes, stepped or typed.
+    ImGui::SameLine(0, GROUP_GAP);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextDisabled("Width");
+    ImGui::SameLine(0, ITEM_GAP);
+    if (iconButton("##narrower", Icon::Back, "Narrower", bitmapWidth_ > 1)) bitmapWidth_--, ImGui::MarkIniSettingsDirty();
+    ImGui::SameLine(0, 0);
+    ImGui::SetNextItemWidth(44);
+    if (ImGui::InputInt("##width", &bitmapWidth_, 0, 0)) {
+      bitmapWidth_ = std::clamp(bitmapWidth_, 1, 80);
+      ImGui::MarkIniSettingsDirty();
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Bytes to a row (tiles to a row, laid out as tiles): 40 is a hi-res line");
+    ImGui::SameLine(0, 0);
+    if (iconButton("##wider", Icon::Forward, "Wider", bitmapWidth_ < 80)) bitmapWidth_++, ImGui::MarkIniSettingsDirty();
+
+    ImGui::SameLine(0, GROUP_GAP);
+    int layout = bitmapTiles_ ? 1 : 0;
+    if (ui::SegmentedControl("##layout", &layout, {"Rows", "Tiles"}, 110)) {
+      bitmapTiles_ = layout == 1;
+      ImGui::MarkIniSettingsDirty();
+    }
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip("Rows: each row the next run of bytes\nTiles: eight bytes down a column, as a font's glyphs");
+    }
+    ImGui::SameLine(0, GROUP_GAP);
+    static const int ZOOMS[] = {1, 2, 3, 4, 6, 8};
+    int zoom = 0;
+    for (int i = 0; i < 6; i++) {
+      if (ZOOMS[i] == bitmapZoom_) zoom = i;
+    }
+    if (ui::SegmentedControl("##zoom", &zoom, {"1x", "2x", "3x", "4x", "6x", "8x"}, 220)) {
+      bitmapZoom_ = ZOOMS[zoom];
+      ImGui::MarkIniSettingsDirty();
+    }
+    if (bitmapFormat_ != BitmapFormat::OneBit) {
+      ImGui::SameLine(0, GROUP_GAP);
+      if (ui::Switch("Colour", &bitmapColour_)) ImGui::MarkIniSettingsDirty();
+    }
+  } else {
+    // Only the pages this machine has.
+    if (ui::BeginPopUpButton("##page", PAGE_NAMES[screenPage_], 170.0f)) {
+      for (int i = 0; i < 7; i++) {
+        if (!(availablePages_ & (1u << i))) continue;
+        if (ImGui::Selectable(PAGE_NAMES[i], screenPage_ == i)) {
+          screenPage_ = i;
+          screenTakenAt_ = -10.0;
+          ImGui::MarkIniSettingsDirty();
+        }
+      }
+      ui::EndPopUpButton();
+    }
+    if (screenPage_ != static_cast<int>(host::MachineHost::DisplayPage::SuperHiRes)) {
+      ImGui::SameLine(0, ITEM_GAP);
+      int page = screenPage2_ ? 1 : 0;
+      if (ui::SegmentedControl("##page2", &page, {"Page 1", "Page 2"}, 150)) {
+        screenPage2_ = page == 1;
+        screenTakenAt_ = -10.0;
+        ImGui::MarkIniSettingsDirty();
+      }
+    }
+    ImGui::SameLine(0, GROUP_GAP);
+    if (ui::SegmentedControl("##decode", &screenColours_, {"Solid", "Exact", "Mono"}, 190)) {
+      screenTakenAt_ = -10.0;
+      ImGui::MarkIniSettingsDirty();
+    }
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip("Decoded as the Display Settings' Solid Colour, Pixel Exact and Monochrome are");
+    }
+    ImGui::SameLine(0, GROUP_GAP);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextDisabled("Click a byte to inspect it, double-click to see it in hex");
+  }
+  ImGui::PopID();
+}
+
+void MemoryViewer::drawBitmap(ImVec2 size) {
+  ImGui::BeginChild("##bitmap", size, ImGuiChildFlags_None,
+                    ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoNav);
+  ImDrawList *draw = ImGui::GetWindowDrawList();
+  const ImVec2 origin = ImGui::GetCursorScreenPos();
+  const ImVec2 avail = ImGui::GetContentRegionAvail();
+  const ImVec2 end(origin.x + avail.x, origin.y + avail.y);
+  draw->AddRectFilled(origin, end, well(), 8.0f);
+  draw->AddRect(origin, end, ImGui::GetColorU32(ImGuiCol_Border), 8.0f);
+  const host::MemorySpace &sp = *space();
+  const float mapX = end.x - MAP_WIDTH - 10;
+  const ImVec2 c0(origin.x + 10, origin.y + 10), c1(mapX - 10, end.y - 10);
+  const float zoom = static_cast<float>(bitmapZoom_);
+  const int ppb = bitmapPixelsPerByte();
+  bitmapRows_ = std::max(8, static_cast<int>((c1.y - c0.y) / zoom));
+  if (!inSpace(bitmapTop_)) bitmapTop_ = inSpace(caret_) ? caret_ : sp.base;
+  const uint32_t rowBytes = static_cast<uint32_t>(bitmapWidth_) * (bitmapTiles_ ? 8 : 1);
+
+  // The pixels, and a hairline grid between bytes once they are big enough
+  // to tell apart.
+  draw->PushClipRect(c0, c1, true);
+  if (bitmapTexture_ != ImTextureID_Invalid) {
+    const ImVec2 b(c0.x + bitmapTextureWidth_ * zoom, c0.y + bitmapTextureHeight_ * zoom);
+    const ImGuiPlatformIO &pio = ImGui::GetPlatformIO();
+    if (pio.DrawCallback_SetSamplerNearest) draw->AddCallback(pio.DrawCallback_SetSamplerNearest, nullptr);
+    draw->AddImage(ImTextureRef(bitmapTexture_), c0, b);
+    if (pio.DrawCallback_SetSamplerLinear) draw->AddCallback(pio.DrawCallback_SetSamplerLinear, nullptr);
+    if (zoom >= 4) {
+      const ImU32 grid = text(0.10f);
+      for (int c = 1; c < bitmapWidth_; c++) {
+        const float x = c0.x + c * ppb * zoom;
+        draw->AddLine(ImVec2(x, c0.y), ImVec2(x, b.y), grid);
+      }
+      if (bitmapTiles_) {
+        for (int r = 8; r < bitmapTextureHeight_; r += 8) {
+          const float y = c0.y + r * zoom;
+          draw->AddLine(ImVec2(c0.x, y), ImVec2(b.x, y), grid);
+        }
+      }
+    }
+  }
+
+  // Which byte a pixel is, and where that byte's cell is drawn.
+  auto addressAt = [&](int x, int y) -> std::optional<uint32_t> {
+    if (x < 0 || y < 0 || x >= bitmapWidth_ * ppb) return std::nullopt;
+    const uint32_t column = static_cast<uint32_t>(x / ppb);
+    uint32_t index;
+    if (bitmapTiles_) index = (static_cast<uint32_t>(y / 8) * bitmapWidth_ + column) * 8 + static_cast<uint32_t>(y % 8);
+    else index = static_cast<uint32_t>(y) * bitmapWidth_ + column;
+    const uint32_t address = bitmapTop_ + index;
+    if (index >= bitmapBytes_.size() || !inSpace(address)) return std::nullopt;
+    return address;
+  };
+  auto cellOf = [&](uint32_t address, ImVec2 &a, ImVec2 &b) {
+    if (address < bitmapTop_ || address >= bitmapTop_ + bitmapBytes_.size()) return false;
+    const uint32_t index = address - bitmapTop_;
+    int cx, cy;
+    if (bitmapTiles_) {
+      const uint32_t tile = index / 8;
+      cx = static_cast<int>(tile % bitmapWidth_) * ppb;
+      cy = static_cast<int>(tile / bitmapWidth_) * 8 + static_cast<int>(index % 8);
+    } else {
+      cx = static_cast<int>(index % bitmapWidth_) * ppb;
+      cy = static_cast<int>(index / bitmapWidth_);
+    }
+    a = ImVec2(c0.x + cx * zoom, c0.y + cy * zoom);
+    b = ImVec2(a.x + ppb * zoom, a.y + zoom);
+    return true;
+  };
+  ImVec2 a, b;
+  if (cellOf(caret_, a, b)) draw->AddRect(ImVec2(a.x - 1, a.y - 1), ImVec2(b.x + 1, b.y + 1), accent(), 2.0f, 0, 2.0f);
+  draw->PopClipRect();
+
+  // Scrolling by rows, and the pointer.
+  ImGui::SetCursorScreenPos(c0);
+  ImGui::InvisibleButton("##pixels", ImVec2(std::max(1.0f, c1.x - c0.x), std::max(1.0f, c1.y - c0.y)));
+  const ImGuiIO &io = ImGui::GetIO();
+  if (ImGui::IsWindowHovered() && io.MouseWheel != 0 && !draggingMap_) {
+    const int64_t step = static_cast<int64_t>(rowBytes) * (bitmapTiles_ ? 1 : 4) * static_cast<int64_t>(-io.MouseWheel);
+    const int64_t last = static_cast<int64_t>(sp.base + sp.size) - static_cast<int64_t>(rowBytes);
+    bitmapTop_ = static_cast<uint32_t>(std::clamp<int64_t>(static_cast<int64_t>(bitmapTop_) + step, sp.base,
+                                                           std::max<int64_t>(sp.base, last)));
+  }
+  hovered_.reset();
+  if (ImGui::IsItemHovered()) {
+    const int x = static_cast<int>((io.MousePos.x - c0.x) / zoom);
+    const int y = static_cast<int>((io.MousePos.y - c0.y) / zoom);
+    if (const std::optional<uint32_t> at = addressAt(x, y)) {
+      hovered_ = at;
+      if (cellOf(*at, a, b)) draw->AddRect(a, b, text(0.6f), 1.0f);
+      const std::optional<uint8_t> v = byteAt(*at);
+      const uint8_t value = v ? *v : bitmapBytes_[*at - bitmapTop_];
+      ImGui::SetTooltip("$%s  $%02X\nPixel %d, %d", formatAddress(*at).c_str(), value, x, y);
+      if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) setCaret(*at, io.KeyShift);
+      if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+        view_ = View::Hex;
+        goTo(*at);
+      }
+    }
+  }
+
+  drawMap(ImVec2(mapX, origin.y + 6), ImVec2(MAP_WIDTH, avail.y - 12));
+  ImGui::EndChild();
+}
+
+// Which byte a pixel of a display page came from: the page's own address
+// arithmetic, the interleaved rows of text and hi-res included.
+std::optional<MemoryViewer::ScreenCell> MemoryViewer::screenCellAt(int x, int y) const {
+  using Page = host::MachineHost::DisplayPage;
+  const Page page = static_cast<Page>(screenPage_);
+  if (x < 0 || y < 0 || x >= screenWidth_ || y >= screenHeight_) return std::nullopt;
+  auto textAddress = [](int row, int column) {
+    return static_cast<uint32_t>(((row & 7) << 7) + (row >> 3) * 40 + column);
+  };
+  auto hiResAddress = [](int line, int column) {
+    return static_cast<uint32_t>(((line & 7) << 10) + (((line >> 3) & 7) << 7) + (line >> 6) * 40 + column);
+  };
+  ScreenCell cell;
+  switch (page) {
+  case Page::Text40:
+  case Page::LoRes: {
+    const int row = y / 8, column = x / 14;
+    cell.address = (screenPage2_ ? 0x0800u : 0x0400u) + textAddress(row, column);
+    cell.x0 = column * 14.0f, cell.x1 = cell.x0 + 14, cell.y0 = row * 8.0f, cell.y1 = cell.y0 + 8;
+    break;
+  }
+  case Page::Text80:
+  case Page::DoubleLoRes: {
+    const int row = y / 8, column = x / 7;
+    cell.address = (screenPage2_ ? 0x0800u : 0x0400u) + textAddress(row, column / 2);
+    cell.aux = (column & 1) == 0;
+    cell.x0 = column * 7.0f, cell.x1 = cell.x0 + 7, cell.y0 = row * 8.0f, cell.y1 = cell.y0 + 8;
+    break;
+  }
+  case Page::HiRes: {
+    const int column = x / 14;
+    cell.address = (screenPage2_ ? 0x4000u : 0x2000u) + hiResAddress(y, column);
+    cell.x0 = column * 14.0f, cell.x1 = cell.x0 + 14, cell.y0 = static_cast<float>(y), cell.y1 = cell.y0 + 1;
+    break;
+  }
+  case Page::DoubleHiRes: {
+    const int column = x / 7;
+    cell.address = (screenPage2_ ? 0x4000u : 0x2000u) + hiResAddress(y, column / 2);
+    cell.aux = (column & 1) == 0;
+    cell.x0 = column * 7.0f, cell.x1 = cell.x0 + 7, cell.y0 = static_cast<float>(y), cell.y1 = cell.y0 + 1;
+    break;
+  }
+  case Page::SuperHiRes: {
+    // 160 bytes a line, four of the 640 pixels a byte either way: two
+    // pixels of 320 mode or four of 640.
+    const int column = x / 4;
+    cell.address = 0x2000u + static_cast<uint32_t>(y) * 160 + static_cast<uint32_t>(column);
+    cell.aux = true;
+    cell.x0 = column * 4.0f, cell.x1 = cell.x0 + 4, cell.y0 = static_cast<float>(y), cell.y1 = cell.y0 + 1;
+    break;
+  }
+  }
+  return cell;
+}
+
+// To a byte of a page in the bank it is really in: the Mega II's $E0 or $E1
+// on a IIgs, main or auxiliary RAM itself on the others.
+void MemoryViewer::goToScreenCell(const ScreenCell &cell) {
+  if (wide_) {
+    goTo((cell.aux ? 0xE10000u : 0xE00000u) | cell.address);
+    return;
+  }
+  const host::MemorySpace::Kind kind = cell.aux ? host::MemorySpace::Kind::AuxRAM : host::MemorySpace::Kind::MainRAM;
+  for (size_t i = 0; i < spaces_.size(); i++) {
+    if (spaces_[i].kind == kind) {
+      selectSpace(i);
+      break;
+    }
+  }
+  goTo(cell.address);
+}
+
+void MemoryViewer::drawScreenView(ImVec2 size) {
+  ImGui::BeginChild("##screen", size, ImGuiChildFlags_None,
+                    ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoNav);
+  ImDrawList *draw = ImGui::GetWindowDrawList();
+  const ImVec2 origin = ImGui::GetCursorScreenPos();
+  const ImVec2 avail = ImGui::GetContentRegionAvail();
+  const ImVec2 end(origin.x + avail.x, origin.y + avail.y);
+  draw->AddRectFilled(origin, end, well(), 8.0f);
+  draw->AddRect(origin, end, ImGui::GetColorU32(ImGuiCol_Border), 8.0f);
+  if (screenTexture_ == ImTextureID_Invalid || screenWidth_ <= 0) {
+    ImGui::EndChild();
+    return;
+  }
+
+  // The page at a monitor's 4:3, as large as fits.
+  const float roomW = avail.x - 20, roomH = avail.y - 20;
+  float w = roomW, h = roomW * 0.75f;
+  if (h > roomH) h = roomH, w = roomH / 0.75f;
+  const ImVec2 p0(std::floor(origin.x + (avail.x - w) * 0.5f), std::floor(origin.y + (avail.y - h) * 0.5f));
+  const ImVec2 p1(p0.x + w, p0.y + h);
+  const ImGuiPlatformIO &pio = ImGui::GetPlatformIO();
+  if (pio.DrawCallback_SetSamplerNearest) draw->AddCallback(pio.DrawCallback_SetSamplerNearest, nullptr);
+  draw->AddImage(ImTextureRef(screenTexture_), p0, p1);
+  if (pio.DrawCallback_SetSamplerLinear) draw->AddCallback(pio.DrawCallback_SetSamplerLinear, nullptr);
+  const float sx = w / screenTextureWidth_, sy = h / screenTextureHeight_;
+
+  ImGui::SetCursorScreenPos(p0);
+  ImGui::InvisibleButton("##page", ImVec2(std::max(1.0f, w), std::max(1.0f, h)));
+  hovered_.reset();
+  if (ImGui::IsItemHovered()) {
+    const ImGuiIO &io = ImGui::GetIO();
+    const int x = static_cast<int>((io.MousePos.x - p0.x) / sx);
+    const int y = static_cast<int>((io.MousePos.y - p0.y) / sy);
+    if (const std::optional<ScreenCell> cell = screenCellAt(x, y)) {
+      draw->AddRect(ImVec2(p0.x + cell->x0 * sx, p0.y + cell->y0 * sy),
+                    ImVec2(p0.x + cell->x1 * sx, p0.y + cell->y1 * sy), accent(), 1.0f, 0, 1.5f);
+      const char *bank = wide_ ? (cell->aux ? "$E1" : "$E0") : (cell->aux ? "auxiliary" : "main");
+      ImGui::SetTooltip("$%04X, %s\nLine %d", cell->address, bank, y);
+      if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) goToScreenCell(*cell);
+      if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) view_ = View::Hex;
+    }
+  }
+  ImGui::EndChild();
+}
+
+// ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------
 
@@ -2275,6 +2799,11 @@ void MemoryViewer::writeSettings(std::string &out) const {
                 textApple_ ? 1 : 0, activityOn_ ? 1 : 0, static_cast<int>(follow_), caret_);
   out += line;
   if (const host::MemorySpace *sp = space()) out += "Space=" + sp->name + "\n";
+  std::snprintf(line, sizeof line, "View=%d\nBitmapFormat=%d\nBitmapWidth=%d\nBitmapTiles=%d\nBitmapColour=%d\n"
+                "BitmapZoom=%d\nScreenPage=%d\nScreenPage2=%d\nScreenColours=%d\n",
+                static_cast<int>(view_), static_cast<int>(bitmapFormat_), bitmapWidth_, bitmapTiles_ ? 1 : 0,
+                bitmapColour_ ? 1 : 0, bitmapZoom_, screenPage_, screenPage2_ ? 1 : 0, screenColours_);
+  out += line;
   if (followText_[0]) out += std::string("FollowExpression=") + followText_ + "\n";
   for (uint32_t b : bookmarks_) {
     std::snprintf(line, sizeof line, "Bookmark=%06X\n", b);
@@ -2288,6 +2817,15 @@ void MemoryViewer::readSetting(const char *line) {
   if (std::sscanf(line, "Columns=%d", &value) == 1) columns_ = value == 8 || value == 32 ? value : 16;
   else if (std::sscanf(line, "Apple=%d", &value) == 1) textApple_ = value;
   else if (std::sscanf(line, "Activity=%d", &value) == 1) activityOn_ = value;
+  else if (std::sscanf(line, "View=%d", &value) == 1) view_ = static_cast<View>(std::clamp(value, 0, 2));
+  else if (std::sscanf(line, "BitmapFormat=%d", &value) == 1) bitmapFormat_ = static_cast<BitmapFormat>(std::clamp(value, 0, 4));
+  else if (std::sscanf(line, "BitmapWidth=%d", &value) == 1) bitmapWidth_ = std::clamp(value, 1, 80);
+  else if (std::sscanf(line, "BitmapTiles=%d", &value) == 1) bitmapTiles_ = value;
+  else if (std::sscanf(line, "BitmapColour=%d", &value) == 1) bitmapColour_ = value;
+  else if (std::sscanf(line, "BitmapZoom=%d", &value) == 1) bitmapZoom_ = std::clamp(value, 1, 8);
+  else if (std::sscanf(line, "ScreenPage=%d", &value) == 1) screenPage_ = std::clamp(value, 0, 6);
+  else if (std::sscanf(line, "ScreenPage2=%d", &value) == 1) screenPage2_ = value;
+  else if (std::sscanf(line, "ScreenColours=%d", &value) == 1) screenColours_ = std::clamp(value, 0, 2);
   else if (std::sscanf(line, "Follow=%d", &value) == 1) follow_ = static_cast<Follow>(std::clamp(value, 0, 3));
   else if (std::sscanf(line, "Caret=%x", &address) == 1) wantedTop_ = address & 0xFFFFFF;
   else if (!std::strncmp(line, "Space=", 6)) wantedSpace_ = line + 6;
