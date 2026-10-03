@@ -196,6 +196,83 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
 
 } // namespace
 
+namespace {
+
+// The mouse while the machine has it: the pointer hidden and detached from
+// the mouse, so it stays put while the movement is counted, and the release
+// chord being watched for. Touched only on the main thread.
+struct MouseCapture {
+  bool captured = false;
+  double dx = 0, dy = 0;
+  std::vector<bool> buttons;
+  bool released = false;
+  // Control and Option are down with nothing else; letting them go with no
+  // key pressed in between releases the mouse.
+  bool chordArmed = false;
+};
+MouseCapture g_mouse;
+
+void setMouseCaptured(bool on) {
+  if (on == g_mouse.captured) return;
+  g_mouse.captured = on;
+  g_mouse.dx = g_mouse.dy = 0;
+  g_mouse.buttons.clear();
+  g_mouse.chordArmed = false;
+  CGAssociateMouseAndMouseCursorPosition(on ? false : true);
+  if (on) [NSCursor hide];
+  else [NSCursor unhide];
+}
+
+// Every mouse event while captured is the machine's and goes no further;
+// modifier changes still go on, because they are the machine's keys too.
+void watchMouse() {
+  const NSEventMask mask = NSEventMaskMouseMoved | NSEventMaskLeftMouseDragged | NSEventMaskRightMouseDragged |
+                           NSEventMaskOtherMouseDragged | NSEventMaskLeftMouseDown | NSEventMaskLeftMouseUp |
+                           NSEventMaskRightMouseDown | NSEventMaskRightMouseUp | NSEventMaskOtherMouseDown |
+                           NSEventMaskOtherMouseUp | NSEventMaskScrollWheel | NSEventMaskFlagsChanged |
+                           NSEventMaskKeyDown;
+  [NSEvent addLocalMonitorForEventsMatchingMask:mask
+                                        handler:^NSEvent *(NSEvent *event) {
+    if (!g_mouse.captured) return event;
+    switch (event.type) {
+    case NSEventTypeFlagsChanged: {
+      const NSEventModifierFlags chord = NSEventModifierFlagControl | NSEventModifierFlagOption;
+      const NSEventModifierFlags held =
+          event.modifierFlags & (chord | NSEventModifierFlagCommand | NSEventModifierFlagShift);
+      if (held == chord) {
+        g_mouse.chordArmed = true;
+      } else if (held & ~chord) {
+        g_mouse.chordArmed = false;
+      } else if (held == 0 && g_mouse.chordArmed) {
+        setMouseCaptured(false);
+        g_mouse.released = true;
+      }
+      return event;
+    }
+    case NSEventTypeKeyDown:
+      g_mouse.chordArmed = false;
+      return event;
+    case NSEventTypeLeftMouseDown:
+      g_mouse.buttons.push_back(true);
+      return nil;
+    case NSEventTypeLeftMouseUp:
+      g_mouse.buttons.push_back(false);
+      return nil;
+    case NSEventTypeMouseMoved:
+    case NSEventTypeLeftMouseDragged:
+    case NSEventTypeRightMouseDragged:
+    case NSEventTypeOtherMouseDragged:
+      g_mouse.dx += event.deltaX;
+      g_mouse.dy += event.deltaY;
+      return nil;
+    default:
+      return nil;
+    }
+  }];
+}
+
+} // namespace
+
 @interface AppViewController : NSViewController <MTKViewDelegate>
 @property(nonatomic, strong) id<MTLDevice> device;
 @property(nonatomic, strong) id<MTLCommandQueue> commandQueue;
@@ -301,6 +378,20 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
     [panel beginWithCompletionHandler:^(NSModalResponse result) {
       done(result == NSModalResponseOK ? std::string(panel.URL.path.UTF8String) : std::string());
     }];
+  };
+  platform.captureMouse = [](bool captured) {
+    setMouseCaptured(captured);
+    if (captured) g_mouse.released = false;
+  };
+  platform.takeMouseInput = [] {
+    a2e::native::Platform::MouseInput in;
+    in.dx = static_cast<float>(g_mouse.dx);
+    in.dy = static_cast<float>(g_mouse.dy);
+    in.buttons.swap(g_mouse.buttons);
+    in.released = g_mouse.released;
+    g_mouse.dx = g_mouse.dy = 0;
+    g_mouse.released = false;
+    return in;
   };
   platform.openURL = [](const std::string &url) {
     if (NSURL *target = [NSURL URLWithString:@(url.c_str())]) [NSWorkspace.sharedWorkspace openURL:target];
@@ -532,6 +623,8 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
   [self.window makeKeyAndOrderFront:nil];
   [NSApp activateIgnoringOtherApps:YES];
 
+  watchMouse();
+
   // Command keys skip the menu bar when the machine takes Command as Open
   // Apple, or an ImGui text field is being typed into; Command-Q always
   // reaches the menu, as the Tauri build does it.
@@ -588,9 +681,16 @@ NSArray<UTType *> *contentTypes(const std::vector<std::string> &extensions) {
 
 - (void)applicationDidResignActive:(NSNotification *)notification {
   [self.controller releaseKeys];
+  // Leaving the app gives the pointer back at once; the App hears of it on
+  // its next frame.
+  if (g_mouse.captured) {
+    setMouseCaptured(false);
+    g_mouse.released = true;
+  }
 }
 
 - (void)applicationWillTerminate:(NSNotification *)notification {
+  setMouseCaptured(false);
   [self.controller shutdown];
 }
 

@@ -72,6 +72,19 @@ struct Platform {
                      const std::vector<std::string> &extensions, FileChosen done)>
       saveFile;
 
+  // The mouse, taken for the machine: the pointer hidden and held where it
+  // is, and its movement and left button handed over instead of reaching the
+  // windows. Control-Option, pressed and let go with no other key between,
+  // gives it back, as it does in UTM and Parallels, and so does leaving the
+  // app; either way `released` says so on the next take.
+  struct MouseInput {
+    float dx = 0, dy = 0;       // points moved, down positive, since the last take
+    std::vector<bool> buttons;  // the left button's changes, oldest first
+    bool released = false;
+  };
+  std::function<void(bool captured)> captureMouse;
+  std::function<MouseInput()> takeMouseInput;
+
   // Open a web page in the user's browser.
   std::function<void(const std::string &url)> openURL;
 

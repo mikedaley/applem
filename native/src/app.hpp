@@ -174,6 +174,12 @@ private:
   void drawSwitchConfirmation();
 
   void routeKeyboard();
+  // The mouse, taken for the machine (Platform::captureMouse): a click on the
+  // picture or Machine > Capture Mouse takes it when the machine has one,
+  // and Control-Option gives it back.
+  void setMouseCaptured(bool captured);
+  void updateMouse();
+  void drawMouseHints(ImVec2 p0, ImVec2 p1, bool overPicture);
   void handleAppShortcuts();
   void paste();
   bool switchMachine(MachineId id);
@@ -260,6 +266,16 @@ private:
   // Whether the screen had the keyboard last frame, and the keys it sent down
   // that have not come up, so losing the keyboard can release them.
   bool screenHadKeyboard_ = false;
+  // Whether the machine has a mouse to drive (a IIgs, a //c, or a card), and
+  // whether it has the host's.
+  bool machineHasMouse_ = false;
+  bool mouseCaptured_ = false;
+  bool mouseButtonDown_ = false;
+  MachinePoll mousePoll_;
+  double mouseCapturedAt_ = -10.0;
+  double pictureHoveredSince_ = -1.0;
+  // What is left of a movement smaller than a whole unit, carried over.
+  float mouseCarryX_ = 0, mouseCarryY_ = 0;
   std::set<int> keysDown_; // ImGuiKey values
 
   MenuBar menuBar_;

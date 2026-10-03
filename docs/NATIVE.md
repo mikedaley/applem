@@ -163,6 +163,29 @@ browser's) is uploaded as the source and goes through the same chain. View
 > Full Page fills the main window with the picture (Ctrl+Esc, or the
 right-click menu, to leave); View > Full Screen is macOS's.
 
+## Mouse
+
+A machine with a mouse (a IIgs, a //c, or a //e or II+ with a mouse card,
+as `MachineHost::hasMouse` says) takes the host's when the picture is
+clicked, or from Machine > Capture Mouse. The pointer is hidden and held
+where it is (`CGAssociateMouseAndMouseCursorPosition`), and a local event
+monitor in `main.mm` counts its movement and the left button and keeps
+them from the windows; the App hands them to the machine each frame, a
+whole unit at a time with the rest carried, through the same
+`mouseMove`/`mouseButton` the browser uses. ImGui sees no mouse meanwhile.
+
+**Control-Option gives it back**, pressed and let go with no other key
+between, as UTM and Parallels do. Escape cannot, because Apple II software
+needs it, and a chord with a key in it (Control-Open-Apple-Reset) does
+not release. Leaving the app gives it back too, at once, and so does the
+machine losing its mouse or its power.
+
+It is made to be found: resting the pointer on the picture of a machine
+with a mouse shows "Click to use the mouse"; taking it shows how to give it
+back for a few seconds, over the picture; and the status bar says which it
+is the whole time. The capsules are dark with white text whatever the
+appearance, because they sit on the picture.
+
 ## Disk drives
 
 View > Disk Drives is the browser's Disk Drives and Disk Inspector windows

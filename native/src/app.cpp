@@ -355,6 +355,7 @@ void App::frame() {
   mockingboard_.update();
   debugger_.update();
   memory_.update(settings_.showMemoryViewer);
+  updateMouse();
 
   // The decoder and character set live in the machine's video, which a
   // rebuild replaces, so they are told again whenever they may have gone.
@@ -661,6 +662,12 @@ MenuItem App::machineMenu() {
   }
   items.push_back(MenuItem::separatorItem());
   items.push_back(submenu("Keyboard", keyboard));
+  // Taking the mouse from the menu, for anyone who has not found the click.
+  // Giving it back is Control-Option, since the pointer cannot reach a menu
+  // while the machine has it.
+  items.push_back(item(a, "machine.mouse", mouseCaptured_ ? "Release Mouse (\u2303\u2325)" : "Capture Mouse",
+                       [this] { setMouseCaptured(!mouseCaptured_); }, "", 0, false,
+                       mouseCaptured_ || (machineHasMouse_ && powered)));
 
   std::vector<MenuItem> volumes;
   for (int percent : {25, 50, 75, 100}) {
@@ -992,6 +999,14 @@ void App::drawStatusBar() {
       }
       if (joystick_.cursorKeys) {
         ImGui::TextColored(ImGui::GetStyleColorVec4(ImGuiCol_CheckMark), "Cursor Keys as Joystick");
+        ImGui::SameLine(0, 14);
+      }
+      // The mouse: how to take it, or how to give it back.
+      if (mouseCaptured_) {
+        ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(ui::accentText()), "Mouse captured: \u2303\u2325 releases");
+        ImGui::SameLine(0, 14);
+      } else if (machineHasMouse_ && emulation_.powered()) {
+        ImGui::TextColored(secondary, "Click the screen to use the mouse");
         ImGui::SameLine(0, 14);
       }
       // Sound only when it is not simply working.
@@ -1351,8 +1366,16 @@ void App::drawScreen() {
   }
 
   // Takes the clicks, so a click on the picture focuses the window rather
-  // than starting to drag it.
+  // than starting to drag it, and on a machine with a mouse gives it the
+  // mouse.
   ImGui::InvisibleButton("##screen", ImVec2(std::max(avail.x, 1.0f), std::max(avail.y, 1.0f)));
+  const ImVec2 pointer = ImGui::GetIO().MousePos;
+  const bool overPicture = ImGui::IsItemHovered() && pointer.x >= p0.x && pointer.x < p1.x && pointer.y >= p0.y &&
+                           pointer.y < p1.y;
+  if (overPicture && ImGui::IsItemClicked(ImGuiMouseButton_Left) && machineHasMouse_ && emulation_.powered()) {
+    setMouseCaptured(true);
+  }
+  drawMouseHints(p0, p1, overPicture);
   drawScreenDrop(origin, ImVec2(origin.x + avail.x, origin.y + avail.y));
 }
 
@@ -1433,7 +1456,8 @@ void App::beginLiveResize(bool widthLeads) {
 void App::endLiveResize() {
   liveResize_ = false;
   ImGui::GetIO().ConfigViewportsNoAutoMerge = false;
-  ImGui::GetIO().ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
+  // A captured mouse is the machine's, resize or not.
+  if (!mouseCaptured_) ImGui::GetIO().ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
   // The drag kept the shape; what it left is the new fit.
   fittedAspect_ = screenAspect_;
   fittedExtra_ = screenExtra_;
@@ -1606,6 +1630,106 @@ void App::routeKeyboard() {
       }
     }
   });
+}
+
+void App::setMouseCaptured(bool captured) {
+  if (captured == mouseCaptured_) return;
+  if (captured && !(machineHasMouse_ && emulation_.powered() && platform_.captureMouse)) return;
+  mouseCaptured_ = captured;
+  if (platform_.captureMouse) platform_.captureMouse(captured);
+  ImGuiIO &io = ImGui::GetIO();
+  if (captured) {
+    // ImGui sees no mouse while the machine has it, and leaves the pointer
+    // hidden; the keyboard goes to the screen, where the mouse is.
+    io.ConfigFlags |= ImGuiConfigFlags_NoMouse | ImGuiConfigFlags_NoMouseCursorChange;
+    io.AddMouseButtonEvent(ImGuiMouseButton_Left, false);
+    if (screenWindowName_) ImGui::SetWindowFocus(screenWindowName_);
+    mouseCapturedAt_ = ImGui::GetTime();
+    mouseCarryX_ = mouseCarryY_ = 0;
+    if (platform_.takeMouseInput) platform_.takeMouseInput(); // anything from before
+  } else {
+    io.ConfigFlags &= ~ImGuiConfigFlags_NoMouseCursorChange;
+    if (!liveResize_) io.ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
+    // A button held as the mouse went back is let go, or the machine would
+    // go on dragging.
+    if (mouseButtonDown_) {
+      mouseButtonDown_ = false;
+      emulation_.post([](host::MachineHost &host) { host.mouseButton(false); });
+    }
+  }
+}
+
+// Whether the machine has a mouse, every frame, and while it has the host's,
+// the movement and the button handed over: a whole unit at a time, with the
+// rest carried, so slow movement is not lost.
+void App::updateMouse() {
+  emulation_.poll(mousePoll_, [this](host::MachineHost &host) {
+    machineHasMouse_ = host.isBuilt() && host.hasMouse();
+  });
+  if (!mouseCaptured_) return;
+  Platform::MouseInput in = platform_.takeMouseInput ? platform_.takeMouseInput() : Platform::MouseInput{};
+  if (in.released || !machineHasMouse_ || !emulation_.powered()) {
+    setMouseCaptured(false);
+    return;
+  }
+  mouseCarryX_ += in.dx;
+  mouseCarryY_ += in.dy;
+  const int dx = static_cast<int>(mouseCarryX_);
+  const int dy = static_cast<int>(mouseCarryY_);
+  mouseCarryX_ -= static_cast<float>(dx);
+  mouseCarryY_ -= static_cast<float>(dy);
+  if (!in.buttons.empty()) mouseButtonDown_ = in.buttons.back();
+  if (dx == 0 && dy == 0 && in.buttons.empty()) return;
+  emulation_.post([dx, dy, buttons = std::move(in.buttons)](host::MachineHost &host) {
+    if (dx || dy) host.mouseMove(dx, dy);
+    for (bool down : buttons) host.mouseButton(down);
+  });
+}
+
+// How to use the mouse, said where the user is looking: on the picture, when
+// the pointer rests on a machine that has a mouse, and how to give it back
+// for a few seconds after it is taken. Drawn over the picture, which is dark
+// whatever the appearance, so the capsules are dark with white text.
+void App::drawMouseHints(ImVec2 p0, ImVec2 p1, bool overPicture) {
+  ImDrawList *draw = ImGui::GetWindowDrawList();
+  const double now = ImGui::GetTime();
+  auto capsule = [&](const char *text, float y, float alpha) {
+    if (alpha <= 0.01f) return;
+    const ImVec2 size = ImGui::CalcTextSize(text);
+    const float icon = size.y;
+    const float width = icon + 8 + size.x + 28;
+    const float height = size.y + 14;
+    const ImVec2 a(std::floor((p0.x + p1.x - width) * 0.5f), y);
+    const ImVec2 b(a.x + width, a.y + height);
+    draw->AddRectFilled(a, b, IM_COL32(20, 20, 24, static_cast<int>(200 * alpha)), height * 0.5f);
+    draw->AddRect(a, b, IM_COL32(255, 255, 255, static_cast<int>(40 * alpha)), height * 0.5f);
+    // A mouse, drawn: a rounded body, a button line and the cable's notch.
+    const ImU32 ink = IM_COL32(255, 255, 255, static_cast<int>(235 * alpha));
+    const ImVec2 m(a.x + 14, a.y + 7);
+    const float mw = icon * 0.62f, mh = icon;
+    draw->AddRect(m, ImVec2(m.x + mw, m.y + mh), ink, mw * 0.5f, 0, 1.4f);
+    draw->AddLine(ImVec2(m.x + mw * 0.5f, m.y + 1.5f), ImVec2(m.x + mw * 0.5f, m.y + mh * 0.38f), ink, 1.4f);
+    draw->AddText(ImVec2(m.x + mw + 8, a.y + 7), ink, text);
+  };
+
+  if (mouseCaptured_) {
+    // Shown for four seconds, then faded over one.
+    const float age = static_cast<float>(now - mouseCapturedAt_);
+    const float alpha = std::clamp(5.0f - age, 0.0f, 1.0f);
+    capsule("Mouse captured. Press \u2303\u2325 (Control-Option) to release it", p0.y + 14, alpha);
+    pictureHoveredSince_ = -1.0;
+    return;
+  }
+  if (!overPicture || !machineHasMouse_ || !emulation_.powered()) {
+    pictureHoveredSince_ = -1.0;
+    return;
+  }
+  if (pictureHoveredSince_ < 0) pictureHoveredSince_ = now;
+  // Fades in after the pointer has rested a moment, so it does not flicker
+  // across the picture as the pointer passes over.
+  const float alpha = std::clamp(static_cast<float>(now - pictureHoveredSince_ - 0.4) / 0.25f, 0.0f, 1.0f);
+  const float height = ImGui::GetTextLineHeight() + 14;
+  capsule("Click to use the mouse", p1.y - height - 14, alpha);
 }
 
 void App::releaseKeys() {
