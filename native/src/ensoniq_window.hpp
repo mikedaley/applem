@@ -43,6 +43,13 @@ public:
   // Whether the oscillators are listed. Remembered between runs.
   bool showOscillators = true;
 
+  // A stretch of bytes in view, for a wave that zooms and pans: offsets
+  // from the start of what is shown, not addresses.
+  struct WaveView {
+    double start = 0;
+    double span = 0; // 0: all of it
+  };
+
 private:
   struct Oscillator {
     uint16_t frequency = 0;
@@ -50,6 +57,8 @@ private:
     uint8_t control = 0;
     uint8_t tableSize = 0;
     uint8_t data = 0x80;
+    uint8_t pointer = 0;      // the wave table pointer register, as written
+    uint32_t accumulator = 0; // the chip's own position, fractional steps
     uint32_t start = 0;     // the table's first byte in sound RAM
     uint32_t length = 256;  // bytes
     int resolution = 0;
@@ -63,6 +72,9 @@ private:
   void drawRam(float width);
   void drawOscillators(float width);
   void drawOscillator(int index, float width, float height);
+  // One oscillator in full, in place of the list: everything it holds, and
+  // its table as a wave that zooms and pans.
+  void drawOscillatorDetail(int index, float width);
 
   Emulation &emulation_;
   MachinePoll updatePoll_;
@@ -80,9 +92,14 @@ private:
   uint8_t control_ = 0;
   uint16_t address_ = 0;
   bool showAll_ = false;
-  // The part of the sound RAM in view, in bytes.
-  double ramStart_ = 0;
-  double ramSpan_ = 65536;
+  // The part of the sound RAM in view.
+  WaveView ramView_;
+  // The oscillator shown in full, or -1 for the list; the part of its table
+  // in view; and whether the view keeps the playhead in it.
+  int selected_ = -1;
+  WaveView tableView_;
+  uint32_t tableViewLength_ = 0;
+  bool follow_ = false;
   // The window's height while it lists the oscillators, to go back to.
   float listedHeight_ = 0;
   float restoreHeight_ = 0;

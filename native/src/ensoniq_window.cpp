@@ -140,6 +140,175 @@ const char *sizeName(uint32_t length) {
   return "?";
 }
 
+using WaveView = EnsoniqWindow::WaveView;
+
+// A view kept inside what it shows: never wider than all of it, never
+// narrower than `minSpan` bytes, and never past either end.
+void clampView(WaveView &v, double total, double minSpan) {
+  if (v.span <= 0) v.span = total;
+  v.span = std::clamp(v.span, std::min(minSpan, total), total);
+  v.start = std::clamp(v.start, 0.0, total - v.span);
+}
+
+void zoomAbout(WaveView &v, double at, double factor, double total, double minSpan) {
+  const double span = std::clamp(v.span * factor, std::min(minSpan, total), total);
+  v.start = std::clamp(at - (at - v.start) * (span / v.span), 0.0, total - span);
+  v.span = span;
+}
+
+// The pointer over a wave: scroll to zoom about it, drag to pan,
+// double-click to see all of it. Returns whether it is over the wave.
+bool interactWave(const char *id, ImVec2 a, ImVec2 b, WaveView &v, double total, double minSpan) {
+  ImGuiIO &io = ImGui::GetIO();
+  ImGui::SetCursorScreenPos(a);
+  ImGui::InvisibleButton(id, ImVec2(b.x - a.x, b.y - a.y));
+  const bool hovered = ImGui::IsItemHovered();
+  const float width = b.x - a.x;
+  if (hovered) {
+    ImGui::SetItemKeyOwner(ImGuiKey_MouseWheelY);
+    if (io.MouseWheel != 0) {
+      zoomAbout(v, v.start + (io.MousePos.x - a.x) / width * v.span, std::pow(0.8, io.MouseWheel), total, minSpan);
+    }
+    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+      v.start = 0;
+      v.span = total;
+    }
+    if (v.span < total) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+  }
+  if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 2.0f)) {
+    v.start = std::clamp(v.start - io.MouseDelta.x / width * v.span, 0.0, total - v.span);
+  }
+  return hovered;
+}
+
+// Zoom out, zoom in and Fit, ending at `right`, with what is in view written
+// to their left. Returns the width they took.
+void zoomControls(const char *id, ImDrawList *draw, float right, float y, float height, WaveView &v, double total,
+                  double minSpan, const char *range) {
+  ImGui::PushID(id);
+  const float fitWidth = ImGui::CalcTextSize("Fit").x + ImGui::GetStyle().FramePadding.x * 2;
+  const float button = ImGui::GetFrameHeight() * 1.3f;
+  const float bx = right - fitWidth - 2 * (button + 4);
+  const float by = y + (height - ImGui::GetFrameHeight()) * 0.5f;
+  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
+  const float rw = ImGui::CalcTextSize(range).x;
+  draw->AddText(ImVec2(bx - 12 - rw, y + (height - ImGui::GetTextLineHeight()) * 0.5f), secondary(), range);
+  ImGui::PopFont();
+  const double middle = v.start + v.span * 0.5;
+  ImGui::SetCursorScreenPos(ImVec2(bx, by));
+  ImGui::BeginDisabled(v.span >= total);
+  if (ui::Button("\xE2\x88\x92##out", ImVec2(button, 0))) zoomAbout(v, middle, 2.0, total, minSpan);
+  ImGui::EndDisabled();
+  if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("Zoom out");
+  ImGui::SameLine(0, 4);
+  ImGui::BeginDisabled(v.span <= std::min(minSpan, total));
+  if (ui::Button("+##in", ImVec2(button, 0))) zoomAbout(v, middle, 0.5, total, minSpan);
+  ImGui::EndDisabled();
+  if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+    ImGui::SetTooltip("Zoom in, or scroll over the wave; drag to move along it");
+  }
+  ImGui::SameLine(0, 4);
+  ImGui::BeginDisabled(v.span >= total);
+  if (ui::Button("Fit")) {
+    v.start = 0;
+    v.span = total;
+  }
+  ImGui::EndDisabled();
+  ImGui::PopID();
+}
+
+// The bytes in view, from `base` on (wrapping round the 64K), drawn across
+// [a, b): further out a column a pixel, the lowest and highest sample under
+// it; close in every byte its own step, joined to the next, with its value
+// written on it when there is room. A zero byte stops an oscillator, so it
+// is marked rather than drawn as a sample.
+void drawWave(ImDrawList *draw, ImVec2 a, ImVec2 b, const std::vector<uint8_t> &ram, uint32_t base,
+              const WaveView &v, ImU32 colour) {
+  if (ram.size() != iigs::SOUND_RAM_SIZE) return;
+  const ui::Palette &p = ui::palette();
+  const float width = b.x - a.x;
+  const float mid = (a.y + b.y) * 0.5f;
+  const float half = (b.y - a.y - 8) * 0.5f;
+  const double perPixel = v.span / width;
+  auto at = [&](int64_t offset) { return static_cast<int>(ram[(base + static_cast<uint32_t>(offset)) & 0xFFFF]); };
+  auto yFor = [&](int value) { return mid - half * ((value - 0x80) / 128.0f); };
+  draw->AddLine(ImVec2(a.x, mid), ImVec2(b.x, mid), text(0.1f));
+
+  if (perPixel >= 1.0) {
+    const int columns = static_cast<int>(width);
+    for (int c = 0; c < columns; c++) {
+      const int64_t o0 = static_cast<int64_t>(v.start + c * perPixel);
+      const int64_t o1 = std::max<int64_t>(static_cast<int64_t>(v.start + (c + 1) * perPixel), o0 + 1);
+      int lo = 0x80, hi = 0x80;
+      bool any = false, zero = false;
+      for (int64_t o = o0; o < o1; o++) {
+        const int value = at(o);
+        if (!value) {
+          zero = true;
+          continue;
+        }
+        lo = any ? std::min(lo, value) : value;
+        hi = any ? std::max(hi, value) : value;
+        any = true;
+      }
+      const float x = a.x + c;
+      // A zero on its own in a column is the end of a table; a column of
+      // nothing but zeros is just empty memory, and left so.
+      if (zero && any && perPixel < 64) {
+        draw->AddLine(ImVec2(x + 0.5f, a.y + 3), ImVec2(x + 0.5f, b.y - 3), withAlpha(p.red, 0.6f));
+      }
+      if (!any) continue;
+      draw->AddRectFilled(ImVec2(x, yFor(hi) - 0.5f), ImVec2(x + 1, yFor(lo) + 0.5f), colour);
+    }
+    return;
+  }
+
+  const int64_t first = static_cast<int64_t>(v.start);
+  const int64_t last = static_cast<int64_t>(std::ceil(v.start + v.span));
+  const float step = static_cast<float>(1.0 / perPixel);
+  auto xFor = [&](int64_t offset) { return a.x + static_cast<float>((offset - v.start) / perPixel); };
+  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
+  const bool values = step >= ImGui::CalcTextSize("FF").x + 6;
+  const float lineHeight = ImGui::GetTextLineHeight();
+  for (int64_t o = first; o < last; o++) {
+    const int value = at(o);
+    const float x0 = xFor(o), x1 = xFor(o + 1);
+    if (!value) {
+      draw->AddRectFilled(ImVec2(x0, a.y + 2), ImVec2(x1 - 1, b.y - 2), withAlpha(p.red, 0.18f));
+      continue;
+    }
+    const float vy = yFor(value);
+    draw->AddLine(ImVec2(x0, vy), ImVec2(x1, vy), colour, 2.0f);
+    if (o + 1 < last && at(o + 1)) draw->AddLine(ImVec2(x1, vy), ImVec2(x1, yFor(at(o + 1))), withAlpha(colour, 0.5f));
+    if (values) {
+      char hex[4];
+      std::snprintf(hex, sizeof hex, "%02X", value);
+      const float tw = ImGui::CalcTextSize(hex).x;
+      const float ty = value >= 0x80 ? vy + 3 : vy - lineHeight - 2;
+      draw->AddText(ImVec2((x0 + x1 - tw) * 0.5f, std::clamp(ty, a.y + 1, b.y - lineHeight - 1)), secondary(), hex);
+    }
+  }
+  ImGui::PopFont();
+}
+
+// Addresses along the bottom of a wave, at a power of two that gives about
+// eight across.
+void drawTicks(ImDrawList *draw, float left, float right, float y, uint32_t base, const WaveView &v) {
+  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
+  uint32_t tick = 0x2000;
+  while (tick > 1 && v.span / tick < 6) tick /= 2;
+  const double perPixel = v.span / (right - left);
+  const float labelWidth = ImGui::CalcTextSize("$0000").x;
+  for (uint64_t t = static_cast<uint64_t>(std::ceil(v.start / tick)) * tick; t < v.start + v.span; t += tick) {
+    char label[8];
+    std::snprintf(label, sizeof label, "$%04X", static_cast<unsigned>((base + t) & 0xFFFF));
+    const float lx = left + static_cast<float>((t - v.start) / perPixel);
+    draw->AddLine(ImVec2(lx, y), ImVec2(lx, y + 4), text(0.2f));
+    if (lx + 3 + labelWidth <= right) draw->AddText(ImVec2(lx + 3, y + 1), secondary(), label);
+  }
+  ImGui::PopFont();
+}
+
 } // namespace
 
 EnsoniqWindow::EnsoniqWindow(Emulation &emulation) : emulation_(emulation) {}
@@ -187,6 +356,8 @@ void EnsoniqWindow::take() {
       osc.tableSize = o.tableSize;
       osc.data = o.data;
       osc.interruptPending = o.interruptPending;
+      osc.pointer = o.waveTablePointer;
+      osc.accumulator = o.accumulator;
       // The table: its size and resolution from $C0, and its start from the
       // pointer, the bank bit and as many low bits masked as the table is
       // long, as the chip finds it.
@@ -268,16 +439,12 @@ void EnsoniqWindow::drawChip(float width) {
   ImGui::Dummy(ImVec2(width, height));
 }
 
-// The sound RAM as a waveform, every byte's distance from $80 drawn up and
-// down from the middle, with the table of every running oscillator
+// The sound RAM as a waveform, with the table of every running oscillator
 // bracketed under it and its playhead. Scroll over it to zoom about the
-// pointer, from all 64K down to a few dozen bytes, where each byte is a
-// step of its own and, wide enough, its value; drag to pan; double-click,
-// or Fit, for the whole of it. A zero byte stops an oscillator, so zeros
-// close in are marked.
+// pointer, from all 64K down to a few dozen bytes; drag to pan; double-click,
+// or Fit, for the whole of it (drawWave).
 void EnsoniqWindow::drawRam(float width) {
   ImDrawList *draw = ImGui::GetWindowDrawList();
-  const ui::Palette &p = ui::palette();
   ImGuiIO &io = ImGui::GetIO();
   const ImVec2 start = ImGui::GetCursorScreenPos();
   const float line = ImGui::GetTextLineHeight();
@@ -293,133 +460,23 @@ void EnsoniqWindow::drawRam(float width) {
   float y = start.y + PAD;
   caption(draw, ImVec2(left, y + (header - ImGui::GetFontSize() * ui::SMALL_TEXT) * 0.5f), "SOUND RAM");
 
-  // How much of it is in view, and the buttons that change that.
   const double total = iigs::SOUND_RAM_SIZE;
-  ramSpan_ = std::clamp(ramSpan_, RAM_MIN_SPAN, total);
-  ramStart_ = std::clamp(ramStart_, 0.0, total - ramSpan_);
-  auto zoomAbout = [&](double at, double factor) {
-    const double span = std::clamp(ramSpan_ * factor, RAM_MIN_SPAN, total);
-    ramStart_ = std::clamp(at - (at - ramStart_) * (span / ramSpan_), 0.0, total - span);
-    ramSpan_ = span;
-  };
-  {
-    char range[48];
-    const int first = static_cast<int>(ramStart_);
-    const int last = std::min(static_cast<int>(ramStart_ + ramSpan_), 65536) - 1;
-    std::snprintf(range, sizeof range, "$%04X-$%04X  %s", first, last,
-                  ramSpan_ >= total ? "all 64K" : "");
-    const float fitWidth = ImGui::CalcTextSize("Fit").x + ImGui::GetStyle().FramePadding.x * 2;
-    const float button = ImGui::GetFrameHeight() * 1.3f;
-    float bx = left + inner - fitWidth - 2 * (button + 4);
-    ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
-    const float rw = ImGui::CalcTextSize(range).x;
-    draw->AddText(ImVec2(bx - 12 - rw, y + (header - ImGui::GetTextLineHeight()) * 0.5f), secondary(), range);
-    ImGui::PopFont();
-    const double middle = ramStart_ + ramSpan_ * 0.5;
-    ImGui::SetCursorScreenPos(ImVec2(bx, y));
-    ImGui::BeginDisabled(ramSpan_ >= total);
-    if (ui::Button("\xE2\x88\x92##zoomout", ImVec2(button, 0))) zoomAbout(middle, 2.0);
-    ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("Zoom out");
-    ImGui::SameLine(0, 4);
-    ImGui::BeginDisabled(ramSpan_ <= RAM_MIN_SPAN);
-    if (ui::Button("+##zoomin", ImVec2(button, 0))) zoomAbout(middle, 0.5);
-    ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-      ImGui::SetTooltip("Zoom in, or scroll over the RAM");
-    }
-    ImGui::SameLine(0, 4);
-    ImGui::BeginDisabled(ramSpan_ >= total);
-    if (ui::Button("Fit")) {
-      ramStart_ = 0;
-      ramSpan_ = total;
-    }
-    ImGui::EndDisabled();
-  }
+  clampView(ramView_, total, RAM_MIN_SPAN);
+  char range[48];
+  std::snprintf(range, sizeof range, "$%04X-$%04X%s", static_cast<int>(ramView_.start),
+                std::min(static_cast<int>(ramView_.start + ramView_.span), 65536) - 1,
+                ramView_.span >= total ? "  all 64K" : "");
+  zoomControls("ramzoom", draw, left + inner, y, header, ramView_, total, RAM_MIN_SPAN, range);
   y += header + 6;
 
   const ImVec2 wa(left, y), wb(left + inner, y + RAM_HEIGHT);
-
-  // The pointer: scroll to zoom about it, drag to pan, double-click to fit.
-  ImGui::SetCursorScreenPos(wa);
-  ImGui::InvisibleButton("##ram", ImVec2(inner, RAM_HEIGHT + lanes));
-  const bool hovered = ImGui::IsItemHovered();
-  if (hovered) {
-    ImGui::SetItemKeyOwner(ImGuiKey_MouseWheelY);
-    if (io.MouseWheel != 0) {
-      zoomAbout(ramStart_ + (io.MousePos.x - wa.x) / inner * ramSpan_, std::pow(0.8, io.MouseWheel));
-    }
-    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-      ramStart_ = 0;
-      ramSpan_ = total;
-    }
-    if (ramSpan_ < total) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-  }
-  if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 2.0f)) {
-    ramStart_ = std::clamp(ramStart_ - io.MouseDelta.x / inner * ramSpan_, 0.0, total - ramSpan_);
-  }
-
-  const double perPixel = ramSpan_ / inner;
-  auto xFor = [&](double address) { return wa.x + static_cast<float>((address - ramStart_) / perPixel); };
+  const bool hovered = interactWave("##ram", wa, ImVec2(wb.x, wb.y + lanes), ramView_, total, RAM_MIN_SPAN);
+  const double perPixel = ramView_.span / inner;
+  auto xFor = [&](double address) { return wa.x + static_cast<float>((address - ramView_.start) / perPixel); };
 
   draw->AddRectFilled(wa, wb, well(), 6.0f);
   draw->PushClipRect(wa, ImVec2(wb.x, wb.y + lanes + 2), true);
-  const float mid = (wa.y + wb.y) * 0.5f;
-  const float half = (RAM_HEIGHT - 6) * 0.5f;
-  if (ram_.size() == iigs::SOUND_RAM_SIZE) {
-    draw->AddLine(ImVec2(wa.x, mid), ImVec2(wb.x, mid), text(0.1f));
-    if (perPixel >= 1.0) {
-      // A column a pixel: the lowest and highest sample under it.
-      const int columns = static_cast<int>(inner);
-      for (int c = 0; c < columns; c++) {
-        const int a0 = static_cast<int>(ramStart_ + c * perPixel);
-        const int a1 = std::min(static_cast<int>(ramStart_ + (c + 1) * perPixel), 65536);
-        int lo = 0, hi = 0;
-        bool any = false;
-        for (int a = a0; a < std::max(a1, a0 + 1); a++) {
-          const int v = ram_[a];
-          if (!v) continue;
-          const int d = v - 0x80;
-          lo = any ? std::min(lo, d) : d;
-          hi = any ? std::max(hi, d) : d;
-          any = true;
-        }
-        if (!any) continue;
-        const float x = wa.x + c;
-        draw->AddRectFilled(ImVec2(x, mid - half * (hi / 128.0f) - 0.5f), ImVec2(x + 1, mid - half * (lo / 128.0f) + 0.5f),
-                            text(0.45f));
-      }
-    } else {
-      // Close in: every byte its own step, a zero marked, and the value
-      // written over it when there is room.
-      const int first = static_cast<int>(ramStart_);
-      const int last = std::min(static_cast<int>(std::ceil(ramStart_ + ramSpan_)), 65535);
-      const float step = static_cast<float>(1.0 / perPixel);
-      ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
-      const bool values = step >= ImGui::CalcTextSize("FF").x + 6;
-      for (int a = first; a <= last; a++) {
-        const int v = ram_[a];
-        const float x0 = xFor(a), x1 = xFor(a + 1);
-        if (!v) {
-          draw->AddRectFilled(ImVec2(x0, wa.y + 2), ImVec2(x1 - 1, wb.y - 2), withAlpha(p.red, 0.18f));
-          continue;
-        }
-        const float vy = mid - half * ((v - 0x80) / 128.0f);
-        draw->AddLine(ImVec2(x0, vy), ImVec2(x1, vy), text(0.7f), 2.0f);
-        if (a < last && ram_[a + 1]) {
-          draw->AddLine(ImVec2(x1, vy), ImVec2(x1, mid - half * ((ram_[a + 1] - 0x80) / 128.0f)), text(0.35f), 1.0f);
-        }
-        if (values) {
-          char hex[4];
-          std::snprintf(hex, sizeof hex, "%02X", v);
-          const float tw = ImGui::CalcTextSize(hex).x;
-          draw->AddText(ImVec2((x0 + x1 - tw) * 0.5f, v >= 0x80 ? vy + 3 : vy - ImGui::GetTextLineHeight() - 2),
-                        secondary(), hex);
-        }
-      }
-      ImGui::PopFont();
-    }
-  }
+  drawWave(draw, wa, wb, ram_, 0, ramView_, text(0.5f));
 
   // The tables in use, a lane under the RAM, and where each one is playing.
   const float laneY = wb.y + 4;
@@ -430,31 +487,18 @@ void EnsoniqWindow::drawRam(float width) {
     const float x1 = xFor(std::min<uint32_t>(o.start + o.length, 65536));
     if (x1 < wa.x || x0 > wb.x) continue;
     const ImU32 colour = hueFor(i);
-    draw->AddRectFilled(ImVec2(x0, laneY), ImVec2(std::max(x1, x0 + 2), laneY + 3), colour, 1.5f);
-    draw->AddRectFilled(ImVec2(x0, wa.y), ImVec2(std::max(x1, x0 + 1), wb.y), withAlpha(colour, 0.10f));
+    const float weight = i == selected_ ? 2.0f : 1.0f;
+    draw->AddRectFilled(ImVec2(x0, laneY), ImVec2(std::max(x1, x0 + 2), laneY + 3 * weight), colour, 1.5f);
+    draw->AddRectFilled(ImVec2(x0, wa.y), ImVec2(std::max(x1, x0 + 1), wb.y), withAlpha(colour, 0.10f * weight));
     const float px = xFor(o.start + o.position);
     draw->AddLine(ImVec2(px, wa.y + 2), ImVec2(px, wb.y - 2), colour, 1.5f);
   }
   draw->PopClipRect();
-
-  // The addresses, under the lanes, at a power of two that gives about eight.
-  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
-  uint32_t tick = 0x2000;
-  while (tick > 1 && ramSpan_ / tick < 6) tick /= 2;
-  const uint32_t firstTick = static_cast<uint32_t>(std::ceil(ramStart_ / tick)) * tick;
-  const float labelWidth = ImGui::CalcTextSize("$0000").x;
-  for (uint32_t t = firstTick; t < ramStart_ + ramSpan_ && t < 65536; t += tick) {
-    char label[8];
-    std::snprintf(label, sizeof label, "$%04X", t);
-    const float lx = xFor(t);
-    draw->AddLine(ImVec2(lx, laneY + lanes - 4), ImVec2(lx, laneY + lanes), text(0.2f));
-    if (lx + 3 + labelWidth <= wb.x) draw->AddText(ImVec2(lx + 3, laneY + lanes - 3), secondary(), label);
-  }
-  ImGui::PopFont();
+  drawTicks(draw, wa.x, wb.x, laneY + lanes - 4, 0, ramView_);
 
   // What is under the pointer: a byte close in, a page from further out.
   if (hovered && !ImGui::IsMouseDragging(ImGuiMouseButton_Left, 2.0f)) {
-    const int at = std::clamp(static_cast<int>(ramStart_ + (io.MousePos.x - wa.x) * perPixel), 0, 65535);
+    const int at = std::clamp(static_cast<int>(ramView_.start + (io.MousePos.x - wa.x) * perPixel), 0, 65535);
     std::string users;
     for (int i = 0; i < shown; i++) {
       const Oscillator &o = oscillators_[i];
@@ -619,9 +663,17 @@ void EnsoniqWindow::drawOscillator(int index, float width, float height) {
   ImGui::PopFont();
   if (ui::IsHoveringRect(wa, wb)) {
     ImGui::SetTooltip("Table $%04X-$%04X, %u bytes, resolution %d\nPlaying byte %u of it; it last read $%02X\n"
-                      "Channel %d (only a stereo card would separate them)",
+                      "Channel %d (only a stereo card would separate them)\nClick to open it in full",
                       o.start, (o.start + o.length - 1) & 0xFFFF, o.length, o.resolution, o.position, o.data,
                       (o.control & IIgsSound::OSC_CHANNEL_MASK) >> 4);
+  }
+
+  // Anywhere on the row but its mute button opens it in full.
+  const ImVec2 rowA(origin.x + 26, origin.y - 2), rowB(origin.x + width, origin.y + height + 2);
+  if (ui::IsHoveringRect(rowA, rowB)) {
+    draw->AddRect(rowA, rowB, withAlpha(hue, 0.5f), 7.0f, 0, 1.5f);
+    ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) selected_ = index;
   }
 
   ImGui::SetCursorScreenPos(origin);
@@ -662,6 +714,225 @@ void EnsoniqWindow::drawOscillators(float width) {
   ImGui::Dummy(ImVec2(width, height));
 }
 
+// One oscillator in full: what it is doing, every register it has, and its
+// table as a wave across the whole card that zooms and pans as the sound RAM
+// does, with the playhead on it and, if asked, kept in view.
+void EnsoniqWindow::drawOscillatorDetail(int index, float width) {
+  ImDrawList *draw = ImGui::GetWindowDrawList();
+  const ui::Palette &p = ui::palette();
+  const Oscillator &o = oscillators_[index];
+  const ImVec2 start = ImGui::GetCursorScreenPos();
+  const float line = ImGui::GetTextLineHeight();
+  const float frame = ImGui::GetFrameHeight();
+  const bool scanned = index < enabled_;
+  const bool running = scanned && !(o.control & IIgsSound::OSC_HALT);
+  const bool muted = mutes & (1u << index);
+  const ImU32 hue = hueFor(index);
+  const int mode = (o.control & IIgsSound::OSC_MODE_MASK) >> 1;
+  const bool irqEnabled = o.control & IIgsSound::OSC_INTERRUPT_ENABLE;
+  const int channel = (o.control & IIgsSound::OSC_CHANNEL_MASK) >> 4;
+  const int partner = index ^ 1;
+
+  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
+  const float smallLine = ImGui::GetTextLineHeight();
+  ImGui::PopFont();
+  const float rowGap = 12;
+  const float fixed = PAD + frame + rowGap + pillHeight() + rowGap + smallLine + rowGap + smallLine * 2 + 6 + rowGap +
+                      frame + 6 + smallLine + 6 + PAD;
+  const float height = std::max(ImGui::GetContentRegionAvail().y - 2, fixed + 160);
+  card(draw, start, ImVec2(start.x + width, start.y + height));
+  const float left = start.x + PAD;
+  const float right = start.x + width - PAD;
+  float y = start.y + PAD;
+
+  // Back to the list, its mute, its number, and the ones either side.
+  ImGui::PushID("detail");
+  ImGui::SetCursorScreenPos(ImVec2(left, y));
+  if (ui::Button("\xE2\x80\xB9  All oscillators") ||
+      (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && ImGui::IsKeyPressed(ImGuiKey_Escape))) {
+    selected_ = -1;
+  }
+  float x = ImGui::GetItemRectMax().x + 14;
+  const float mid = y + frame * 0.5f;
+  ImGui::SetCursorScreenPos(ImVec2(x, mid - 12));
+  if (ImGui::InvisibleButton("##mute", ImVec2(26, 24))) setMute(index, !muted);
+  const bool muteHovered = ImGui::IsItemHovered();
+  if (muteHovered) ImGui::SetTooltip(muted ? "Hear oscillator %d" : "Leave oscillator %d out of the mix", index);
+  draw->AddRectFilled(ImVec2(x, mid - 12), ImVec2(x + 26, mid + 12),
+                      muted ? withAlpha(p.red, 0.22f) : text(muteHovered ? 0.12f : 0.06f), 6.0f);
+  speaker(draw, ImVec2(x + 12, mid), muted, muted ? p.red : secondary());
+  x += 36;
+
+  char number[8];
+  std::snprintf(number, sizeof number, "%02d", index);
+  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 1.2f);
+  const ImVec2 ns = ImGui::CalcTextSize(number);
+  const ImVec2 ba(x, mid - ns.y * 0.5f - 3), bb(x + ns.x + 14, mid + ns.y * 0.5f + 3);
+  if (running) draw->AddRectFilled(ba, bb, hue, 6.0f);
+  else draw->AddRect(ba, bb, withAlpha(hue, 0.7f), 6.0f, 0, 1.5f);
+  draw->AddText(ImVec2(ba.x + 7, mid - ns.y * 0.5f), running ? ui::textOn(hue) : secondary(), number);
+  ImGui::PopFont();
+  x = bb.x + 12;
+  char title[64];
+  std::snprintf(title, sizeof title, "Oscillator %d", index);
+  ImGui::PushFont(nullptr, ImGui::GetFontSize() * 1.15f);
+  const float titleHeight = ImGui::GetTextLineHeight();
+  draw->AddText(ImVec2(x, mid - titleHeight * 0.5f), text(), title);
+  x += ImGui::CalcTextSize(title).x + 12;
+  ImGui::PopFont();
+  char pair[64];
+  std::snprintf(pair, sizeof pair, "%s of pair %d, with %02d%s", index & 1 ? "odd" : "even", index / 2, partner,
+                scanned ? "" : "  \xC2\xB7  not scanned");
+  draw->AddText(ImVec2(x, mid - line * 0.5f), secondary(), pair);
+
+  const float arrow = frame * 1.3f;
+  ImGui::SetCursorScreenPos(ImVec2(right - 2 * arrow - 4, y));
+  ImGui::BeginDisabled(index == 0);
+  if (ui::Button("\xE2\x80\xB9##prev", ImVec2(arrow, 0))) selected_ = index - 1;
+  ImGui::EndDisabled();
+  if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("The oscillator before");
+  ImGui::SameLine(0, 4);
+  ImGui::BeginDisabled(index == DOC_OSCILLATORS - 1);
+  if (ui::Button("\xE2\x80\xBA##next", ImVec2(arrow, 0))) selected_ = index + 1;
+  ImGui::EndDisabled();
+  if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("The oscillator after");
+  y += frame + rowGap;
+
+  // What it is doing.
+  const float py = y;
+  x = left;
+  x += pill(draw, ImVec2(x, py), running ? "RUNNING" : "HALTED", running, running ? p.green : p.red, "RUNNING") + 6;
+  x += pill(draw, ImVec2(x, py), MODE_NAMES[mode], running, withAlpha(hue, 0.85f), "SWAP") + 8;
+  ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
+  const float textY = py + (pillHeight() - ImGui::GetTextLineHeight()) * 0.5f;
+  draw->AddText(ImVec2(x, textY), text(0.78f), MODE_TIPS[mode]);
+  ImGui::PopFont();
+  y += pillHeight() + rowGap;
+
+  // Its readings, as label and value.
+  const double hz = sampleRate_ * o.frequency / std::ldexp(1.0, 17 + o.resolution);
+  char note[16] = "--";
+  if (o.frequency && hz >= 16 && hz <= 20000) {
+    const int n = static_cast<int>(std::lround(12 * std::log2(hz / 440.0) + 69));
+    std::snprintf(note, sizeof note, "%s%d", NOTE_NAMES[((n % 12) + 12) % 12], n / 12 - 1);
+  }
+  char value[48];
+  x = left;
+  std::snprintf(value, sizeof value, "%s", note);
+  x += field(draw, ImVec2(x, y), "NOTE", value, ui::accentText(), "C#10") + 22;
+  std::snprintf(value, sizeof value, hz >= 1000 ? "%.0f Hz" : hz >= 10 ? "%.1f Hz" : "%.2f Hz", hz);
+  x += field(draw, ImVec2(x, y), "PITCH", value, text(), "00000 Hz") + 22;
+  std::snprintf(value, sizeof value, "$%04X", o.frequency);
+  x += field(draw, ImVec2(x, y), "FREQ", value, p.blue, "$FFFF") + 22;
+  std::snprintf(value, sizeof value, "%d", o.resolution);
+  x += field(draw, ImVec2(x, y), "RES", value, text(), "7") + 22;
+  std::snprintf(value, sizeof value, "%d", o.volume);
+  x += field(draw, ImVec2(x, y), "VOL", value, text(), "255") + 8;
+  const float meter = 120;
+  const float my = y + smallLine * 0.5f;
+  draw->AddRectFilled(ImVec2(x, my - 3), ImVec2(x + meter, my + 3), text(0.08f), 3.0f);
+  draw->AddRectFilled(ImVec2(x, my - 3), ImVec2(x + meter * (o.volume / 255.0f), my + 3), hue, 3.0f);
+  x += meter + 22;
+  std::snprintf(value, sizeof value, "%s%s", irqEnabled ? "on" : "off", o.interruptPending ? ", pending" : "");
+  x += field(draw, ImVec2(x, y), "IRQ", value, o.interruptPending ? p.red : text(), "off, pending") + 22;
+  std::snprintf(value, sizeof value, "%d", channel);
+  field(draw, ImVec2(x, y), "CHANNEL", value, text(), "15");
+  y += smallLine + 6;
+
+  x = left;
+  std::snprintf(value, sizeof value, "$%04X-$%04X", o.start, (o.start + o.length - 1) & 0xFFFF);
+  x += field(draw, ImVec2(x, y), "TABLE", value, p.blue, "$0000-$FFFF") + 10;
+  x += field(draw, ImVec2(x, y), "", sizeName(o.length), text(), "32K") + 22;
+  std::snprintf(value, sizeof value, "$%02X%s", o.pointer, (o.tableSize & IIgsSound::SIZE_BANK) ? ", bank 1" : "");
+  x += field(draw, ImVec2(x, y), "POINTER", value, text(), "$FF, bank 1") + 22;
+  std::snprintf(value, sizeof value, "%u of %u", o.position, o.length);
+  x += field(draw, ImVec2(x, y), "PLAYING", value, text(), "32767 of 32768") + 22;
+  std::snprintf(value, sizeof value, "$%06X", o.accumulator & 0xFFFFFF);
+  x += field(draw, ImVec2(x, y), "ACC", value, text(), "$FFFFFF") + 22;
+  std::snprintf(value, sizeof value, "$%02X", o.data);
+  field(draw, ImVec2(x, y), "LAST READ", value, p.purple, "$FF");
+  y += smallLine + rowGap;
+
+  // Its seven registers, by their numbers in the chip.
+  struct Register {
+    const char *name;
+    int base;
+    int value;
+  };
+  const Register registers[] = {
+      {"FREQ LO", 0x00, o.frequency & 0xFF}, {"FREQ HI", 0x20, o.frequency >> 8}, {"VOL", 0x40, o.volume},
+      {"DATA", 0x60, o.data},                {"PTR", 0x80, o.pointer},            {"CTRL", 0xA0, o.control},
+      {"SIZE", 0xC0, o.tableSize},
+  };
+  x = left;
+  caption(draw, ImVec2(x, y + 1), "REGISTERS");
+  ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
+  x += ImGui::CalcTextSize("REGISTERS").x + 16;
+  ImGui::PopFont();
+  for (const Register &r : registers) {
+    char name[24];
+    std::snprintf(name, sizeof name, "$%02X %s", r.base + index, r.name);
+    std::snprintf(value, sizeof value, "$%02X", r.value);
+    x += field(draw, ImVec2(x, y), name, value, text(), "$FF") + 16;
+  }
+  y += smallLine + rowGap;
+
+  // The table, as a wave: zoom, pan and follow.
+  if (tableViewLength_ != o.length || ImGui::IsWindowAppearing()) {
+    tableView_ = {};
+    tableViewLength_ = o.length;
+  }
+  const double total = o.length;
+  const double minSpan = 16;
+  clampView(tableView_, total, minSpan);
+  if (follow_ && running) {
+    // Kept in view a screen at a time, so the wave holds still to be read
+    // between jumps.
+    const double at = o.position;
+    if (at < tableView_.start || at >= tableView_.start + tableView_.span) {
+      tableView_.start = std::clamp(at - tableView_.span * 0.1, 0.0, total - tableView_.span);
+    }
+  }
+  caption(draw, ImVec2(left, y + (frame - ImGui::GetFontSize() * ui::SMALL_TEXT) * 0.5f), "WAVE");
+  ImGui::SetCursorScreenPos(ImVec2(left + 70, y));
+  ui::Switch("Follow the playhead", &follow_);
+  char range[48];
+  std::snprintf(range, sizeof range, "$%04X-$%04X%s", (o.start + static_cast<uint32_t>(tableView_.start)) & 0xFFFF,
+                (o.start + static_cast<uint32_t>(tableView_.start + tableView_.span) - 1) & 0xFFFF,
+                tableView_.span >= total ? "  whole table" : "");
+  zoomControls("tablezoom", draw, right, y, frame, tableView_, total, minSpan, range);
+  y += frame + 6;
+
+  const float bottom = start.y + height - PAD - smallLine - 6;
+  const ImVec2 wa(left, y), wb(right, bottom);
+  const bool hovered = interactWave("##table", wa, wb, tableView_, total, minSpan);
+  draw->AddRectFilled(wa, wb, well(), 8.0f);
+  draw->PushClipRect(wa, wb, true);
+  if (o.volume + o.frequency > 0 || running) {
+    drawWave(draw, wa, wb, ram_, o.start, tableView_, withAlpha(hue, running && !muted ? 1.0f : 0.5f));
+  }
+  const double perPixel = tableView_.span / (wb.x - wa.x);
+  if (running) {
+    const float px = wa.x + static_cast<float>((o.position + 0.5 - tableView_.start) / perPixel);
+    draw->AddLine(ImVec2(px, wa.y + 2), ImVec2(px, wb.y - 2), text(0.9f), 2.0f);
+  }
+  draw->PopClipRect();
+  drawTicks(draw, wa.x, wb.x, wb.y + 2, o.start, tableView_);
+
+  if (hovered && !ImGui::IsMouseDragging(ImGuiMouseButton_Left, 2.0f) && ram_.size() == iigs::SOUND_RAM_SIZE) {
+    const uint32_t offset = static_cast<uint32_t>(
+        std::clamp(tableView_.start + (ImGui::GetIO().MousePos.x - wa.x) * perPixel, 0.0, total - 1));
+    const uint32_t address = (o.start + offset) & 0xFFFF;
+    const uint8_t byte = ram_[address];
+    ImGui::SetTooltip("$%04X, byte %u of the table: $%02X%s", address, offset, byte,
+                      byte ? "" : "\nA zero: the oscillator stops here");
+  }
+  ImGui::PopID();
+
+  ImGui::SetCursorScreenPos(start);
+  ImGui::Dummy(ImVec2(width, height));
+}
+
 void EnsoniqWindow::draw(bool *open) {
   if (!open || !*open || !present_) return;
   take();
@@ -691,7 +962,8 @@ void EnsoniqWindow::draw(bool *open) {
     if (listed && !showOscillators) restoreHeight_ = listedHeight_;
     if (listed && showOscillators) {
       ImGui::Dummy(ImVec2(0, 2));
-      drawOscillators(WIDTH);
+      if (selected_ >= 0 && selected_ < DOC_OSCILLATORS) drawOscillatorDetail(selected_, WIDTH);
+      else drawOscillators(WIDTH);
     }
   }
   ImGui::End();
