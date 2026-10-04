@@ -80,6 +80,15 @@ const DebugSymbols::Label *DebugSymbols::label(uint32_t address) const {
   return it == labels_.end() ? nullptr : &it->second;
 }
 
+const std::vector<std::string> &DebugSymbols::builtInNames() {
+  static const std::vector<std::string> names = [] {
+    std::vector<std::string> out;
+    for (const BuiltIn &s : BUILT_IN) out.emplace_back(s.name);
+    return out;
+  }();
+  return names;
+}
+
 std::optional<uint32_t> DebugSymbols::resolve(const std::string &input, uint32_t addressMask) const {
   std::string text = trim(input);
   if (text.empty()) return std::nullopt;

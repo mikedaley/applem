@@ -53,6 +53,8 @@ public:
   void setLabel(uint32_t address, const std::string &name);
   void setComment(uint32_t address, const std::string &comment);
   const std::map<uint32_t, Label> &labels() const { return labels_; }
+  // The Apple II's own names (symbols.js), for completing one as it is typed.
+  static const std::vector<std::string> &builtInNames();
 
   // An assembler's symbol file: ca65's .dbg, Merlin's EQU, ACME's `=`, or a
   // plain "$ADDR NAME" list. Returns how many symbols it found; they replace

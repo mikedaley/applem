@@ -47,7 +47,9 @@ class Emulation;
 // no excuse to leave the machine paused on it.
 class CpuDebugger {
 public:
-  CpuDebugger(Emulation &emulation, Platform &platform);
+  // The breakpoints are the App's, shared with every window that sets them
+  // (debug_breakpoints.hpp); this window lists them and judges each stop.
+  CpuDebugger(Emulation &emulation, Platform &platform, Breakpoints &breakpoints);
 
   // The machine changed, or was rebuilt with the same profile: its debugger
   // starts with no breakpoints, so they are handed over again.
@@ -63,6 +65,14 @@ public:
   void stepOver();
   void stepOut();
   bool paused() const { return snapshot_.paused; }
+  // Run until the PC reaches an address, through the temporary breakpoint.
+  void runTo(uint32_t address);
+
+  // Each stop this window has judged (a breakpoint whose condition held, a
+  // step, a pause), counted, and why the latest one happened: the console
+  // reports them as they come.
+  uint32_t stopCount() const { return stopCount_; }
+  const std::string &stopReason() const { return reason_; }
 
   // Following a jump or call in the listing, and coming back: the Debug
   // menu's Back and Forward.
@@ -134,20 +144,9 @@ private:
     bool changed = false;
   };
 
-  struct BeamBreak {
-    int mode = 0; // 0 VBL, 1 HBL, 2 line, 3 column, 4 line and column
-    int scanline = -1;
-    int hPos = -1;
-    bool enabled = true;
-    int32_t id = -1;
-  };
-
   void take();
   void handleStop();
-  void applyBreakpoints(bool fresh);
-  void applyBeams();
   void stopped(const std::string &reason);
-  void runTo(uint32_t address);
   void setPC(uint32_t address);
   void goTo(uint32_t address);
 
@@ -178,6 +177,9 @@ private:
   std::string formatAddress(uint32_t address) const;
   std::string symbolised(const host::Instruction &in) const;
   uint32_t addressMask() const { return wide_ ? 0xFFFFFF : 0xFFFF; }
+  // How many of the shared list are beam breakpoints, which have a tab of
+  // their own.
+  int beamCount() const;
 
   Emulation &emulation_;
   MachinePoll poll_;
@@ -187,9 +189,13 @@ private:
 
   Snapshot snapshot_;
   DebugSymbols symbols_;
-  Breakpoints breakpoints_;
+  Breakpoints &breakpoints_;
+  // The machine's soft switches, to name a switch breakpoint by.
+  std::vector<SoftSwitchInfo> switches_;
+  // The row whose condition is being typed, which is not refreshed from the
+  // list under the user's fingers.
+  int editingCondition_ = -1;
   std::vector<Watch> watches_;
-  std::vector<BeamBreak> beams_;
 
   // The listing: following the PC, or held at an address the user chose.
   bool followPC_ = true;
@@ -228,6 +234,7 @@ private:
   // Why the machine last stopped, and what it looked like then: registers
   // that differ from the stop before are lit, and the clock counts from it.
   std::string reason_ = "Running";
+  uint32_t stopCount_ = 0;
   bool stopHandled_ = false;
   int hitIndex_ = -1;
   int beamHitIndex_ = -1;

@@ -23,6 +23,7 @@
 #include "mockingboard_window.hpp"
 #include "ensoniq_window.hpp"
 #include "soft_switch_window.hpp"
+#include "console_window.hpp"
 #include "basic_window.hpp"
 #include "platform.hpp"
 
@@ -63,6 +64,7 @@ struct Settings {
   bool showCpuDebugger = false;
   bool showMemoryViewer = false;
   bool showSoftSwitches = false;
+  bool showConsole = false;
   int mockingboardMutes = 0; // a bit a channel, PSG 1's A B C then PSG 2's
   bool showEnsoniq = false;
   bool showBasic = false;
@@ -156,6 +158,7 @@ private:
   void registerDebuggerHandler();
   void registerMemoryHandler();
   void registerSwitchesHandler();
+  void registerConsoleHandler();
   void registerBasicHandler();
   void startEmulation();
 
@@ -231,9 +234,13 @@ private:
   EnsoniqWindow ensoniq_{emulation_};
   BasicWindow basic_{emulation_, platform_};
   EqualizerWindow equalizer_{emulation_};
-  CpuDebugger debugger_{emulation_, platform_};
+  // Every breakpoint, whichever window set it, applied to the core each
+  // frame it changes (debug_breakpoints.hpp).
+  Breakpoints breakpoints_;
+  CpuDebugger debugger_{emulation_, platform_, breakpoints_};
   MemoryViewer memory_{emulation_, platform_, debugger_};
-  SoftSwitchWindow switches_{emulation_};
+  SoftSwitchWindow switches_{emulation_, breakpoints_};
+  ConsoleWindow console_{emulation_, debugger_, breakpoints_};
   bool started_ = false;
 
   // The machine profile currently built, for drawing; refreshed on a switch.

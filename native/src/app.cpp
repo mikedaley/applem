@@ -73,6 +73,13 @@ App::App(std::string settingsDirectory, Platform platform)
   registerDebuggerHandler();
   registerMemoryHandler();
   registerSwitchesHandler();
+  registerConsoleHandler();
+  console_.showAddress = [this](uint32_t address) {
+    settings_.showCpuDebugger = true;
+    debugger_.showInListing(address);
+    ImGui::SetWindowFocus("CPU Debugger");
+    ImGui::MarkIniSettingsDirty();
+  };
   registerBasicHandler();
   memory_.showDebugger = [this] {
     settings_.showCpuDebugger = true;
@@ -152,6 +159,7 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "ShowCpuDebugger=%d", &value) == 1) s.showCpuDebugger = value;
     else if (std::sscanf(line, "ShowMemoryViewer=%d", &value) == 1) s.showMemoryViewer = value;
     else if (std::sscanf(line, "ShowSoftSwitches=%d", &value) == 1) s.showSoftSwitches = value;
+    else if (std::sscanf(line, "ShowConsole=%d", &value) == 1) s.showConsole = value;
     else if (std::sscanf(line, "MockingboardMutes=%d", &value) == 1) s.mockingboardMutes = value & 0x3F;
     else if (std::sscanf(line, "MockingboardPhaseLock=%d", &value) == 1) s.mockingboardPhaseLock = value;
     else if (std::sscanf(line, "MockingboardMono=%d", &value) == 1) s.mockingboardMono = value;
@@ -207,6 +215,7 @@ void App::registerSettingsHandler() {
     out->appendf("ShowCpuDebugger=%d\n", s.showCpuDebugger ? 1 : 0);
     out->appendf("ShowMemoryViewer=%d\n", s.showMemoryViewer ? 1 : 0);
     out->appendf("ShowSoftSwitches=%d\n", s.showSoftSwitches ? 1 : 0);
+    out->appendf("ShowConsole=%d\n", s.showConsole ? 1 : 0);
     out->appendf("MockingboardMutes=%d\n", s.mockingboardMutes);
     out->appendf("MockingboardPhaseLock=%d\n", s.mockingboardPhaseLock ? 1 : 0);
     out->appendf("MockingboardMono=%d\n", s.mockingboardMono ? 1 : 0);
@@ -337,6 +346,28 @@ void App::registerSwitchesHandler() {
   ImGui::AddSettingsHandler(&handler);
 }
 
+// The console's history, under [ApplEmConsole][State].
+void App::registerConsoleHandler() {
+  ImGuiSettingsHandler handler;
+  handler.TypeName = "ApplEmConsole";
+  handler.TypeHash = ImHashStr("ApplEmConsole");
+  handler.UserData = &console_;
+  handler.ReadOpenFn = [](ImGuiContext *, ImGuiSettingsHandler *, const char *name) -> void * {
+    return std::strcmp(name, "State") == 0 ? reinterpret_cast<void *>(1) : nullptr;
+  };
+  handler.ReadLineFn = [](ImGuiContext *, ImGuiSettingsHandler *h, void *, const char *line) {
+    static_cast<ConsoleWindow *>(h->UserData)->readSetting(line);
+  };
+  handler.WriteAllFn = [](ImGuiContext *, ImGuiSettingsHandler *h, ImGuiTextBuffer *out) {
+    std::string text;
+    static_cast<const ConsoleWindow *>(h->UserData)->writeSettings(text);
+    out->appendf("[%s][State]\n", h->TypeName);
+    out->append(text.c_str());
+    out->append("\n");
+  };
+  ImGui::AddSettingsHandler(&handler);
+}
+
 // The BASIC window's program, breakpoints and layout, under
 // [ApplEmBasic][State].
 void App::registerBasicHandler() {
@@ -409,6 +440,7 @@ void App::startEmulation() {
   ensoniq_.mutes = settings_.ensoniqMutes;
   ensoniq_.showOscillators = settings_.ensoniqOscillators;
   debugger_.setMachine(*wanted);
+  console_.setMachine(*wanted);
   switches_.setMachine();
   memory_.setMachine(*wanted);
   applySpeed();
@@ -432,8 +464,15 @@ void App::frame() {
   mockingboard_.update();
   ensoniq_.update();
   basic_.update(settings_.showBasic);
+  // The breakpoints into the core when any window has changed them, before
+  // the debugger looks at why the machine stopped.
+  if (breakpoints_.needsApply()) {
+    emulation_.withMachine([&](host::MachineHost &host) {
+      if (MachineDebug *debug = host.debug()) breakpoints_.apply(*debug, host.softSwitches());
+    });
+  }
   debugger_.update();
-  switches_.update();
+  console_.update();
   memory_.update(settings_.showMemoryViewer);
   updateMouse();
 
@@ -738,6 +777,7 @@ MenuItem App::machineMenu() {
                               joystick_.machineRebuilt();
                               if (profile_) {
                                 debugger_.setMachine(*profile_);
+                                console_.setMachine(*profile_);
                                 memory_.setMachine(*profile_);
                                 switches_.setMachine();
                               }
@@ -856,6 +896,10 @@ std::optional<MenuItem> App::debugMenu() {
              settings_.showMemoryViewer = !settings_.showMemoryViewer;
              ImGui::MarkIniSettingsDirty();
            }, "m", MOD_COMMAND | MOD_SHIFT, settings_.showMemoryViewer),
+      item(a, "debug.console", "Console", [this] {
+             settings_.showConsole = !settings_.showConsole;
+             ImGui::MarkIniSettingsDirty();
+           }, "k", MOD_COMMAND | MOD_SHIFT, settings_.showConsole),
       item(a, "debug.switches", "Soft Switches", [this] {
              settings_.showSoftSwitches = !settings_.showSoftSwitches;
              ImGui::MarkIniSettingsDirty();
@@ -981,6 +1025,7 @@ bool *App::focusedToolWindow() {
       {"CPU Debugger", &settings_.showCpuDebugger},
       {"Memory Viewer", &settings_.showMemoryViewer},
       {"Soft Switches", &settings_.showSoftSwitches},
+      {"Console", &settings_.showConsole},
   };
   for (const auto &[title, flag] : windows) {
     if (name == title) return *flag ? flag : nullptr;
@@ -1077,6 +1122,7 @@ bool App::switchMachine(MachineId id) {
   applySpeed();
   joystick_.machineRebuilt();
   debugger_.setMachine(*profile_);
+  console_.setMachine(*profile_);
   memory_.setMachine(*profile_);
   switches_.setMachine();
   drives_->machineChanged();
@@ -1291,6 +1337,8 @@ void App::drawDiskDrives() {
   memory_.draw(&settings_.showMemoryViewer);
   firstPosition(160, 80);
   switches_.draw(&settings_.showSoftSwitches);
+  firstPosition(180, 120);
+  console_.draw(&settings_.showConsole);
   firstPosition(80, 60);
   states_->draw(&settings_.showSaveStates);
   if (states_->autosave != settings_.autosave) {
@@ -1517,6 +1565,7 @@ void App::setVideoStandard(VideoStandard standard) {
   ImGui::MarkIniSettingsDirty();
   profile_ = &machineProfile(profile_->id, standard);
   debugger_.setMachine(*profile_);
+  console_.setMachine(*profile_);
   memory_.setMachine(*profile_);
   switches_.setMachine();
   dropNotice(standard == VideoStandard::PAL ? "PAL, 50Hz: reboot to start a program afresh"

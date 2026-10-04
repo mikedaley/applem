@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include "debug_breakpoints.hpp"
 #include "machine_poll.hpp"
 
 #include "../../src/core/debug/soft_switch_catalog.hpp"
@@ -30,55 +31,38 @@ class Emulation;
 //
 // A breakpoint is kept by the switch's key, which is the same on every
 // machine that has it, so one on PAGE2 follows the user from a //e to a IIgs
-// and one on NEWVIDEO waits, unarmed, on a machine without it.
+// and one on NEWVIDEO waits, unarmed, on a machine without it. They live in
+// the App's shared breakpoint list, so the CPU debugger lists them, gives
+// them conditions and counts their hits like any other.
 class SoftSwitchWindow {
 public:
-  explicit SoftSwitchWindow(Emulation &emulation);
+  // The breakpoints are the App's shared list (debug_breakpoints.hpp): one
+  // set here is in the CPU debugger's list too, and the reverse.
+  SoftSwitchWindow(Emulation &emulation, Breakpoints &breakpoints);
 
-  // The machine changed, or was rebuilt: its switches may differ, and its
-  // debugger holds no breakpoints, so they are handed over again.
+  // The machine changed, or was rebuilt: its switches may differ.
   void setMachine();
 
-  // Every frame, open or not, so a stop is counted whether or not anyone is
-  // looking.
-  void update();
   void draw(bool *open);
 
-  // Settings, under their own section of the ini file.
+  // Settings, under their own section of the ini file. The breakpoints are
+  // saved with the shared list; a line from before that is read into it.
   void writeSettings(std::string &out) const;
   void readSetting(const char *line);
 
 private:
-  enum class Condition { Changes, Equals };
-
-  struct SwitchBreak {
-    std::string key;
-    Condition condition = Condition::Changes;
-    uint8_t value = 0; // 1 for on, for a switch
-    uint8_t mask = 0xFF;
-    bool enabled = true;
-    uint32_t hits = 0;
-    int32_t coreId = -1;
-
-    bool same(const SwitchBreak &other) const;
-  };
-
-  const SoftSwitchInfo *find(const std::string &key) const;
-  std::string describe(const SwitchBreak &bp) const;
-  void apply();
-  void add(SwitchBreak bp);
-  void toggle(const SwitchBreak &bp);
+  const SoftSwitchInfo *find(const std::string &key) const { return findSoftSwitch(catalog_, key.c_str()); }
+  static Breakpoint spec(const SoftSwitchInfo &sw, bool equals, uint8_t value, uint8_t mask);
   void take();
   void drawBreakpoints();
   void drawSwitch(const SoftSwitchInfo &sw, float width);
   void drawMenu(const SoftSwitchInfo &sw);
 
   Emulation &emulation_;
-  MachinePoll updatePoll_;
+  Breakpoints &breakpoints_;
   MachinePoll takePoll_;
 
   std::vector<SoftSwitchInfo> catalog_;
-  std::vector<SwitchBreak> breaks_;
 
   // What the window draws, read once a frame.
   uint64_t flags_ = 0;
@@ -87,8 +71,6 @@ private:
   bool hit_ = false;
   int32_t hitId_ = -1;
   std::string hitText_;
-  // The stop already counted, so it is counted once.
-  int32_t countedId_ = -1;
 
   // The register breakpoint being typed in the menu.
   std::array<char, 4> valueText_{};

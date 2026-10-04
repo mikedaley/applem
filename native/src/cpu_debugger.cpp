@@ -275,7 +275,7 @@ bool removeButton(const char *id) {
   return pressed;
 }
 
-const char *const KIND_BADGES[] = {"EXEC", "READ", "WRITE", "R/W", "SP"};
+const char *const KIND_BADGES[] = {"EXEC", "READ", "WRITE", "R/W", "SP", "SWITCH", "BEAM"};
 const char *const BEAM_LABELS[] = {"VBL", "HBL", "Line", "Column", "Line + Col"};
 
 ImU32 kindColour(Breakpoint::Kind kind, const Palette &p) {
@@ -285,14 +285,16 @@ ImU32 kindColour(Breakpoint::Kind kind, const Palette &p) {
   case Breakpoint::Kind::Write: return p.orange;
   case Breakpoint::Kind::ReadWrite: return p.purple;
   case Breakpoint::Kind::Stack: return p.yellow;
+  case Breakpoint::Kind::Switch: return p.green;
+  case Breakpoint::Kind::Beam: return p.green;
   }
   return p.red;
 }
 
 } // namespace
 
-CpuDebugger::CpuDebugger(Emulation &emulation, Platform &platform)
-    : emulation_(emulation), platform_(platform) {}
+CpuDebugger::CpuDebugger(Emulation &emulation, Platform &platform, Breakpoints &breakpoints)
+    : emulation_(emulation), platform_(platform), breakpoints_(breakpoints) {}
 
 void CpuDebugger::setMachine(const MachineProfile &profile) {
   profile_ = &profile;
@@ -305,31 +307,10 @@ void CpuDebugger::setMachine(const MachineProfile &profile) {
   hitIndex_ = -1;
   beamHitIndex_ = -1;
   reason_ = "Running";
-  applyBreakpoints(true);
-  applyBeams();
-}
-
-void CpuDebugger::applyBreakpoints(bool fresh) {
-  emulation_.withMachine([&](host::MachineHost &host) {
-    if (MachineDebug *debug = host.debug()) breakpoints_.apply(*debug, fresh);
-  });
-  conditionText_.resize(breakpoints_.all().size());
-  for (size_t i = 0; i < breakpoints_.all().size(); i++) {
-    std::snprintf(conditionText_[i].data(), conditionText_[i].size(), "%s", breakpoints_.all()[i].condition.c_str());
-  }
-}
-
-void CpuDebugger::applyBeams() {
-  emulation_.withMachine([&](host::MachineHost &host) {
-    MachineDebug *debug = host.debug();
-    if (!debug) return;
-    debug->clearBeamBreakpoints();
-    for (BeamBreak &beam : beams_) {
-      beam.id = beam.enabled ? debug->addBeamBreakpoint(static_cast<int16_t>(beam.scanline),
-                                                        static_cast<int16_t>(beam.hPos))
-                             : -1;
-    }
-  });
+  // A rebuilt machine's debugger holds none of them; the App applies the
+  // list again before the next frame.
+  breakpoints_.invalidate();
+  emulation_.withMachine([&](host::MachineHost &host) { switches_ = host.softSwitches(); });
 }
 
 std::string CpuDebugger::formatAddress(uint32_t address) const {
@@ -505,6 +486,7 @@ void CpuDebugger::take() {
 
 void CpuDebugger::stopped(const std::string &reason) {
   reason_ = reason;
+  stopCount_++;
   stopHandled_ = true;
   stoppedAt_ = ImGui::GetTime();
 }
@@ -563,14 +545,21 @@ void CpuDebugger::handleStop() {
       std::snprintf(line, sizeof line, "Stack pointer reached $%X", host.cpuState().sp);
       reason = line;
     } else if (debug->isBeamBreakpointHit()) {
-      for (size_t i = 0; i < beams_.size(); i++) {
-        if (beams_[i].id == debug->beamBreakpointHitId()) beamHit = static_cast<int>(i);
+      beamHit = breakpoints_.beamFor(debug->beamBreakpointHitId());
+      if (conditionFails(beamHit)) {
+        resume = true;
+        return;
       }
       std::snprintf(line, sizeof line, "Beam at line %d, position %d", debug->beamBreakScanline(),
                     debug->beamBreakHPos());
       reason = line;
     } else if (debug->isSwitchBreakpointHit()) {
-      // The Soft Switches window keeps these; the stop is said the same way.
+      // Said the way the Soft Switches window says it.
+      hit = breakpoints_.switchFor(debug->switchBreakpointHitId());
+      if (conditionFails(hit)) {
+        resume = true;
+        return;
+      }
       reason = host.switchHitText();
     } else {
       reason = "Paused";
@@ -583,6 +572,7 @@ void CpuDebugger::handleStop() {
   hitIndex_ = hit;
   beamHitIndex_ = beamHit;
   if (hit >= 0) breakpoints_.all()[static_cast<size_t>(hit)].hits++;
+  if (beamHit >= 0) breakpoints_.all()[static_cast<size_t>(beamHit)].hits++;
   stopped(reason);
 }
 
@@ -709,13 +699,18 @@ bool CpuDebugger::addBreakpoint(Breakpoint::Kind kind, uint32_t start, uint32_t 
   b.start = start & addressMask();
   b.end = std::max(b.start, end & addressMask());
   if (!breakpoints_.add(b)) return false;
-  applyBreakpoints(false);
   tab_ = 0;
   ImGui::MarkIniSettingsDirty();
   return true;
 }
 
 void CpuDebugger::showInListing(uint32_t address) { goTo(address & addressMask()); }
+
+int CpuDebugger::beamCount() const {
+  int n = 0;
+  for (const Breakpoint &b : breakpoints_.all()) n += b.kind == Breakpoint::Kind::Beam;
+  return n;
+}
 
 // ---------------------------------------------------------------------------
 // Drawing
@@ -1535,7 +1530,6 @@ void CpuDebugger::drawCode(ImVec2 size) {
         toggleBookmark(in.address);
       } else if (mx < lanesLeft) {
         breakpoints_.toggleExec(in.address);
-        applyBreakpoints(false);
         ImGui::MarkIniSettingsDirty();
       } else if (overOperand) {
         navigate(in.target);
@@ -1858,7 +1852,6 @@ void CpuDebugger::drawCode(ImVec2 size) {
   // F9 puts a breakpoint on the selected line, as most debuggers do.
   if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && selected_ && ImGui::IsKeyPressed(ImGuiKey_F9, false)) {
     breakpoints_.toggleExec(*selected_);
-    applyBreakpoints(false);
     ImGui::MarkIniSettingsDirty();
   }
   drawLineMenu();
@@ -1935,7 +1928,6 @@ void CpuDebugger::drawLineMenu() {
   ImGui::Separator();
   if (ImGui::MenuItem(breakpoints_.hasExecAt(at) ? "Remove Breakpoint" : "Add Breakpoint", "F9")) {
     breakpoints_.toggleExec(at);
-    applyBreakpoints(false);
     ImGui::MarkIniSettingsDirty();
   }
   host::Instruction in;
@@ -2000,6 +1992,8 @@ void CpuDebugger::openRuleBuilder(size_t index) {
     char sp[32];
     std::snprintf(sp, sizeof sp, b.isRange() ? "SP $%X-$%X" : "SP $%X", b.start, b.end);
     what = sp;
+  } else if (b.kind == Breakpoint::Kind::Switch) {
+    what = Breakpoints::describeSwitch(b, switches_);
   }
   rules_.open(std::string("Condition for ") + KIND_BADGES[static_cast<int>(b.kind)] + " " + what, b.condition);
 }
@@ -2042,7 +2036,6 @@ void CpuDebugger::drawBreakpoints() {
       b.start = range->first;
       b.end = range->second;
       if (breakpoints_.add(b)) {
-        applyBreakpoints(false);
         ImGui::MarkIniSettingsDirty();
       }
       newAddress_[0] = 0;
@@ -2053,7 +2046,8 @@ void CpuDebugger::drawBreakpoints() {
   }
   ImGui::Spacing();
 
-  if (breakpoints_.all().empty()) {
+  // The beam's are in their own tab.
+  if (static_cast<int>(breakpoints_.all().size()) == beamCount()) {
     ImGui::TextDisabled("No breakpoints. Click in the gutter beside a line, or add one here.");
     return;
   }
@@ -2063,6 +2057,12 @@ void CpuDebugger::drawBreakpoints() {
   ImGui::BeginChild("##bplist", ImVec2(0, 0), ImGuiChildFlags_None);
   for (size_t i = 0; i < breakpoints_.all().size(); i++) {
     Breakpoint &b = breakpoints_.all()[i];
+    if (b.kind == Breakpoint::Kind::Beam) continue;
+    // The list is shared, so it may have changed under this window: the
+    // condition is read back from it, except while it is being typed.
+    if (static_cast<int>(i) != editingCondition_) {
+      std::snprintf(conditionText_[i].data(), conditionText_[i].size(), "%s", b.condition.c_str());
+    }
     ImGui::PushID(static_cast<int>(i));
     const ImVec2 rowA = ImGui::GetCursorScreenPos();
     const float rowHeight = ImGui::GetFrameHeight() + 4;
@@ -2084,12 +2084,14 @@ void CpuDebugger::drawBreakpoints() {
       char sp[32];
       std::snprintf(sp, sizeof sp, b.isRange() ? "SP $%X-$%X" : "SP $%X", b.start, b.end);
       where = sp;
+    } else if (b.kind == Breakpoint::Kind::Switch) {
+      where = Breakpoints::describeSwitch(b, switches_);
     }
     ImGui::AlignTextToFramePadding();
     ImGui::PushFont(ui::monoFont(), 0.0f);
     ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(b.enabled ? text() : secondary()), "%s", where.c_str());
     ImGui::PopFont();
-    if (auto sym = symbols_.lookup(b.start); sym && b.kind != Breakpoint::Kind::Stack) {
+    if (auto sym = symbols_.lookup(b.start); sym && b.isAddress()) {
       ImGui::SameLine(0, 6);
       ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(symbolColour(sym->category, p)), "%s", sym->name.c_str());
     }
@@ -2101,6 +2103,8 @@ void CpuDebugger::drawBreakpoints() {
       b.condition = conditionText_[i].data();
       ImGui::MarkIniSettingsDirty();
     }
+    if (ImGui::IsItemActive()) editingCondition_ = static_cast<int>(i);
+    else if (editingCondition_ == static_cast<int>(i)) editingCondition_ = -1;
     if (ImGui::IsItemHovered()) {
       // A condition the builder can read is said in words; any other is
       // explained.
@@ -2134,10 +2138,11 @@ void CpuDebugger::drawBreakpoints() {
     breakpoints_.remove(static_cast<size_t>(removeAt));
     conditionText_.erase(conditionText_.begin() + removeAt);
     hitIndex_ = -1;
+    beamHitIndex_ = -1;
+    editingCondition_ = -1;
     changed = true;
   }
   if (changed) {
-    applyBreakpoints(false);
     ImGui::MarkIniSettingsDirty();
   }
 }
@@ -2215,8 +2220,9 @@ void CpuDebugger::drawBeams() {
     ImGui::SameLine(0, 8);
   }
   if (ui::Button("Add", ImVec2(70, 0), ui::ButtonKind::Primary)) {
-    BeamBreak beam;
-    beam.mode = newBeamMode_;
+    Breakpoint beam;
+    beam.kind = Breakpoint::Kind::Beam;
+    beam.beamMode = newBeamMode_;
     switch (newBeamMode_) {
     case 0: beam.scanline = t.visibleScanlines; beam.hPos = 0; break;
     case 1: beam.scanline = -1; beam.hPos = 0; break;
@@ -2224,22 +2230,21 @@ void CpuDebugger::drawBeams() {
     case 3: beam.scanline = -1; beam.hPos = newBeamColumn_ + t.hblankCycles; break;
     case 4: beam.scanline = newBeamLine_; beam.hPos = newBeamColumn_ + t.hblankCycles; break;
     }
-    if (beams_.size() < MachineDebug::MAX_BEAM_BREAKPOINTS) {
-      beams_.push_back(beam);
-      applyBeams();
+    if (beamCount() < static_cast<int>(MachineDebug::MAX_BEAM_BREAKPOINTS) && breakpoints_.add(beam)) {
       ImGui::MarkIniSettingsDirty();
     }
   }
   ImGui::Spacing();
-  if (beams_.empty()) {
+  if (beamCount() == 0) {
     ImGui::TextDisabled("Stop when the beam reaches a line, a column, or the start of a blanking interval.");
     return;
   }
   int removeAt = -1;
   bool changed = false;
   ImGui::BeginChild("##beamlist", ImVec2(0, 0), ImGuiChildFlags_None);
-  for (size_t i = 0; i < beams_.size(); i++) {
-    BeamBreak &beam = beams_[i];
+  for (size_t i = 0; i < breakpoints_.all().size(); i++) {
+    Breakpoint &beam = breakpoints_.all()[i];
+    if (beam.kind != Breakpoint::Kind::Beam) continue;
     ImGui::PushID(static_cast<int>(i));
     const ImVec2 rowA = ImGui::GetCursorScreenPos();
     const float width = ImGui::GetContentRegionAvail().x;
@@ -2251,11 +2256,11 @@ void CpuDebugger::drawBeams() {
     if (ui::Checkbox("##on", &beam.enabled)) changed = true;
     ImGui::SameLine(0, 8);
     const ImVec2 at = ImGui::GetCursorScreenPos();
-    const float bw = pill(draw, ImVec2(at.x, at.y + 3), BEAM_LABELS[beam.mode], beam.enabled, p.green, ui::SMALL_TEXT);
+    const float bw = pill(draw, ImVec2(at.x, at.y + 3), BEAM_LABELS[beam.beamMode], beam.enabled, p.green, ui::SMALL_TEXT);
     ImGui::Dummy(ImVec2(std::max(bw, 80.0f), 1));
     ImGui::SameLine(0, 8);
     char detail[64];
-    switch (beam.mode) {
+    switch (beam.beamMode) {
     case 0: std::snprintf(detail, sizeof detail, "Line %d, as vertical blanking starts", beam.scanline); break;
     case 1: std::snprintf(detail, sizeof detail, "Every line, as horizontal blanking starts"); break;
     case 2: std::snprintf(detail, sizeof detail, "Line %d", beam.scanline); break;
@@ -2273,14 +2278,12 @@ void CpuDebugger::drawBeams() {
   }
   ImGui::EndChild();
   if (removeAt >= 0) {
-    beams_.erase(beams_.begin() + removeAt);
+    breakpoints_.remove(static_cast<size_t>(removeAt));
     beamHitIndex_ = -1;
+    hitIndex_ = -1;
     changed = true;
   }
-  if (changed) {
-    applyBeams();
-    ImGui::MarkIniSettingsDirty();
-  }
+  if (changed) ImGui::MarkIniSettingsDirty();
 }
 
 void CpuDebugger::drawTrace() {
@@ -2359,8 +2362,9 @@ void CpuDebugger::drawPanel(float height) {
   const float width = ImGui::GetContentRegionAvail().x;
   card(draw, a, ImVec2(a.x + width, a.y + height));
   ImGui::SetCursorScreenPos(ImVec2(a.x + 8, a.y + 4));
-  const int counts[] = {static_cast<int>(breakpoints_.all().size()), static_cast<int>(watches_.size()),
-                        static_cast<int>(beams_.size()), -1};
+  const int beams = beamCount();
+  const int counts[] = {static_cast<int>(breakpoints_.all().size()) - beams, static_cast<int>(watches_.size()),
+                        beams, -1};
   const char *names[] = {"Breakpoints", "Watch", "Beam", "Trace"};
   const bool flashes[] = {hitIndex_ >= 0 && snapshot_.paused, false, beamHitIndex_ >= 0 && snapshot_.paused, false};
   for (int i = 0; i < 4; i++) {
@@ -2471,10 +2475,6 @@ void CpuDebugger::writeSettings(std::string &out) const {
   out += line;
   breakpoints_.writeSettings(out);
   for (const Watch &w : watches_) out += "Watch=" + w.expression + "\n";
-  for (const BeamBreak &b : beams_) {
-    std::snprintf(line, sizeof line, "Beam=%d\t%d\t%d\t%d\n", b.mode, b.scanline, b.hPos, b.enabled ? 1 : 0);
-    out += line;
-  }
   for (uint32_t address : bookmarks_) {
     std::snprintf(line, sizeof line, "Bookmark=%06X\n", address);
     out += line;
@@ -2493,15 +2493,7 @@ void CpuDebugger::readSetting(const char *line) {
     const uint32_t address = static_cast<uint32_t>(std::strtoul(line + 9, nullptr, 16)) & 0xFFFFFF;
     if (!isBookmarked(address)) bookmarks_.insert(std::lower_bound(bookmarks_.begin(), bookmarks_.end(), address), address);
   } else if (!std::strncmp(line, "Watch=", 6)) watches_.push_back({line + 6, 0, false});
-  else if (!std::strncmp(line, "Beam=", 5)) {
-    BeamBreak b;
-    int enabled = 1;
-    if (std::sscanf(line + 5, "%d\t%d\t%d\t%d", &b.mode, &b.scanline, &b.hPos, &enabled) == 4) {
-      b.mode = std::clamp(b.mode, 0, 4);
-      b.enabled = enabled;
-      beams_.push_back(b);
-    }
-  } else if (!breakpoints_.readSetting(line)) {
+  else if (!breakpoints_.readSetting(line)) {
     symbols_.readSetting(line);
   }
 }

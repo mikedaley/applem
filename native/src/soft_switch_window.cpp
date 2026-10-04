@@ -57,99 +57,24 @@ bool parseByte(const char *text, uint8_t &out) {
 
 } // namespace
 
-bool SoftSwitchWindow::SwitchBreak::same(const SwitchBreak &other) const {
-  if (key != other.key || condition != other.condition) return false;
-  return condition == Condition::Changes || (value == other.value && mask == other.mask);
-}
-
-SoftSwitchWindow::SoftSwitchWindow(Emulation &emulation) : emulation_(emulation) {
+SoftSwitchWindow::SoftSwitchWindow(Emulation &emulation, Breakpoints &breakpoints)
+    : emulation_(emulation), breakpoints_(breakpoints) {
   std::snprintf(maskText_.data(), maskText_.size(), "FF");
-}
-
-const SoftSwitchInfo *SoftSwitchWindow::find(const std::string &key) const {
-  return findSoftSwitch(catalog_, key.c_str());
-}
-
-std::string SoftSwitchWindow::describe(const SwitchBreak &bp) const {
-  const SoftSwitchInfo *sw = find(bp.key);
-  std::string name = sw ? sw->name : bp.key;
-  if (!sw) std::transform(name.begin(), name.end(), name.begin(), ::toupper);
-  char text[64];
-  if (bp.condition == Condition::Changes) {
-    std::snprintf(text, sizeof text, "%s changes", name.c_str());
-  } else if (!sw || !sw->isRegister()) {
-    std::snprintf(text, sizeof text, "%s %s", name.c_str(), bp.value ? "on" : "off");
-  } else if (bp.mask == 0xFF) {
-    std::snprintf(text, sizeof text, "%s = $%02X", name.c_str(), bp.value);
-  } else {
-    std::snprintf(text, sizeof text, "%s & $%02X = $%02X", name.c_str(), bp.mask, bp.value);
-  }
-  return text;
 }
 
 void SoftSwitchWindow::setMachine() {
   emulation_.withMachine([&](host::MachineHost &host) { catalog_ = host.softSwitches(); });
   registers_.assign(catalog_.size(), 0);
-  countedId_ = -1;
-  apply();
 }
 
-// The core holds exactly the enabled breakpoints on switches this machine
-// has, and is handed them afresh after any change.
-void SoftSwitchWindow::apply() {
-  emulation_.withMachine([&](host::MachineHost &host) {
-    MachineDebug *debug = host.debug();
-    for (SwitchBreak &bp : breaks_) bp.coreId = -1;
-    if (!debug) return;
-    debug->clearSwitchBreakpoints();
-    for (SwitchBreak &bp : breaks_) {
-      const SoftSwitchInfo *sw = find(bp.key);
-      if (!bp.enabled || !sw) continue;
-      const auto condition = bp.condition == Condition::Changes ? MachineDebug::SwitchCondition::Changes
-                                                                : MachineDebug::SwitchCondition::Equals;
-      const uint64_t mask = sw->isRegister() ? bp.mask : sw->mask();
-      const uint64_t value = sw->isRegister() ? bp.value : (bp.value ? mask : 0);
-      bp.coreId = debug->addSwitchBreakpoint(sw->source, mask, condition, value);
-    }
-  });
-  countedId_ = -1;
-  ImGui::MarkIniSettingsDirty();
-}
-
-void SoftSwitchWindow::add(SwitchBreak bp) {
-  for (const SwitchBreak &existing : breaks_) {
-    if (existing.same(bp)) return;
-  }
-  breaks_.push_back(std::move(bp));
-  apply();
-}
-
-void SoftSwitchWindow::toggle(const SwitchBreak &bp) {
-  for (size_t i = 0; i < breaks_.size(); i++) {
-    if (breaks_[i].same(bp)) {
-      breaks_.erase(breaks_.begin() + static_cast<long>(i));
-      apply();
-      return;
-    }
-  }
-  add(bp);
-}
-
-void SoftSwitchWindow::update() {
-  if (breaks_.empty()) return;
-  emulation_.poll(updatePoll_, [&](host::MachineHost &host) {
-    MachineDebug *debug = host.debug();
-    if (!debug || !host.isPaused() || !debug->isSwitchBreakpointHit()) {
-      countedId_ = -1;
-      return;
-    }
-    const int32_t id = debug->switchBreakpointHitId();
-    if (id == countedId_) return;
-    countedId_ = id;
-    for (SwitchBreak &bp : breaks_) {
-      if (bp.coreId == id) bp.hits++;
-    }
-  });
+Breakpoint SoftSwitchWindow::spec(const SoftSwitchInfo &sw, bool equals, uint8_t value, uint8_t mask) {
+  Breakpoint b;
+  b.kind = Breakpoint::Kind::Switch;
+  b.key = sw.key;
+  b.equals = equals;
+  b.value = value;
+  b.mask = mask;
+  return b;
 }
 
 void SoftSwitchWindow::take() {
@@ -166,40 +91,51 @@ void SoftSwitchWindow::take() {
   });
 }
 
+// The switch breakpoints from the shared list, which the CPU debugger also
+// shows among the rest.
 void SoftSwitchWindow::drawBreakpoints() {
-  if (breaks_.empty()) return;
+  std::vector<size_t> rows;
+  for (size_t i = 0; i < breakpoints_.all().size(); i++) {
+    if (breakpoints_.all()[i].kind == Breakpoint::Kind::Switch) rows.push_back(i);
+  }
+  if (rows.empty()) return;
   const ImVec2 top = ImGui::GetCursorPos();
   heading("Breakpoints");
   const ImVec2 below = ImGui::GetCursorPos();
   ImGui::SetCursorPos(ImVec2(top.x + WIDTH - ImGui::CalcTextSize("Clear").x - 16, top.y + 4));
   const bool clear = ui::Button("Clear", ImVec2(0, 0), ui::ButtonKind::Normal);
+  if (ImGui::IsItemHovered()) ImGui::SetTooltip("Remove every soft switch breakpoint");
   ImGui::SetCursorPos(below);
   if (clear) {
-    breaks_.clear();
-    apply();
+    for (size_t r = rows.size(); r-- > 0;) breakpoints_.remove(rows[r]);
+    ImGui::MarkIniSettingsDirty();
     return;
   }
 
   int remove = -1;
-  bool changed = false;
-  for (size_t i = 0; i < breaks_.size(); i++) {
-    SwitchBreak &bp = breaks_[i];
+  for (size_t i : rows) {
+    Breakpoint &bp = breakpoints_.all()[i];
     ImGui::PushID(static_cast<int>(i));
     const bool present = find(bp.key) != nullptr;
+    const std::string text = Breakpoints::describeSwitch(bp, catalog_);
     ImGui::BeginDisabled(!present);
-    if (ui::Checkbox("##on", &bp.enabled)) changed = true;
+    if (ui::Checkbox("##on", &bp.enabled)) ImGui::MarkIniSettingsDirty();
     ImGui::EndDisabled();
     ImGui::SameLine();
     ImGui::PushFont(ui::monoFont(), 0.0f);
     if (present) {
-      ImGui::TextUnformatted(describe(bp).c_str());
+      ImGui::TextUnformatted(text.c_str());
     } else {
-      ImGui::TextDisabled("%s", describe(bp).c_str());
+      ImGui::TextDisabled("%s", text.c_str());
       if (ImGui::IsItemHovered()) ImGui::SetTooltip("Not on this machine");
+    }
+    if (!bp.condition.empty()) {
+      ImGui::SameLine();
+      ImGui::TextDisabled("if %s", bp.condition.c_str());
     }
     if (bp.hits) {
       ImGui::SameLine();
-      ImGui::TextDisabled("%u", bp.hits);
+      ImGui::TextDisabled("%u hit%s", bp.hits, bp.hits == 1 ? "" : "s");
     }
     ImGui::PopFont();
     ImGui::SameLine(WIDTH - 22);
@@ -208,44 +144,35 @@ void SoftSwitchWindow::drawBreakpoints() {
     ImGui::PopID();
   }
   if (remove >= 0) {
-    breaks_.erase(breaks_.begin() + remove);
-    changed = true;
+    breakpoints_.remove(static_cast<size_t>(remove));
+    ImGui::MarkIniSettingsDirty();
   }
-  if (changed) apply();
 }
 
 // The breakpoints a switch can have, as a menu off its dot.
 void SoftSwitchWindow::drawMenu(const SoftSwitchInfo &sw) {
   if (!ImGui::BeginPopup("##breakpoint")) return;
-  auto has = [&](Condition condition, uint8_t value) {
-    for (const SwitchBreak &bp : breaks_) {
-      if (bp.key == sw.key && bp.condition == condition &&
-          (condition == Condition::Changes || bp.value == value)) {
+  auto has = [&](bool equals, uint8_t value) {
+    for (const Breakpoint &bp : breakpoints_.all()) {
+      if (bp.kind == Breakpoint::Kind::Switch && bp.key == sw.key && bp.equals == equals &&
+          (!equals || bp.value == value)) {
         return true;
       }
     }
     return false;
   };
-  auto spec = [&](Condition condition, uint8_t value, uint8_t mask) {
-    SwitchBreak bp;
-    bp.key = sw.key;
-    bp.condition = condition;
-    bp.value = value;
-    bp.mask = mask;
-    return bp;
+  auto toggle = [&](const Breakpoint &b) {
+    breakpoints_.toggle(b);
+    ImGui::MarkIniSettingsDirty();
   };
 
   char label[64];
   std::snprintf(label, sizeof label, "Break when %s changes", sw.name);
-  if (ImGui::MenuItem(label, nullptr, has(Condition::Changes, 0))) toggle(spec(Condition::Changes, 0, 0xFF));
+  if (ImGui::MenuItem(label, nullptr, has(false, 0))) toggle(spec(sw, false, 0, 0xFF));
 
   if (!sw.isRegister()) {
-    if (ImGui::MenuItem("Break when it turns on", nullptr, has(Condition::Equals, 1))) {
-      toggle(spec(Condition::Equals, 1, 0xFF));
-    }
-    if (ImGui::MenuItem("Break when it turns off", nullptr, has(Condition::Equals, 0))) {
-      toggle(spec(Condition::Equals, 0, 0xFF));
-    }
+    if (ImGui::MenuItem("Break when it turns on", nullptr, has(true, 1))) toggle(spec(sw, true, 1, 0xFF));
+    if (ImGui::MenuItem("Break when it turns off", nullptr, has(true, 0))) toggle(spec(sw, true, 0, 0xFF));
   } else {
     // A value under a mask: NEWVIDEO & $80 = $80 is Super Hi-Res coming on,
     // whatever the other bits are doing.
@@ -269,7 +196,7 @@ void SoftSwitchWindow::drawMenu(const SoftSwitchInfo &sw) {
     const bool valid = parseByte(valueText_.data(), value) && parseByte(maskText_.data(), mask) && mask != 0;
     ImGui::BeginDisabled(!valid);
     if ((ui::Button("Add") || enter) && valid) {
-      add(spec(Condition::Equals, value & mask, mask));
+      if (breakpoints_.add(spec(sw, true, value & mask, mask))) ImGui::MarkIniSettingsDirty();
       ImGui::CloseCurrentPopup();
     }
     ImGui::EndDisabled();
@@ -303,9 +230,10 @@ void SoftSwitchWindow::drawSwitch(const SoftSwitchInfo &sw, float width) {
 
   bool armed = false;
   bool stoppedHere = false;
-  for (const SwitchBreak &bp : breaks_) {
-    armed |= bp.key == sw.key && bp.enabled;
-    stoppedHere |= hit_ && bp.coreId == hitId_ && bp.key == sw.key;
+  for (const Breakpoint &bp : breakpoints_.all()) {
+    if (bp.kind != Breakpoint::Kind::Switch || bp.key != sw.key) continue;
+    armed |= bp.enabled;
+    stoppedHere |= hit_ && bp.coreId == hitId_;
   }
   if (stoppedHere) {
     draw->AddRectFilled(ImVec2(row.x - 4, row.y), ImVec2(row.x + width, row.y + rowHeight),
@@ -384,41 +312,10 @@ void SoftSwitchWindow::draw(bool *open) {
   ImGui::End();
 }
 
-// "SwitchBreakpoint=<key>\t<change|equals>\t<value>\t<mask>\t<enabled>"
-void SoftSwitchWindow::writeSettings(std::string &out) const {
-  char line[128];
-  for (const SwitchBreak &bp : breaks_) {
-    std::snprintf(line, sizeof line, "SwitchBreakpoint=%s\t%s\t%u\t%u\t%d\n", bp.key.c_str(),
-                  bp.condition == Condition::Changes ? "change" : "equals", bp.value, bp.mask, bp.enabled ? 1 : 0);
-    out += line;
-  }
-}
+// The breakpoints are in the shared list and saved with it (the CPU
+// debugger's section). A line this window wrote before that is handed over.
+void SoftSwitchWindow::writeSettings(std::string &) const {}
 
-void SoftSwitchWindow::readSetting(const char *line) {
-  char key[32], condition[16];
-  unsigned value = 0, mask = 0xFF;
-  int enabled = 1;
-  if (std::sscanf(line, "SwitchBreakpoint=%31[^\t]\t%15[^\t]\t%u\t%u\t%d", key, condition, &value, &mask,
-                  &enabled) != 5) {
-    return;
-  }
-  SwitchBreak bp;
-  bp.key = key;
-  if (!std::strcmp(condition, "change")) {
-    bp.condition = Condition::Changes;
-  } else if (!std::strcmp(condition, "equals")) {
-    bp.condition = Condition::Equals;
-  } else {
-    return;
-  }
-  bp.value = static_cast<uint8_t>(value);
-  bp.mask = static_cast<uint8_t>(mask);
-  bp.enabled = enabled != 0;
-  for (const SwitchBreak &existing : breaks_) {
-    if (existing.same(bp)) return;
-  }
-  // Armed when the machine is next set, which follows reading the settings.
-  breaks_.push_back(std::move(bp));
-}
+void SoftSwitchWindow::readSetting(const char *line) { breakpoints_.readSetting(line); }
 
 } // namespace a2e::native

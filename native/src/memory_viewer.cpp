@@ -206,6 +206,8 @@ ImU32 kindColour(Breakpoint::Kind kind, const Palette &p) {
   case Breakpoint::Kind::Write: return p.orange;
   case Breakpoint::Kind::ReadWrite: return p.purple;
   case Breakpoint::Kind::Stack: return p.yellow;
+  case Breakpoint::Kind::Switch: return p.green;
+  case Breakpoint::Kind::Beam: return p.green;
   }
   return p.red;
 }
@@ -1764,7 +1766,7 @@ void MemoryViewer::drawMap(ImVec2 origin, ImVec2 size) {
   }
   if (sp.processor) {
     for (const Breakpoint &b : debugger_.breakpoints().all()) {
-      if (!b.enabled || b.kind == Breakpoint::Kind::Stack || b.end < sp.base || b.start >= sp.base + sp.size) continue;
+      if (!b.enabled || !b.isAddress() || b.end < sp.base || b.start >= sp.base + sp.size) continue;
       const float ya = yFor(std::max(b.start, sp.base)), yb = yFor(std::min(b.end + 1, sp.base + sp.size));
       draw->AddRectFilled(ImVec2(x0 - 4, ya), ImVec2(x0 - 1, std::max(yb, ya + 2)), kindColour(b.kind, p), 1.0f);
     }

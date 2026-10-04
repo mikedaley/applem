@@ -6,15 +6,20 @@
  * happens to be hex, a bank and a slash is a IIgs address, and nothing wider
  * than the machine's bus is accepted. The breakpoint list must hand the core
  * exactly the enabled entries, take back what it handed over, and come back
- * from the settings as it went in.
+ * from the settings as it went in, every kind of it: addresses, the stack,
+ * soft switches and the beam, which every window shares.
  */
 
 #define CATCH_CONFIG_MAIN
 #include "catch.hpp"
 
+#include <cstring>
+
 #include "../src/debug_breakpoints.hpp"
 #include "../src/debug_symbols.hpp"
 #include "debug/machine_debug.hpp"
+#include "debug/soft_switch_catalog.hpp"
+#include "machine/machine_profile.hpp"
 
 using namespace a2e;
 using namespace a2e::native;
@@ -155,7 +160,7 @@ TEST_CASE("The core holds exactly the enabled breakpoints", "[debugger][breakpoi
   watch.kind = Breakpoint::Kind::Write;
   watch.start = watch.end = 0x0400;
   list.add(watch);
-  list.apply(debug);
+  list.apply(debug, {});
   REQUIRE(debug.hasBreakpoints());
   REQUIRE(debug.hasWatchpoints());
 
@@ -166,7 +171,7 @@ TEST_CASE("The core holds exactly the enabled breakpoints", "[debugger][breakpoi
   // ...until it is disabled, when the core forgets it.
   list.all()[0].enabled = false;
   list.all()[1].enabled = false;
-  list.apply(debug);
+  list.apply(debug, {});
   REQUIRE_FALSE(debug.hasBreakpoints());
   REQUIRE_FALSE(debug.hasWatchpoints());
   REQUIRE_FALSE(debug.shouldBreakBefore(0x2000, 0xFF));
@@ -199,6 +204,131 @@ TEST_CASE("Breakpoints survive the settings file", "[debugger][breakpoints]") {
   REQUIRE_FALSE(back.all()[0].enabled);
   REQUIRE(back.all()[1].start == 0xE12000);
   REQUIRE_FALSE(back.readSetting("Something=else"));
+}
+
+TEST_CASE("Switch and beam breakpoints share the list, and the core reports them by id",
+          "[debugger][breakpoints]") {
+  MachineDebug debug;
+  const auto iie = softSwitchCatalog(machineProfile(MachineId::AppleIIe));
+  Breakpoints list;
+  list.toggleExec(0x2000);
+  Breakpoint page2;
+  page2.kind = Breakpoint::Kind::Switch;
+  page2.key = "page2";
+  list.add(page2);
+  Breakpoint newVideo; // a IIgs register, which a //e does not have
+  newVideo.kind = Breakpoint::Kind::Switch;
+  newVideo.key = "newvideo";
+  newVideo.equals = true;
+  newVideo.value = 0x80;
+  newVideo.mask = 0x80;
+  list.add(newVideo);
+  Breakpoint vbl;
+  vbl.kind = Breakpoint::Kind::Beam;
+  vbl.beamMode = Breakpoint::BeamVbl;
+  vbl.scanline = 192;
+  vbl.hPos = 0;
+  list.add(vbl);
+  REQUIRE_FALSE(list.add(page2)); // the same one twice
+  REQUIRE(list.all().size() == 4);
+
+  REQUIRE(list.needsApply());
+  list.apply(debug, iie);
+  REQUIRE_FALSE(list.needsApply());
+  REQUIRE(debug.hasBreakpoints());
+  REQUIRE(debug.hasSwitchBreakpoints());
+  REQUIRE(debug.hasBeamBreakpoints());
+  // Applied, a switch the machine has; kept and not applied, one it has not.
+  REQUIRE(list.all()[1].coreId >= 0);
+  REQUIRE(list.all()[2].coreId == -1);
+  REQUIRE(list.switchFor(list.all()[1].coreId) == 1);
+  REQUIRE(list.beamFor(list.all()[3].coreId) == 3);
+  REQUIRE(list.switchFor(-1) == -1);
+
+  // PAGE2 changing stops the core, credited to the list's entry.
+  uint64_t flags = 0;
+  auto read = [&](uint32_t) { return flags; };
+  debug.checkSwitches(read, 0x2000);
+  flags = 1ULL << 2;
+  REQUIRE(debug.checkSwitches(read, 0x2003));
+  REQUIRE(list.switchFor(debug.switchBreakpointHitId()) == 1);
+
+  // A condition or a hit count is the host's business and applies nothing;
+  // disabling one is the core's.
+  list.all()[1].condition = "A == 1";
+  list.all()[1].hits = 3;
+  REQUIRE_FALSE(list.needsApply());
+  list.all()[1].enabled = false;
+  REQUIRE(list.needsApply());
+  list.apply(debug, iie);
+  REQUIRE_FALSE(debug.hasSwitchBreakpoints());
+
+  // A rebuilt machine holds none of it, so the list is applied again.
+  list.invalidate();
+  REQUIRE(list.needsApply());
+  MachineDebug rebuilt;
+  list.apply(rebuilt, iie);
+  REQUIRE(rebuilt.hasBreakpoints());
+  REQUIRE(rebuilt.hasBeamBreakpoints());
+
+  REQUIRE(Breakpoints::describeSwitch(list.all()[1], iie) == "PAGE2 changes");
+  REQUIRE(Breakpoints::describeSwitch(list.all()[2], iie) == "NEWVIDEO & $80 = $80");
+  const auto iigs = softSwitchCatalog(machineProfile(MachineId::AppleIIgs));
+  REQUIRE(Breakpoints::describeSwitch(list.all()[2], iigs) == "NEWVIDEO & $80 = $80");
+}
+
+TEST_CASE("Every kind survives the settings file, and the old lines are read",
+          "[debugger][breakpoints]") {
+  Breakpoints list;
+  Breakpoint text;
+  text.kind = Breakpoint::Kind::Switch;
+  text.key = "text";
+  text.equals = true;
+  text.value = 1;
+  text.condition = "PEEK($24) == 0";
+  list.add(text);
+  Breakpoint line;
+  line.kind = Breakpoint::Kind::Beam;
+  line.beamMode = Breakpoint::BeamLineColumn;
+  line.scanline = 100;
+  line.hPos = 30;
+  line.enabled = false;
+  list.add(line);
+  std::string out;
+  list.writeSettings(out);
+
+  Breakpoints back;
+  size_t start = 0;
+  while (start < out.size()) {
+    const size_t end = out.find('\n', start);
+    REQUIRE(back.readSetting(out.substr(start, end - start).c_str()));
+    start = end + 1;
+  }
+  REQUIRE(back.all().size() == 2);
+  REQUIRE(back.all()[0].kind == Breakpoint::Kind::Switch);
+  REQUIRE(back.all()[0].key == "text");
+  REQUIRE(back.all()[0].equals);
+  REQUIRE(back.all()[0].value == 1);
+  REQUIRE(back.all()[0].condition == "PEEK($24) == 0");
+  REQUIRE(back.all()[1].kind == Breakpoint::Kind::Beam);
+  REQUIRE(back.all()[1].beamMode == Breakpoint::BeamLineColumn);
+  REQUIRE(back.all()[1].scanline == 100);
+  REQUIRE(back.all()[1].hPos == 30);
+  REQUIRE_FALSE(back.all()[1].enabled);
+
+  // What the beam list and the Soft Switches window kept before the list
+  // was shared.
+  Breakpoints old;
+  REQUIRE(old.readSetting("Beam=0\t192\t0\t1"));
+  REQUIRE(old.readSetting("SwitchBreakpoint=newvideo\tequals\t128\t128\t1"));
+  REQUIRE(old.all().size() == 2);
+  REQUIRE(old.all()[0].kind == Breakpoint::Kind::Beam);
+  REQUIRE(old.all()[0].scanline == 192);
+  REQUIRE(old.all()[1].kind == Breakpoint::Kind::Switch);
+  REQUIRE(old.all()[1].mask == 0x80);
+  // Read twice (an old line beside its new one), it is still one breakpoint.
+  REQUIRE(old.readSetting("SwitchBreakpoint=newvideo\tequals\t128\t128\t1"));
+  REQUIRE(old.all().size() == 2);
 }
 
 // ---- The rule builder's conditions ----
@@ -306,4 +436,216 @@ TEST_CASE("What the builder writes, the evaluator reads", "[debugger][rules]") {
   REQUIRE(ConditionEvaluator::evaluate(expr.c_str(), view));
   view.x = 1;
   REQUIRE_FALSE(ConditionEvaluator::evaluate(expr.c_str(), view));
+}
+
+// ---- The console's commands ----
+
+#include "../src/console_command.hpp"
+
+namespace {
+using CK = ConsoleCommand::Kind;
+ConsoleCommand parse(const char *line) { return parseConsoleCommand(line); }
+} // namespace
+
+TEST_CASE("The console reads the Apple II monitor's own syntax", "[debugger][console]") {
+  ConsoleCommand c = parse("300");
+  REQUIRE(c.kind == CK::Dump);
+  REQUIRE(c.from == "$300");
+  REQUIRE(c.to.empty());
+
+  c = parse("300.3FF");
+  REQUIRE(c.kind == CK::Dump);
+  REQUIRE(c.from == "$300");
+  REQUIRE(c.to == "$3FF");
+
+  c = parse("300: A9 00 8D");
+  REQUIRE(c.kind == CK::Write);
+  REQUIRE(c.values == std::vector<std::string>{"$A9", "$00", "$8D"});
+
+  REQUIRE(parse("300L").kind == CK::List);
+  c = parse("300L 6");
+  REQUIRE(c.kind == CK::List);
+  REQUIRE(c.count == 6);
+  REQUIRE(parse("300L many").kind == CK::Error);
+  REQUIRE(parse("300l").from == "$300");
+  c = parse("C600G");
+  REQUIRE(c.kind == CK::Go);
+  REQUIRE(c.from == "$C600");
+
+  // A IIgs's bank and slash, as its monitor writes it.
+  c = parse("E1/2000.20FF");
+  REQUIRE(c.kind == CK::Dump);
+  REQUIRE(c.from == "E1/2000");
+  REQUIRE(c.to == "$20FF");
+
+  // A word that is a command is the command; a dollar makes it memory.
+  REQUIRE(parse("be 1").kind == CK::BreakEnable);
+  c = parse("$BE");
+  REQUIRE(c.kind == CK::Dump);
+  REQUIRE(c.from == "$BE");
+
+  REQUIRE(parse("300: ZZ").kind == CK::Error);
+  REQUIRE(parse("300.").kind == CK::Error);
+  REQUIRE(parse("frobnicate").kind == CK::Error);
+  REQUIRE(parse("   ").kind == CK::Empty);
+}
+
+TEST_CASE("The console reads its own commands", "[debugger][console]") {
+  ConsoleCommand c = parse("m COUT");
+  REQUIRE(c.kind == CK::Dump);
+  REQUIRE(c.from == "COUT");
+  c = parse("m $2000.$20FF");
+  REQUIRE(c.from == "$2000");
+  REQUIRE(c.to == "$20FF");
+  c = parse("m $2000 $20FF");
+  REQUIRE(c.to == "$20FF");
+
+  c = parse("w $300 A9 $00 8D");
+  REQUIRE(c.kind == CK::Write);
+  REQUIRE(c.from == "$300");
+  REQUIRE(c.values.size() == 3);
+
+  c = parse("f $2000.$3FFF 00");
+  REQUIRE(c.kind == CK::Fill);
+  REQUIRE(c.to == "$3FFF");
+  REQUIRE(parse("f $2000 00").kind == CK::Error);
+
+  c = parse("l");
+  REQUIRE(c.kind == CK::List);
+  REQUIRE(c.from.empty());
+  c = parse("l HOME 30");
+  REQUIRE(c.from == "HOME");
+  REQUIRE(c.count == 30);
+
+  REQUIRE(parse("g").kind == CK::Go);
+  REQUIRE(parse("c").kind == CK::Go); // continue
+  REQUIRE(parse("g $C600").from == "$C600");
+  c = parse("s 10");
+  REQUIRE(c.kind == CK::Step);
+  REQUIRE(c.count == 10);
+  REQUIRE(parse("s").count == 0);
+  REQUIRE(parse("s many").kind == CK::Error);
+  REQUIRE(parse("n").kind == CK::StepOver);
+  REQUIRE(parse("finish").kind == CK::StepOut);
+  REQUIRE(parse("pause").kind == CK::Pause);
+  REQUIRE(parse("until $C600").from == "$C600");
+
+  REQUIRE(parse("r").kind == CK::Registers);
+  REQUIRE(parse("r").assignments.empty());
+  c = parse("r a=$42 pc = COUT  x= 3");
+  REQUIRE(c.kind == CK::Registers);
+  using A = std::vector<std::pair<std::string, std::string>>;
+  REQUIRE(c.assignments == A{{"a", "$42"}, {"pc", "COUT"}, {"x", "3"}});
+  REQUIRE(parse("r q=1").kind == CK::Error);
+  REQUIRE(parse("r a").kind == CK::Error);
+
+  c = parse("? PEEK($24) + 1");
+  REQUIRE(c.kind == CK::Evaluate);
+  REQUIRE(c.text == "PEEK($24) + 1");
+  REQUIRE(parse("?").kind == CK::Error);
+
+  REQUIRE(parse("sym COUT").text == "COUT");
+  REQUIRE(parse("stack").kind == CK::Stack);
+  c = parse("trace 50");
+  REQUIRE(c.kind == CK::Trace);
+  REQUIRE(c.count == 50);
+
+  c = parse("find A9 ?? 8D");
+  REQUIRE(c.kind == CK::Find);
+  REQUIRE(c.values == std::vector<std::string>{"$A9", "??", "$8D"});
+  c = parse("find \"HELLO WORLD\"");
+  REQUIRE(c.text == "HELLO WORLD");
+  REQUIRE(parse("find A9 XYZ").kind == CK::Error);
+
+  REQUIRE(parse("reset").kind == CK::Reset);
+  REQUIRE(parse("reboot").kind == CK::Reboot);
+  REQUIRE(parse("cls").kind == CK::Clear);
+  REQUIRE(parse("help bp").text == "bp");
+}
+
+TEST_CASE("The console reads every kind of breakpoint", "[debugger][console][breakpoints]") {
+  ConsoleCommand c = parse("bp $2000");
+  REQUIRE(c.kind == CK::BreakAdd);
+  REQUIRE(c.breakpoint.kind == Breakpoint::Kind::Exec);
+  REQUIRE(c.from == "$2000");
+  REQUIRE(c.to.empty());
+
+  c = parse("bp COUT if A == $C1");
+  REQUIRE(c.from == "COUT");
+  REQUIRE(c.breakpoint.condition == "A == $C1");
+
+  c = parse("bp w $0400-$07FF");
+  REQUIRE(c.breakpoint.kind == Breakpoint::Kind::Write);
+  REQUIRE(c.from == "$0400");
+  REQUIRE(c.to == "$07FF");
+  REQUIRE(parse("bp r KBD").breakpoint.kind == Breakpoint::Kind::Read);
+  REQUIRE(parse("bp rw $C000").breakpoint.kind == Breakpoint::Kind::ReadWrite);
+  c = parse("bp sp $F0-$FF");
+  REQUIRE(c.breakpoint.kind == Breakpoint::Kind::Stack);
+  REQUIRE(c.to == "$FF");
+
+  c = parse("bp sw page2");
+  REQUIRE(c.breakpoint.kind == Breakpoint::Kind::Switch);
+  REQUIRE(c.breakpoint.key == "page2");
+  REQUIRE_FALSE(c.breakpoint.equals);
+  c = parse("bp sw TEXT off");
+  REQUIRE(c.breakpoint.key == "text");
+  REQUIRE(c.breakpoint.equals);
+  REQUIRE(c.breakpoint.value == 0);
+  REQUIRE(parse("bp sw text on").breakpoint.value == 1);
+  c = parse("bp sw newvideo&$80=$80");
+  REQUIRE(c.breakpoint.key == "newvideo");
+  REQUIRE(c.breakpoint.mask == 0x80);
+  REQUIRE(c.breakpoint.value == 0x80);
+  c = parse("bp sw newvideo & $80 = $C1 if X == 0");
+  REQUIRE(c.breakpoint.mask == 0x80);
+  REQUIRE(c.breakpoint.value == 0x80); // the value under its mask
+  REQUIRE(c.breakpoint.condition == "X == 0");
+  c = parse("bp sw border=6");
+  REQUIRE(c.breakpoint.mask == 0xFF);
+  REQUIRE(c.breakpoint.value == 6);
+  REQUIRE(parse("bp sw").kind == CK::Error);
+  REQUIRE(parse("bp sw page2 sideways").kind == CK::Error);
+  REQUIRE(parse("bp sw newvideo&$00=$00").kind == CK::Error);
+
+  c = parse("bp beam vbl");
+  REQUIRE(c.breakpoint.kind == Breakpoint::Kind::Beam);
+  REQUIRE(c.breakpoint.beamMode == Breakpoint::BeamVbl);
+  c = parse("bp beam line 100");
+  REQUIRE(c.breakpoint.beamMode == Breakpoint::BeamLine);
+  REQUIRE(c.breakpoint.scanline == 100);
+  c = parse("bp beam col 20");
+  REQUIRE(c.breakpoint.beamMode == Breakpoint::BeamColumn);
+  REQUIRE(c.breakpoint.hPos == 20);
+  c = parse("bp beam 100,20");
+  REQUIRE(c.breakpoint.beamMode == Breakpoint::BeamLineColumn);
+  REQUIRE(c.breakpoint.scanline == 100);
+  REQUIRE(c.breakpoint.hPos == 20);
+  REQUIRE(parse("bp beam diagonal").kind == CK::Error);
+
+  REQUIRE(parse("bp").kind == CK::Error);
+  REQUIRE(parse("bp $2000 $3000").kind == CK::Error);
+  REQUIRE(parse("bp $2000 if").kind == CK::Error);
+
+  REQUIRE(parse("bl").kind == CK::BreakList);
+  c = parse("bd 2");
+  REQUIRE(c.kind == CK::BreakDelete);
+  REQUIRE(c.count == 2);
+  REQUIRE(parse("bd all").all);
+  REQUIRE(parse("bx 1").kind == CK::BreakDisable);
+  REQUIRE(parse("bd 0").kind == CK::Error);
+  REQUIRE(parse("bd").kind == CK::Error);
+}
+
+TEST_CASE("Every command has help, and every alias reaches it", "[debugger][console]") {
+  for (const ConsoleCommandHelp &help : consoleCommands()) {
+    INFO(help.name);
+    REQUIRE(std::strlen(help.usage) > 0);
+    REQUIRE(std::strlen(help.summary) > 0);
+  }
+  REQUIRE(parse("continue").kind == CK::Go);
+  REQUIRE(parse("registers").kind == CK::Registers);
+  REQUIRE(parse("delete 1").kind == CK::BreakDelete);
+  REQUIRE(parse("disable all").kind == CK::BreakDisable);
+  REQUIRE(parse("print A").kind == CK::Evaluate);
 }

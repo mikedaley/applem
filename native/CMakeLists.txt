@@ -42,6 +42,8 @@ set(NATIVE_SOURCES
     src/disk_platter.cpp
     src/display.cpp
     src/condition_rules.cpp
+    src/console_command.cpp
+    src/console_window.cpp
     src/debug_breakpoints.cpp
     src/debug_symbols.cpp
     src/display_settings.cpp
@@ -155,6 +157,7 @@ add_test(NAME test_native_input COMMAND test_native_input
 add_executable(test_native_debugger
     tests/test_native_debugger.cpp
     src/condition_rules.cpp
+    src/console_command.cpp
     src/debug_symbols.cpp
     src/debug_breakpoints.cpp
 )
@@ -220,6 +223,37 @@ target_include_directories(test_native_display PRIVATE
 target_compile_options(test_native_display PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(test_native_display PRIVATE a2e_core)
 add_test(NAME test_native_display COMMAND test_native_display
+         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+# The debugging console, typed into over a real machine.
+add_executable(test_native_console
+    tests/test_native_console.cpp
+    src/media_store.cpp
+    src/console_command.cpp
+    src/console_window.cpp
+    src/cpu_debugger.cpp
+    src/rule_builder.cpp
+    src/condition_rules.cpp
+    src/debug_symbols.cpp
+    src/debug_breakpoints.cpp
+    src/emulation.cpp
+    src/audio_output.mm
+    src/drive_sounds.cpp
+    src/equalizer.cpp
+    src/ui_controls.cpp
+    src/ui_theme.mm
+    src/platform_paths.mm
+    src/volume_map.cpp
+)
+target_include_directories(test_native_console PRIVATE
+    ${CMAKE_SOURCE_DIR}/tests/catch2
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_compile_options(test_native_console PRIVATE -Wall -Wextra -Wno-unused-parameter
+    $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
+target_link_libraries(test_native_console PRIVATE a2e_core imgui
+    "-framework AudioToolbox" "-framework CoreAudio" "-framework AppKit")
+add_test(NAME test_native_console COMMAND test_native_console
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 # The media store, the save naming rules and the seek click.
