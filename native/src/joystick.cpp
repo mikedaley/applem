@@ -68,7 +68,7 @@ void centredText(ImDrawList *draw, ImVec2 centre, ImU32 colour, const char *line
 
 // Small capitals over a reading, as a front panel labels its dials.
 void caption(ImDrawList *draw, ImVec2 at, const char *label, ImU32 colour) {
-  ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.72f);
+  ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
   draw->AddText(at, colour, label);
   ImGui::PopFont();
 }
@@ -81,7 +81,7 @@ const char *sourceName(int source) {
 // A row of capsules naming what can drive the stick, the one that is lit.
 void sources(ImDrawList *draw, ImVec2 at, int active) {
   float x = at.x;
-  ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.85f);
+  ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
   for (int s = 1; s <= 3; s++) {
     const ImVec2 size = ImGui::CalcTextSize(sourceName(s));
     const ImVec2 end(x + size.x + 16, at.y + size.y + 6);
@@ -234,7 +234,7 @@ void Joystick::drawAppleJoystick() {
     draw->AddLine(ImVec2(gate.x + span * t, gate.y + 6), ImVec2(gate.x + span * t, gateEnd.y - 6), line);
     draw->AddLine(ImVec2(gate.x + 6, gate.y + span * t), ImVec2(gateEnd.x - 6, gate.y + span * t), line);
   }
-  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.72f);
+  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
   draw->AddText(ImVec2(gate.x + 6, gateEnd.y - 16), IM_COL32(255, 255, 255, 70), "0");
   const ImVec2 maxSize = ImGui::CalcTextSize("255");
   draw->AddText(ImVec2(gateEnd.x - maxSize.x - 6, gateEnd.y - 16), IM_COL32(255, 255, 255, 70), "255");
@@ -417,7 +417,7 @@ void Joystick::drawInputs() {
   auto switchRow = [&](const char *label, const char *hint, bool *value) {
     draw->AddText(ImVec2(left, y + 1), text(), label);
     if (hint) {
-      ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.85f);
+      ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
       draw->AddText(ImVec2(left, y + ImGui::GetTextLineHeight() + 4), secondary(), hint);
       ImGui::PopFont();
     }
@@ -492,7 +492,7 @@ void Joystick::draw(bool *open) {
       const char *const addresses[] = {"$C064", "$C065"};
       for (int i = 0; i < 2; i++) {
         caption(draw, ImVec2(x, y), names[i], secondary());
-        ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.72f);
+        ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
         const float aw = ImGui::CalcTextSize(addresses[i]).x;
         draw->AddText(ImVec2(x + width - aw, y), secondary(), addresses[i]);
         ImGui::PopFont();
@@ -539,7 +539,7 @@ void Joystick::draw(bool *open) {
         if (down) glow(draw, centre, 18.0f, RED);
         ball(draw, ImVec2(centre.x, centre.y + (down ? 1.5f : 0.0f)), 18.0f,
              down ? IM_COL32(0xf0, 0x3c, 0x34, 255) : IM_COL32(0x2a, 0x2a, 0x2c, 255), IM_COL32_WHITE);
-        ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.8f);
+        ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
         centredText(draw, ImVec2(centre.x, centre.y + 38), down ? RED : text(0.85f), labels[i]);
         centredText(draw, ImVec2(centre.x, centre.y + 52), secondary(), lines[i]);
         ImGui::PopFont();

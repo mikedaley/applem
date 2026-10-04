@@ -24,9 +24,24 @@ namespace a2e::native {
 
 namespace {
 
-constexpr float WIDTH = 420;
+constexpr float WIDTH = 520;
 
 ImU32 secondary() { return ImGui::GetColorU32(ImGuiCol_TextDisabled); }
+
+// A group's heading: as large as the rows, not smaller, in the accent colour
+// with a rule under it, so the groups can be told apart at a glance by
+// someone who does not see small type well.
+void heading(const char *label) {
+  ImGui::Dummy(ImVec2(0, 6));
+  ImGui::PushFont(nullptr, ImGui::GetFontSize() * 1.05f);
+  ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(ui::accentText()), "%s", label);
+  ImGui::PopFont();
+  const ImVec2 at = ImGui::GetCursorScreenPos();
+  ImGui::GetWindowDrawList()->AddLine(ImVec2(at.x, at.y - 1),
+                                      ImVec2(at.x + ImGui::GetContentRegionAvail().x, at.y - 1),
+                                      ImGui::GetColorU32(ImGuiCol_Separator), 1.0f);
+  ImGui::Dummy(ImVec2(0, 3));
+}
 
 // A byte as the debugger writes one: "$C1", "C1".
 bool parseByte(const char *text, uint8_t &out) {
@@ -153,11 +168,13 @@ void SoftSwitchWindow::take() {
 
 void SoftSwitchWindow::drawBreakpoints() {
   if (breaks_.empty()) return;
-  ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.72f);
-  ImGui::TextDisabled("BREAKPOINTS");
-  ImGui::PopFont();
-  ImGui::SameLine(WIDTH - ImGui::CalcTextSize("Clear").x - 16);
-  if (ui::Button("Clear", ImVec2(0, 0), ui::ButtonKind::Normal)) {
+  const ImVec2 top = ImGui::GetCursorPos();
+  heading("Breakpoints");
+  const ImVec2 below = ImGui::GetCursorPos();
+  ImGui::SetCursorPos(ImVec2(top.x + WIDTH - ImGui::CalcTextSize("Clear").x - 16, top.y + 4));
+  const bool clear = ui::Button("Clear", ImVec2(0, 0), ui::ButtonKind::Normal);
+  ImGui::SetCursorPos(below);
+  if (clear) {
     breaks_.clear();
     apply();
     return;
@@ -195,7 +212,6 @@ void SoftSwitchWindow::drawBreakpoints() {
     changed = true;
   }
   if (changed) apply();
-  ImGui::Separator();
 }
 
 // The breakpoints a switch can have, as a menu off its dot.
@@ -261,64 +277,81 @@ void SoftSwitchWindow::drawMenu(const SoftSwitchInfo &sw) {
   ImGui::EndPopup();
 }
 
+// One row: the breakpoint dot, the address, the name in a capsule lit while
+// the switch is on, a register's value, and what it is. Everything is drawn
+// about one centre line, so the capsule and the text beside it line up
+// whatever the two fonts' heights are, and nothing is smaller than the
+// window's body text.
 void SoftSwitchWindow::drawSwitch(const SoftSwitchInfo &sw, float width) {
   ImDrawList *draw = ImGui::GetWindowDrawList();
   const ui::Palette &p = ui::palette();
   const size_t index = static_cast<size_t>(&sw - catalog_.data());
   ImGui::PushID(sw.key);
 
-  // The dot: hollow, or filled red with a breakpoint armed.
+  ImGui::PushFont(ui::monoFont(), 0.0f);
+  const float monoLine = ImGui::GetTextLineHeight();
+  const float addressWidth = ImGui::CalcTextSize("$C080-8F").x;
+  const ImVec2 chipText = ImGui::CalcTextSize("SLOTC3ROM");
+  const float valueWidth = ImGui::CalcTextSize("$FF").x;
+  ImGui::PopFont();
+  const float bodyLine = ImGui::GetTextLineHeight();
+  const float chipHeight = std::max(monoLine, bodyLine) + 6;
+  const float rowHeight = chipHeight + 6;
+
+  const ImVec2 row = ImGui::GetCursorScreenPos();
+  const float mid = row.y + rowHeight * 0.5f;
+
   bool armed = false;
-  for (const SwitchBreak &bp : breaks_) armed |= bp.key == sw.key && bp.enabled;
-  const float line = ImGui::GetTextLineHeight();
-  const ImVec2 at = ImGui::GetCursorScreenPos();
-  const bool stoppedHere = [&] {
-    for (const SwitchBreak &bp : breaks_) {
-      if (hit_ && bp.coreId == hitId_ && bp.key == sw.key) return true;
-    }
-    return false;
-  }();
+  bool stoppedHere = false;
+  for (const SwitchBreak &bp : breaks_) {
+    armed |= bp.key == sw.key && bp.enabled;
+    stoppedHere |= hit_ && bp.coreId == hitId_ && bp.key == sw.key;
+  }
   if (stoppedHere) {
-    draw->AddRectFilled(ImVec2(at.x - 4, at.y - 1), ImVec2(at.x + width, at.y + line + 1),
+    draw->AddRectFilled(ImVec2(row.x - 4, row.y), ImVec2(row.x + width, row.y + rowHeight),
                         (p.red & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 50), 4.0f);
   }
-  if (ImGui::InvisibleButton("##dot", ImVec2(line, line))) ImGui::OpenPopup("##breakpoint");
+
+  // The dot: hollow, or filled red with a breakpoint armed.
+  const float dotSize = rowHeight;
+  if (ImGui::InvisibleButton("##dot", ImVec2(dotSize, rowHeight))) ImGui::OpenPopup("##breakpoint");
   const bool hovered = ImGui::IsItemHovered();
   if (hovered) ImGui::SetTooltip("Breakpoint on %s", sw.name);
-  const ImVec2 centre(at.x + line * 0.5f, at.y + line * 0.5f);
+  const ImVec2 centre(row.x + dotSize * 0.5f - 2, mid);
   if (armed) {
-    draw->AddCircleFilled(centre, 4.5f, p.red);
+    draw->AddCircleFilled(centre, 5.5f, p.red);
   } else {
-    draw->AddCircle(centre, 4.5f, hovered ? p.red : secondary(), 0, 1.2f);
+    draw->AddCircle(centre, 5.5f, hovered ? p.red : secondary(), 0, 1.5f);
   }
   drawMenu(sw);
 
-  // The address, the name lit while on, a register's value, what it is.
-  ImGui::SameLine();
-  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.85f);
-  ImGui::AlignTextToFramePadding();
-  const float addressAt = ImGui::GetCursorPosX();
-  ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(p.orange), "%s", sw.address);
-  ImGui::SameLine(addressAt + ImGui::CalcTextSize("$C080-8F").x + 10);
+  float x = row.x + dotSize + 2;
+  ImGui::PushFont(ui::monoFont(), 0.0f);
+  draw->AddText(ImVec2(x, mid - monoLine * 0.5f), p.orange, sw.address);
+  x += addressWidth + 12;
 
   const bool lit = sw.isRegister() || (flags_ & sw.mask());
   const ImU32 colour = sw.readOnly ? p.blue : p.green;
-  const ImVec2 size = ImGui::CalcTextSize("SLOTC3ROM");
-  const ImVec2 pa = ImGui::GetCursorScreenPos();
-  const ImVec2 pb(pa.x + size.x + 10, pa.y + size.y + 2);
-  draw->AddRectFilled(pa, pb, lit ? colour : ImGui::GetColorU32(ImGuiCol_Text, 0.07f), 4.0f);
+  const ImVec2 ca(x, mid - chipHeight * 0.5f);
+  const ImVec2 cb(x + chipText.x + 16, mid + chipHeight * 0.5f);
+  draw->AddRectFilled(ca, cb, lit ? colour : ImGui::GetColorU32(ImGuiCol_Text, 0.08f), 5.0f);
   const float nameWidth = ImGui::CalcTextSize(sw.name).x;
-  draw->AddText(ImVec2(pa.x + 5 + (size.x - nameWidth) * 0.5f, pa.y + 1), lit ? ui::textOn(colour) : secondary(),
-                sw.name);
-  ImGui::Dummy(ImVec2(pb.x - pa.x, pb.y - pa.y));
-  ImGui::SameLine();
+  draw->AddText(ImVec2(ca.x + (cb.x - ca.x - nameWidth) * 0.5f, mid - monoLine * 0.5f),
+                lit ? ui::textOn(colour) : secondary(), sw.name);
+  x = cb.x + 12;
+
   if (sw.isRegister()) {
-    ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(p.green), "$%02X",
-                       index < registers_.size() ? registers_[index] : 0);
-    ImGui::SameLine();
+    char value[8];
+    std::snprintf(value, sizeof value, "$%02X", index < registers_.size() ? registers_[index] : 0);
+    draw->AddText(ImVec2(x, mid - monoLine * 0.5f), p.green, value);
+    x += valueWidth + 12;
   }
   ImGui::PopFont();
-  ImGui::TextDisabled("%s", sw.description);
+
+  draw->AddText(ImVec2(x, mid - bodyLine * 0.5f), ImGui::GetColorU32(ImGuiCol_Text, 0.78f), sw.description);
+
+  ImGui::SetCursorScreenPos(ImVec2(row.x + dotSize, row.y));
+  ImGui::Dummy(ImVec2(std::max(1.0f, width - dotSize), rowHeight));
   ImGui::PopID();
 }
 
@@ -343,10 +376,7 @@ void SoftSwitchWindow::draw(bool *open) {
     for (const SoftSwitchInfo &sw : catalog_) {
       if (!group || std::strcmp(group, sw.group) != 0) {
         group = sw.group;
-        ImGui::Dummy(ImVec2(0, 4));
-        ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.72f);
-        ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(ui::accentText()), "%s", group);
-        ImGui::PopFont();
+        heading(group);
       }
       drawSwitch(sw, ImGui::GetContentRegionAvail().x);
     }

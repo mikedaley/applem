@@ -55,13 +55,13 @@ void card(ImDrawList *draw, ImVec2 a, ImVec2 b) {
 }
 
 void caption(ImDrawList *draw, ImVec2 at, const char *label) {
-  ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.72f);
+  ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
   draw->AddText(at, secondary(), label);
   ImGui::PopFont();
 }
 
 // A capsule with a word in it, lit or not. Returns its width.
-float pill(ImDrawList *draw, ImVec2 at, const char *label, bool lit, ImU32 colour, float scale = 0.76f) {
+float pill(ImDrawList *draw, ImVec2 at, const char *label, bool lit, ImU32 colour, float scale = ui::SMALL_TEXT) {
   ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * scale);
   const ImVec2 size = ImGui::CalcTextSize(label);
   const ImVec2 end(at.x + size.x + 12, at.y + size.y + 4);
@@ -1041,7 +1041,7 @@ void BasicWindow::drawToolbar() {
     tip = "The editor and memory hold the same program";
   }
   const float chipHeight = ImGui::GetFrameHeight();
-  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.8f);
+  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
   const ImVec2 ts = ImGui::CalcTextSize(sync);
   ImGui::PopFont();
   const ImVec2 chipEnd(chipAt.x + ts.x + 26, chipAt.y + chipHeight);
@@ -1049,7 +1049,7 @@ void BasicWindow::drawToolbar() {
   if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tip);
   draw->AddRectFilled(chipAt, chipEnd, withAlpha(syncColour, 0.14f), chipHeight * 0.5f);
   draw->AddCircleFilled(ImVec2(chipAt.x + 10, chipAt.y + chipHeight * 0.5f), 3.0f, syncColour);
-  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.8f);
+  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
   draw->AddText(ImVec2(chipAt.x + 18, chipAt.y + (chipHeight - ts.y) * 0.5f), syncColour, sync);
   ImGui::PopFont();
   if (!filePath_.empty()) {
@@ -1190,7 +1190,7 @@ void BasicWindow::drawEditor(ImVec2 size) {
     }
     if (line == errorText) {
       const std::string m = "?" + error_->message;
-      ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.82f);
+      ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
       const ImVec2 ms = ImGui::CalcTextSize(m.c_str());
       const float x = std::max(textX + (t.size() + 3) * charWidth, a.x + 40);
       const ImVec2 pa(x, (a.y + b.y - ms.y) * 0.5f - 2), pb(x + ms.x + 14, (a.y + b.y + ms.y) * 0.5f + 2);
@@ -1282,7 +1282,7 @@ void BasicWindow::drawCompletions() {
       draw->AddText(ImVec2(r0.x + 8, ty), c.type == T::Keyword ? p.green : kind, c.text.c_str(), c.text.c_str() + n);
       const float w = ImGui::CalcTextSize(c.text.c_str(), c.text.c_str() + n).x;
       draw->AddText(ImVec2(r0.x + 8 + w, ty), c.type == T::Keyword ? text() : kind, c.text.c_str() + n);
-      ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.72f);
+      ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
       const ImVec2 cs = ImGui::CalcTextSize(c.category.c_str());
       draw->AddText(ImVec2(r0.x + width - cs.x - 8, r0.y + (row - cs.y) * 0.5f), secondary(), c.category.c_str());
       ImGui::PopFont();
@@ -1308,7 +1308,7 @@ void BasicWindow::drawVariables(float width, float height) {
   std::snprintf(head, sizeof head, "VARIABLES  %zu", variables_.size() + arrays_.size());
   caption(draw, ImVec2(start.x + PAD, start.y + 10), head);
   if (state_.paused && state_.running) {
-    ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.72f);
+    ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
     const char *hint = "CLICK A VALUE TO CHANGE IT";
     draw->AddText(ImVec2(start.x + width - PAD - ImGui::CalcTextSize(hint).x, start.y + 10), withAlpha(accent(), 0.8f), hint);
     ImGui::PopFont();
@@ -1391,7 +1391,7 @@ void BasicWindow::drawVariables(float width, float height) {
     const char *badge = v.type == BasicVarType::String ? "$" : v.type == BasicVarType::Integer ? "%" : "R";
     const ImU32 tc = typeColour(v.type);
     d->AddRectFilled(ImVec2(x0 + 4, y + 3), ImVec2(x0 + 18, y + ImGui::GetTextLineHeight() + 1), withAlpha(tc, 0.18f), 4.0f);
-    ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.75f);
+    ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
     d->AddText(ImVec2(x0 + 8, y + 4), tc, badge);
     ImGui::PopFont();
     ImGui::PushFont(ui::monoFont(), 0.0f);
@@ -1476,7 +1476,7 @@ void BasicWindow::drawVariables(float width, float height) {
 
     const ImU32 tc = typeColour(arr.type);
     auto header = [&](const std::string &label, bool right) {
-      ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.85f);
+      ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
       const ImVec2 at = ImGui::GetCursorScreenPos();
       const float w = ImGui::GetContentRegionAvail().x;
       const ImVec2 ls = ImGui::CalcTextSize(label.c_str());
@@ -1510,7 +1510,7 @@ void BasicWindow::drawVariables(float width, float height) {
         }
         label += ")";
         ImGui::SetCursorScreenPos(ImVec2(x0 + 22, ImGui::GetCursorScreenPos().y + 2));
-        ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.85f);
+        ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
         ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(secondary()), "%s", label.c_str());
         ImGui::PopFont();
       }

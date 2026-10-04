@@ -40,6 +40,8 @@ public:
 
   // Which oscillators are muted, a bit each. Remembered between runs.
   uint32_t mutes = 0;
+  // Whether the oscillators are listed. Remembered between runs.
+  bool showOscillators = true;
 
 private:
   struct Oscillator {
@@ -78,6 +80,13 @@ private:
   uint8_t control_ = 0;
   uint16_t address_ = 0;
   bool showAll_ = false;
+  // The part of the sound RAM in view, in bytes.
+  double ramStart_ = 0;
+  double ramSpan_ = 65536;
+  // The window's height while it lists the oscillators, to go back to.
+  float listedHeight_ = 0;
+  float restoreHeight_ = 0;
+  bool wasListed_ = true;
 };
 
 } // namespace a2e::native

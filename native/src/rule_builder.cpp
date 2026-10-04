@@ -179,7 +179,7 @@ bool RuleBuilder::drawGroup(ConditionNode &group, int depth, const AddressResolv
     ImGui::PushID(static_cast<int>(i));
     if (i > 0) {
       // The joiner between siblings, small and quiet.
-      ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.75f);
+      ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
       ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(withAlpha(bar, 0.85f)), "%s", group.all ? "AND" : "OR");
       ImGui::PopFont();
     } else {

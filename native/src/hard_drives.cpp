@@ -559,7 +559,7 @@ void HardDrives::drawDevice(int index) {
   // Edited and Locked, as small capsules at the top right.
   float badgeRight = card.x + CARD_WIDTH - CARD_PADDING;
   auto badge = [&](const char *label, ImU32 colour) {
-    ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.8f);
+    ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
     const ImVec2 size = ImGui::CalcTextSize(label);
     const ImVec2 max(badgeRight, card.y + CARD_PADDING + size.y + 4);
     const ImVec2 min(max.x - size.x - 12, card.y + CARD_PADDING);

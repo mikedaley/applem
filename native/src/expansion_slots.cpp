@@ -247,7 +247,7 @@ void card(ImDrawList *draw, ImVec2 at, ImVec2 size, const std::string &id, unsig
   draw->AddPolyline(outline, 5, edge, ImDrawFlags_Closed, 1.0f);
 
   // The label: a paper sticker in the card's colour, its name on it.
-  ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.85f);
+  ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
   const ImVec2 nameSize = ImGui::CalcTextSize(name);
   const ImVec2 label(at.x + cut + 2, at.y + 5);
   const ImVec2 labelEnd(label.x + nameSize.x + 14, label.y + nameSize.y + 6);
@@ -456,7 +456,7 @@ void ExpansionSlots::draw(bool *open) {
     draw->AddText(ImVec2(infoX, rowTop + 2), SILK, slotNote(*machine_, slot).c_str());
     char where[32];
     std::snprintf(where, sizeof(where), "$C0%X0  $C%X00", 8 + slot, slot);
-    ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.8f);
+    ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
     draw->AddText(ImVec2(infoX, rowTop + ImGui::GetTextLineHeight() + 6), withAlpha(SILK, 0.55f), where);
     ImGui::PopFont();
 
@@ -502,7 +502,7 @@ void ExpansionSlots::draw(bool *open) {
         }
         // A card in the socket that the built-in device is answering over.
         if (info) {
-          ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.75f);
+          ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
           const std::string idle = std::string("IDLE: ") + info->name;
           const ImVec2 size = ImGui::CalcTextSize(idle.c_str());
           const ImVec2 chip(cardAt.x + CARD_WIDTH - size.x - 24, cardAt.y - 6);
@@ -524,7 +524,7 @@ void ExpansionSlots::draw(bool *open) {
       // Changed and not yet fitted.
       auto was = applied_.find(slot);
       if (was != applied_.end() && was->second != current) {
-        ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.75f);
+        ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
         const char *pending = "ON RESET";
         const ImVec2 size = ImGui::CalcTextSize(pending);
         const ImVec2 chip(cardAt.x + CARD_WIDTH - size.x - 14, cardAt.y - 6);

@@ -404,7 +404,7 @@ void SaveStates::drawSlot(int slot, ImVec2 at, ImVec2 size) {
   }
 
   // Its number, as a badge on the picture's corner.
-  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.85f);
+  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
   const std::string number = std::to_string(slot);
   const ImVec2 badge(screen.x + 8, screen.y + 8);
   draw->AddRectFilled(badge, ImVec2(badge.x + 22, badge.y + 20), row.record ? IM_COL32(0, 0, 0, 160) : text(0.08f), 6.0f);
@@ -421,7 +421,7 @@ void SaveStates::drawSlot(int slot, ImVec2 at, ImVec2 size) {
     draw->AddText(ImVec2(x, y), text(), label.c_str());
     // The machine, orange when loading it would switch machines.
     const char *machineName = writer ? writer->name : row.record->machine.c_str();
-    ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.8f);
+    ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
     const ImVec2 chipSize = ImGui::CalcTextSize(machineName);
     const ImVec2 chip(screenEnd.x - chipSize.x - 12, y + 1);
     draw->AddRectFilled(chip, ImVec2(screenEnd.x, chip.y + chipSize.y + 4), foreign ? withAlpha(ORANGE, 0.18f) : text(0.07f),
@@ -508,7 +508,7 @@ void SaveStates::drawFileCard(ImVec2 at, ImVec2 size) {
   draw->AddLine(ImVec2(doc.x + 22, doc.y), ImVec2(doc.x + 22, doc.y + 10), ink, 2.0f);
   draw->AddLine(ImVec2(doc.x + 22, doc.y + 10), ImVec2(doc.x + 32, doc.y + 10), ink, 2.0f);
   centredText(draw, ImVec2(middle.x, middle.y + 40), ink, "Load from File…");
-  ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.8f);
+  ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
   centredText(draw, ImVec2(middle.x, end.y - 22), secondary(), "An .a2state from either build");
   ImGui::PopFont();
   if (clicked) {

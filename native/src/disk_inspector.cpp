@@ -405,7 +405,7 @@ void DiskInspector::drawPlatter(ImVec2 origin, float size) {
 
 void DiskInspector::drawLegend(float width) {
   ImDrawList *draw = ImGui::GetWindowDrawList();
-  ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.85f);
+  ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
   const ImVec2 start = ImGui::GetCursorScreenPos();
   struct Entry {
     uint32_t rgb;
@@ -507,7 +507,7 @@ void DiskInspector::drawStrip(float width) {
   const bool showCells = perCell >= 2.5;
   const bool showDigits = perCell >= 11;
   const float split = showCells ? bandTop + (bandBottom - bandTop) * 0.5f : bandBottom;
-  const float valueSize = std::clamp(static_cast<float>(perCell) * 1.1f, ImGui::GetFontSize() * 0.8f, 18.0f);
+  const float valueSize = std::clamp(static_cast<float>(perCell) * 1.1f, ImGui::GetFontSize() * ui::SMALL_TEXT, 18.0f);
   ImGui::PushFont(ui::monoFont(), valueSize);
   const float hexWidth = ImGui::CalcTextSize("FF").x;
   ImGui::PopFont();
@@ -534,7 +534,7 @@ void DiskInspector::drawStrip(float width) {
       ImGui::PopFont();
       // And what it is, when the nibble is wide enough to say.
       if (x1 - x0 >= 230) {
-        ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.75f);
+        ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
         const std::string name = kindName(kind);
         draw->AddText(ImVec2(std::max(x0, p0.x) + 6, bandTop + 3), withAlpha(ink, 0.75f), name.c_str());
         ImGui::PopFont();
@@ -564,7 +564,7 @@ void DiskInspector::drawStrip(float width) {
   }
 
   // The sectors, named over their address fields.
-  ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.75f);
+  ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
   for (size_t s = 0; s < a.sectors.size(); s++) {
     const inspect::Sector &sector = a.sectors[s];
     if (sector.address_nibble >= nibbles.size()) continue;
@@ -667,7 +667,7 @@ void DiskInspector::drawStrip(float width) {
     std::snprintf(shown, sizeof(shown), "%.0fx  ·  cells %.0f–%.0f", cells / stripSpan_, stripStart_,
                   stripStart_ + stripSpan_);
     ImGui::AlignTextToFramePadding();
-    ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.85f);
+    ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
     ImGui::TextColored(ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled), "%s", shown);
     // And the controller, as the inspected drive sees it, at the right.
     if (!disk_.status.empty()) {
@@ -922,7 +922,7 @@ void DiskInspector::drawTrackSummary(float width) {
     if (ui::Button("Go to Head", ImVec2(goWidth, 0))) followHead_ = true;
   }
   ImGui::SetCursorScreenPos(ImVec2(start.x, start.y + lineHeight + 6));
-  ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.85f);
+  ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
   ImGui::TextColored(ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled), "Sectors, in the order they pass the head");
   ImGui::PopFont();
   drawSectorChips(width);

@@ -75,7 +75,7 @@ inline void light(ImDrawList *draw, ImVec2 centre, float radius, ImU32 colour, b
 
 // A small capsule with a label; returns its width.
 inline float chip(ImDrawList *draw, ImVec2 at, const char *label, ImU32 colour) {
-  ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.8f);
+  ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
   const ImVec2 size = ImGui::CalcTextSize(label);
   const ImVec2 end(at.x + size.x + 12, at.y + size.y + 4);
   draw->AddRectFilled(at, end, withAlpha(colour, 0.16f), (end.y - at.y) * 0.5f);
@@ -263,7 +263,7 @@ inline void cardFrame(ImDrawList *draw, ImVec2 a, ImVec2 b, int drive, bool pick
   draw->AddRectFilled(a, b, ui::isDark() ? IM_COL32(255, 255, 255, 10) : IM_COL32(0, 0, 0, 8), CARD_ROUNDING);
   if (picked) draw->AddRect(a, b, accent(0.9f), CARD_ROUNDING, 0, 1.5f);
   else border(draw, a, b, CARD_ROUNDING);
-  ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.8f);
+  ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
   const std::string name = "D" + std::to_string(drive + 1);
   draw->AddText(ImVec2(a.x + 8, a.y + 6), picked ? accent() : secondary(), name.c_str());
   ImGui::PopFont();

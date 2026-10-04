@@ -82,15 +82,15 @@ void card(ImDrawList *draw, ImVec2 a, ImVec2 b) {
 
 // Small capitals, as the Joystick and Mockingboard windows label things.
 void caption(ImDrawList *draw, ImVec2 at, const char *label, ImU32 colour) {
-  ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.72f);
+  ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
   draw->AddText(at, colour, label);
   ImGui::PopFont();
 }
 
-float captionHeight() { return ImGui::GetFontSize() * 0.72f; }
+float captionHeight() { return ImGui::GetFontSize() * ui::SMALL_TEXT; }
 
 // A capsule with a word in it. Returns its width.
-float pill(ImDrawList *draw, ImVec2 at, const char *label, bool lit, ImU32 colour, float scale = 0.78f) {
+float pill(ImDrawList *draw, ImVec2 at, const char *label, bool lit, ImU32 colour, float scale = ui::SMALL_TEXT) {
   ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * scale);
   const ImVec2 size = ImGui::CalcTextSize(label);
   const ImVec2 end(at.x + size.x + 12, at.y + size.y + 4);
@@ -227,7 +227,7 @@ bool panelTab(const char *label, int count, bool selected, bool flash) {
   char countText[16];
   std::snprintf(countText, sizeof countText, "%d", count);
   const float labelWidth = ImGui::CalcTextSize(label).x;
-  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.72f);
+  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
   const float countWidth = count >= 0 ? ImGui::CalcTextSize(countText).x + 10 : 0;
   ImGui::PopFont();
   const float height = ImGui::GetFrameHeight() + 4;
@@ -243,7 +243,7 @@ bool panelTab(const char *label, int count, bool selected, bool flash) {
   draw->AddText(ImVec2(at.x + 10, textY), selected ? text() : secondary(), label);
   if (count >= 0) {
     const float cx = at.x + 10 + labelWidth + 6;
-    ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.72f);
+    ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
     const ImVec2 cs = ImGui::CalcTextSize(countText);
     const float cy = at.y + (height - cs.y - 4) * 0.5f;
     draw->AddRectFilled(ImVec2(cx, cy), ImVec2(cx + cs.x + 10, cy + cs.y + 4),
@@ -848,17 +848,17 @@ void CpuDebugger::drawRegisters() {
       std::string where;
       if (auto sym = symbols_.lookup(c.pc)) where = sym->name;
       if (!where.empty()) {
-        ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.85f);
+        ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
         draw->AddText(ImVec2(a.x + 18 + pcWidth, a.y + 21), p.blue, where.c_str());
         ImGui::PopFont();
       }
       if (wide_) {
         char mode[24];
         std::snprintf(mode, sizeof mode, "%s", c.emulation() ? "EMULATION" : "NATIVE");
-        ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.72f);
+        ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
         const float mw = ImGui::CalcTextSize(mode).x;
         ImGui::PopFont();
-        pill(draw, ImVec2(b.x - mw - 22, a.y + 6), mode, true, c.emulation() ? p.yellow : p.blue, 0.72f);
+        pill(draw, ImVec2(b.x - mw - 22, a.y + 6), mode, true, c.emulation() ? p.yellow : p.blue, ui::SMALL_TEXT);
       }
     }
     ImGui::PopID();
@@ -926,7 +926,7 @@ void CpuDebugger::drawRegisters() {
       } else {
         std::snprintf(extra, sizeof extra, "%u", t.value);
       }
-      ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.75f);
+      ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
       const float ew = ImGui::CalcTextSize(extra).x;
       draw->AddText(ImVec2(b.x - ew - 8, a.y + 6), secondary(), extra);
       ImGui::PopFont();
@@ -1024,11 +1024,11 @@ void CpuDebugger::drawClock() {
                {"IRQ", c.irqPending, "Interrupt request pending"}};
   for (const auto &line : lines) {
     if (wide_ && !std::strcmp(line.label, "EDGE")) continue;
-    ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.72f);
+    ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
     const float w = ImGui::CalcTextSize(line.label).x + 12;
     ImGui::PopFont();
     x -= w;
-    pill(draw, ImVec2(x, y + 2), line.label, line.on, p.red, 0.72f);
+    pill(draw, ImVec2(x, y + 2), line.label, line.on, p.red, ui::SMALL_TEXT);
     ImGui::SetCursorScreenPos(ImVec2(x, y + 2));
     ImGui::InvisibleButton(line.label, ImVec2(w, 16));
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", line.tip);
@@ -1051,7 +1051,7 @@ void CpuDebugger::drawBeam() {
   caption(draw, start, "BEAM", secondary());
   char cycle[48];
   std::snprintf(cycle, sizeof cycle, "frame cycle %s", grouped(static_cast<uint64_t>(c.frameCycle)).c_str());
-  ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.72f);
+  ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
   const float cw = ImGui::CalcTextSize(cycle).x;
   draw->AddText(ImVec2(start.x + width - cw, start.y), secondary(), cycle);
   ImGui::PopFont();
@@ -1064,7 +1064,7 @@ void CpuDebugger::drawBeam() {
     char number[16];
     if (known) std::snprintf(number, sizeof number, "%d", value);
     else std::snprintf(number, sizeof number, "--");
-    ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.72f);
+    ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
     const float nw = ImGui::CalcTextSize(name).x;
     draw->AddText(ImVec2(x, y + lineHeight * 0.22f), secondary(), name);
     ImGui::PopFont();
@@ -1077,13 +1077,13 @@ void CpuDebugger::drawBeam() {
   field("H", c.beam.hPos, true);
   ImGui::PopFont();
   // Blanking, at the right.
-  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.72f);
+  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
   const float hw = ImGui::CalcTextSize("HBL").x + 12;
   const float vw = ImGui::CalcTextSize("VBL").x + 12;
   ImGui::PopFont();
   const float py = y + (lineHeight - captionHeight() - 4) * 0.5f;
-  pill(draw, ImVec2(start.x + width - hw, py), "HBL", c.beam.inHorizontalBlank, p.blue, 0.72f);
-  pill(draw, ImVec2(start.x + width - hw - 4 - vw, py), "VBL", c.beam.inVerticalBlank, p.blue, 0.72f);
+  pill(draw, ImVec2(start.x + width - hw, py), "HBL", c.beam.inHorizontalBlank, p.blue, ui::SMALL_TEXT);
+  pill(draw, ImVec2(start.x + width - hw - 4 - vw, py), "VBL", c.beam.inVerticalBlank, p.blue, ui::SMALL_TEXT);
   ImGui::SetCursorScreenPos(start);
   ImGui::Dummy(ImVec2(width, y + lineHeight - start.y));
   if (ImGui::IsItemHovered() && snapshot_.paused) {
@@ -1668,7 +1668,7 @@ void CpuDebugger::drawCode(ImVec2 size) {
         noteColour = p.blue;
       }
       if (note[0]) {
-        ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.85f);
+        ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
         const ImVec2 ns = ImGui::CalcTextSize(note);
         const ImVec2 na(noteX, y + (lineHeight - ns.y - 4) * 0.5f);
         draw->AddRectFilled(na, ImVec2(na.x + ns.x + 12, na.y + ns.y + 4), withAlpha(noteColour, 0.16f), (ns.y + 4) * 0.5f);
@@ -2075,7 +2075,7 @@ void CpuDebugger::drawBreakpoints() {
     ImGui::SameLine(0, 8);
     const ImVec2 badge = ImGui::GetCursorScreenPos();
     const float bw = pill(draw, ImVec2(badge.x, badge.y + 3), KIND_BADGES[static_cast<int>(b.kind)], b.enabled,
-                          kindColour(b.kind, p), 0.72f);
+                          kindColour(b.kind, p), ui::SMALL_TEXT);
     ImGui::Dummy(ImVec2(std::max(bw, 52.0f), 1));
     ImGui::SameLine(0, 8);
     std::string where = formatAddress(b.start);
@@ -2117,7 +2117,7 @@ void CpuDebugger::drawBreakpoints() {
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Build the condition from rules");
     ImGui::SameLine(0, 8);
     ImGui::AlignTextToFramePadding();
-    ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.85f);
+    ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
     char hits[24];
     std::snprintf(hits, sizeof hits, "%u hit%s", b.hits, b.hits == 1 ? "" : "s");
     ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(b.hits ? text(0.8f) : secondary()), "%s", hits);
@@ -2251,7 +2251,7 @@ void CpuDebugger::drawBeams() {
     if (ui::Checkbox("##on", &beam.enabled)) changed = true;
     ImGui::SameLine(0, 8);
     const ImVec2 at = ImGui::GetCursorScreenPos();
-    const float bw = pill(draw, ImVec2(at.x, at.y + 3), BEAM_LABELS[beam.mode], beam.enabled, p.green, 0.72f);
+    const float bw = pill(draw, ImVec2(at.x, at.y + 3), BEAM_LABELS[beam.mode], beam.enabled, p.green, ui::SMALL_TEXT);
     ImGui::Dummy(ImVec2(std::max(bw, 80.0f), 1));
     ImGui::SameLine(0, 8);
     char detail[64];

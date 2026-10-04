@@ -148,6 +148,7 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "ShowEnsoniq=%d", &value) == 1) s.showEnsoniq = value;
     else if (std::sscanf(line, "ShowBasic=%d", &value) == 1) s.showBasic = value;
     else if (unsigned mutes = 0; std::sscanf(line, "EnsoniqMutes=%u", &mutes) == 1) s.ensoniqMutes = mutes;
+    else if (std::sscanf(line, "EnsoniqOscillators=%d", &value) == 1) s.ensoniqOscillators = value;
     else if (std::sscanf(line, "ShowCpuDebugger=%d", &value) == 1) s.showCpuDebugger = value;
     else if (std::sscanf(line, "ShowMemoryViewer=%d", &value) == 1) s.showMemoryViewer = value;
     else if (std::sscanf(line, "ShowSoftSwitches=%d", &value) == 1) s.showSoftSwitches = value;
@@ -202,6 +203,7 @@ void App::registerSettingsHandler() {
     out->appendf("ShowEnsoniq=%d\n", s.showEnsoniq ? 1 : 0);
     out->appendf("ShowBasic=%d\n", s.showBasic ? 1 : 0);
     out->appendf("EnsoniqMutes=%u\n", static_cast<unsigned>(s.ensoniqMutes));
+    out->appendf("EnsoniqOscillators=%d\n", s.ensoniqOscillators ? 1 : 0);
     out->appendf("ShowCpuDebugger=%d\n", s.showCpuDebugger ? 1 : 0);
     out->appendf("ShowMemoryViewer=%d\n", s.showMemoryViewer ? 1 : 0);
     out->appendf("ShowSoftSwitches=%d\n", s.showSoftSwitches ? 1 : 0);
@@ -405,6 +407,7 @@ void App::startEmulation() {
   mockingboard_.mutes = settings_.mockingboardMutes;
   applyMockingboardSound();
   ensoniq_.mutes = settings_.ensoniqMutes;
+  ensoniq_.showOscillators = settings_.ensoniqOscillators;
   debugger_.setMachine(*wanted);
   switches_.setMachine();
   memory_.setMachine(*wanted);
@@ -1264,12 +1267,13 @@ void App::drawEqualizer() {
   }
 }
 
-// Its mutes are the user's too.
+// Its mutes, and whether it lists the oscillators, are the user's too.
 void App::drawEnsoniq() {
   firstPosition(440, 60);
   ensoniq_.draw(&settings_.showEnsoniq);
-  if (ensoniq_.mutes != settings_.ensoniqMutes) {
+  if (ensoniq_.mutes != settings_.ensoniqMutes || ensoniq_.showOscillators != settings_.ensoniqOscillators) {
     settings_.ensoniqMutes = ensoniq_.mutes;
+    settings_.ensoniqOscillators = ensoniq_.showOscillators;
     ImGui::MarkIniSettingsDirty();
   }
 }

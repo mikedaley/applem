@@ -67,6 +67,7 @@ struct Settings {
   bool showEnsoniq = false;
   bool showBasic = false;
   uint32_t ensoniqMutes = 0; // a bit an oscillator
+  bool ensoniqOscillators = true; // the oscillators listed in its window
   bool showEqualizer = false;
   Equalizer::Settings equalizer; // the tone controls over the output
   int gamePort = 0; // 0 the Apple joystick, 1 the Joyport

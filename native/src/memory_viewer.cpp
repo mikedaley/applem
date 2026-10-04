@@ -85,7 +85,7 @@ void card(ImDrawList *draw, ImVec2 a, ImVec2 b) {
 
 // Small capitals, as the other debug windows label things.
 void caption(const char *label) {
-  ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.72f);
+  ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
   ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
   ImGui::TextUnformatted(label);
   ImGui::PopStyleColor();
@@ -93,7 +93,7 @@ void caption(const char *label) {
 }
 
 // A capsule with a word in it, lit or not. Returns its width.
-float pill(ImDrawList *draw, ImVec2 at, const char *label, bool lit, ImU32 colour, float scale = 0.78f) {
+float pill(ImDrawList *draw, ImVec2 at, const char *label, bool lit, ImU32 colour, float scale = ui::SMALL_TEXT) {
   ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * scale);
   const ImVec2 size = ImGui::CalcTextSize(label);
   const ImVec2 end(at.x + size.x + 12, at.y + size.y + 4);
@@ -103,7 +103,7 @@ float pill(ImDrawList *draw, ImVec2 at, const char *label, bool lit, ImU32 colou
   return end.x - at.x;
 }
 
-float pillHeight(float scale = 0.78f) {
+float pillHeight(float scale = ui::SMALL_TEXT) {
   ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * scale);
   const float h = ImGui::GetTextLineHeight() + 4;
   ImGui::PopFont();
@@ -1914,7 +1914,7 @@ void MemoryViewer::drawInspector(float width) {
     {
       const float box = std::min(22.0f, (w - valueX - 7 * 3) / 8);
       const ImVec2 at = ImGui::GetCursorScreenPos();
-      ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.7f);
+      ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
       for (int bit = 7; bit >= 0; bit--) {
         const int i = 7 - bit;
         const ImVec2 a(at.x + i * (box + 3) + (i >= 4 ? 4 : 0), at.y);
@@ -2042,23 +2042,23 @@ void MemoryViewer::drawBanking(float width) {
     ImDrawList *draw = ImGui::GetWindowDrawList();
     const float rangeW = ImGui::CalcTextSize("$0000").x * 2.2f;
     auto chip = [&](float x, float y, const char *label, ImU32 colour) {
-      return pill(draw, ImVec2(x, y), label, colour != 0, colour, 0.72f);
+      return pill(draw, ImVec2(x, y), label, colour != 0, colour, ui::SMALL_TEXT);
     };
     const ImU32 MAIN = p.blue, AUX = p.purple, ROM = p.red, CARD = p.orange;
-    const float rowH = pillHeight(0.72f) + 4;
+    const float rowH = pillHeight(ui::SMALL_TEXT) + 4;
     const float readX = rangeW + 14, writeX = readX + (w - readX) * 0.5f;
     {
       const ImVec2 at = ImGui::GetCursorScreenPos();
-      ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.72f);
+      ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
       draw->AddText(ImVec2(at.x + readX, at.y), secondary(), "READS");
       draw->AddText(ImVec2(at.x + writeX, at.y), secondary(), "WRITES");
       ImGui::PopFont();
-      ImGui::Dummy(ImVec2(w, ImGui::GetFontSize() * 0.8f));
+      ImGui::Dummy(ImVec2(w, ImGui::GetFontSize() * ui::SMALL_TEXT));
     }
     auto line = [&](const char *range, const char *read, ImU32 readColour, const char *written, ImU32 writeColour,
                     const char *tip) {
       const ImVec2 at = ImGui::GetCursorScreenPos();
-      ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.8f);
+      ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
       draw->AddText(ImVec2(at.x, at.y + 2), text(0.8f), range);
       ImGui::PopFont();
       chip(at.x + readX, at.y, read, readColour);
@@ -2110,17 +2110,17 @@ void MemoryViewer::drawBanking(float width) {
                           {"HIRES", sw.hires, false},    {"80COL", sw.col80, true},   {"ALTCHAR", sw.altCharSet, true}};
     const ImVec2 start = ImGui::GetCursorScreenPos();
     float x = start.x, y = start.y;
-    const float ph = pillHeight(0.72f);
+    const float ph = pillHeight(ui::SMALL_TEXT);
     for (const Flag &f : flags) {
       if (f.needsAux && !aux) continue;
-      ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.72f);
+      ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
       const float pw = ImGui::CalcTextSize(f.name).x + 12;
       ImGui::PopFont();
       if (x + pw > start.x + w) {
         x = start.x;
         y += ph + 4;
       }
-      x += pill(draw, ImVec2(x, y), f.name, f.on, p.green, 0.72f) + 4;
+      x += pill(draw, ImVec2(x, y), f.name, f.on, p.green, ui::SMALL_TEXT) + 4;
     }
     ImGui::Dummy(ImVec2(w, y - start.y + ph));
   });
@@ -2136,7 +2136,7 @@ void MemoryViewer::drawPlaces(float width) {
     auto places = wide_ ? std::vector<Place>(std::begin(PLACES_IIGS), std::end(PLACES_IIGS))
                         : std::vector<Place>(std::begin(PLACES_8BIT), std::end(PLACES_8BIT));
     for (const Place &place : places) {
-      ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.8f);
+      ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
       const float pw = ImGui::CalcTextSize(place.label).x + 12;
       ImGui::PopFont();
       if (x + pw > start.x + w) {
@@ -2150,7 +2150,7 @@ void MemoryViewer::drawPlaces(float width) {
       ImGui::PopID();
       // A tinted chip in the accent, the way a macOS token reads as
       // something to press; filled solid under the pointer.
-      ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.8f);
+      ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
       const ImVec2 end(x + pw, y + ph);
       draw->AddRectFilled(ImVec2(x, y), end, hov ? accent() : accent(ui::isDark() ? 0.18f : 0.11f), ph * 0.5f);
       draw->AddText(ImVec2(x + 6, y + 2), hov ? ui::textOn(accent()) : ui::accentText(), place.label);

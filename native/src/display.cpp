@@ -201,7 +201,7 @@ int valueOf(const SettingValues &values, const char *key, int fallback) {
 }
 
 void caption(ImDrawList *draw, ImVec2 at, const char *label) {
-  ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.78f);
+  ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
   draw->AddText(at, secondary(), label);
   ImGui::PopFont();
 }
@@ -299,7 +299,7 @@ void Display::beginGroup(const char *title, float width) {
   ImDrawList *draw = ImGui::GetWindowDrawList();
   const ImVec2 at = ImGui::GetCursorScreenPos();
   caption(draw, ImVec2(at.x + 4, at.y), title);
-  ImGui::Dummy(ImVec2(width, ImGui::GetFontSize() * 0.78f + 6));
+  ImGui::Dummy(ImVec2(width, ImGui::GetFontSize() * ui::SMALL_TEXT + 6));
   groupStart_ = ImGui::GetCursorScreenPos();
   groupWidth_ = width;
   groupHasRow_ = false;
@@ -377,7 +377,7 @@ bool Display::drawTile(const char *id, const std::string &name, const SettingVal
   const ImVec2 monitor(at.x + 10, at.y + 8);
   drawMonitor(draw, monitor, ImVec2(monitorWidth, monitorWidth * 0.68f), values);
   // The name, and a tick on the one in use.
-  ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.8f);
+  ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
   const ImVec2 nameSize = ImGui::CalcTextSize(name.c_str());
   const float nameY = monitor.y + monitorWidth * 0.68f + 5;
   draw->PushClipRect(ImVec2(at.x + 6, nameY), ImVec2(end.x - 6, end.y), true);
@@ -398,7 +398,7 @@ void Display::drawGallery(float width) {
   DisplayState &state = current();
   const ImVec2 start = ImGui::GetCursorScreenPos();
   const float tileWidth = (width - TILE_GAP * (TILES_PER_ROW - 1)) / TILES_PER_ROW;
-  const ImVec2 tile(tileWidth, 8 + (tileWidth - 20) * 0.68f + 5 + ImGui::GetFontSize() * 0.8f + 8);
+  const ImVec2 tile(tileWidth, 8 + (tileWidth - 20) * 0.68f + 5 + ImGui::GetFontSize() * ui::SMALL_TEXT + 8);
   int index = 0;
   auto place = [&]() {
     const ImVec2 at(start.x + (index % TILES_PER_ROW) * (tileWidth + TILE_GAP),
@@ -689,7 +689,7 @@ void Display::drawWindow(bool *open) {
     DisplayState &state = current();
     ImDrawList *draw = ImGui::GetWindowDrawList();
     caption(draw, ImGui::GetCursorScreenPos(), "MONITOR");
-    ImGui::Dummy(ImVec2(WINDOW_WIDTH, ImGui::GetFontSize() * 0.78f + 4));
+    ImGui::Dummy(ImVec2(WINDOW_WIDTH, ImGui::GetFontSize() * ui::SMALL_TEXT + 4));
     drawPresetControls();
 
     // The settings, a page at a time.

@@ -65,14 +65,14 @@ ImU32 well() { return ui::isDark() ? IM_COL32(0, 0, 0, 90) : IM_COL32(0, 0, 0, 1
 
 // Small capitals over a reading, as the Joystick window labels its dials.
 void caption(ImDrawList *draw, ImVec2 at, const char *label, ImU32 colour) {
-  ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.72f);
+  ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
   draw->AddText(at, colour, label);
   ImGui::PopFont();
 }
 
 // A capsule with a word in it, lit or not. Returns its width.
 float pill(ImDrawList *draw, ImVec2 at, const char *label, bool lit, ImU32 colour) {
-  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.78f);
+  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
   const ImVec2 size = ImGui::CalcTextSize(label);
   const ImVec2 end(at.x + size.x + 10, at.y + size.y + 4);
   draw->AddRectFilled(at, end, lit ? colour : text(0.07f), (end.y - at.y) * 0.5f);
@@ -83,7 +83,7 @@ float pill(ImDrawList *draw, ImVec2 at, const char *label, bool lit, ImU32 colou
 
 // A label and a value in the mono face, the value coloured. Returns the width.
 float field(ImDrawList *draw, ImVec2 at, const char *label, const char *value, ImU32 colour) {
-  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.85f);
+  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
   draw->AddText(at, secondary(), label);
   const float lw = ImGui::CalcTextSize(label).x + 4;
   draw->AddText(ImVec2(at.x + lw, at.y), colour, value);
@@ -255,7 +255,7 @@ void MockingboardWindow::drawChannel(int index, int channel, float width) {
   // The channel's letter.
   draw->AddRectFilled(ImVec2(x, mid - 10), ImVec2(x + 20, mid + 10), withAlpha(BADGE[channel], fade), 5.0f);
   const char letter[2] = {static_cast<char>('A' + channel), 0};
-  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.85f);
+  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
   const ImVec2 ls = ImGui::CalcTextSize(letter);
   draw->AddText(ImVec2(x + 10 - ls.x * 0.5f, mid - ls.y * 0.5f), IM_COL32(255, 255, 255, static_cast<int>(255 * fade)), letter);
   ImGui::PopFont();
@@ -281,7 +281,7 @@ void MockingboardWindow::drawChannel(int index, int channel, float width) {
   const float noteHeight = ImGui::GetTextLineHeight();
   draw->AddText(ImVec2(x, mid - noteHeight * 0.5f - 6), text(fade), note);
   ImGui::PopFont();
-  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.72f);
+  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
   draw->AddText(ImVec2(x, mid + 4), secondary(), hz);
   ImGui::PopFont();
   x += 78;
@@ -305,7 +305,7 @@ void MockingboardWindow::drawChannel(int index, int channel, float width) {
   }
   char volume[8];
   std::snprintf(volume, sizeof(volume), envelope ? "ENV" : "%d", level);
-  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.78f);
+  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
   const ImVec2 vs = ImGui::CalcTextSize(volume);
   draw->AddText(ImVec2(x + meterWidth + 8, mid - vs.y * 0.5f), envelope ? PURPLE : secondary(), volume);
   ImGui::PopFont();
@@ -401,10 +401,10 @@ void MockingboardWindow::drawChip(int index) {
   draw->AddText(ImVec2(left, y), text(), title);
   const float tw = ImGui::CalcTextSize(title).x;
   std::snprintf(title, sizeof(title), "AY-3-8910  ·  VIA %d at $C4%s", index + 1, index == 0 ? "00" : "80");
-  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.8f);
+  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
   draw->AddText(ImVec2(left + tw + 10, y + 2), secondary(), title);
   ImGui::PopFont();
-  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.78f);
+  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
   const float irqWidth = ImGui::CalcTextSize("IRQ").x + 10;
   ImGui::PopFont();
   pill(draw, ImVec2(start.x + WIDTH - PAD - irqWidth, y), "IRQ", via.irq, RED);

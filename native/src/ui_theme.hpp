@@ -21,6 +21,15 @@ void loadFonts();
 // the default font if SF Mono is not there. Use with ImGui::PushFont.
 ImFont *monoFont();
 
+// The smallest text anyone is meant to read, as a fraction of the body text
+// (13pt): about 11.5pt, a little over the 11pt macOS keeps as its own floor
+// for secondary text. The app is used by people who may be fifty or over, so
+// captions, labels, counts and readouts are never smaller than this; a
+// caption tells itself from what it labels by its capitals and its colour,
+// not by being tiny. Only the parts of a picture that are there to look like
+// the thing, a chip's legend on a drawn circuit board, go smaller.
+inline constexpr float SMALL_TEXT = 0.88f;
+
 // Colours and shapes from the system: AppKit's named colours resolved under
 // the current appearance, and the user's accent colour. Cheap to call every
 // frame: it reapplies only when the appearance or the accent has changed,

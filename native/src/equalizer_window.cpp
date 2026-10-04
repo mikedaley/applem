@@ -54,7 +54,7 @@ ImU32 well() { return ui::isDark() ? IM_COL32(0, 0, 0, 90) : IM_COL32(0, 0, 0, 1
 ImU32 grid() { return ui::isDark() ? IM_COL32(255, 255, 255, 22) : IM_COL32(0, 0, 0, 20); }
 
 void caption(ImDrawList *draw, ImVec2 at, const char *label, ImU32 colour) {
-  ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.72f);
+  ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
   draw->AddText(at, colour, label);
   ImGui::PopFont();
 }
@@ -91,7 +91,7 @@ void EqualizerWindow::drawResponse(float width, float height) {
     const float y = yForDb(db);
     draw->AddLine(ImVec2(left, y), ImVec2(right, y), db == 0 ? grid() : grid(), db == 0 ? 1.5f : 1.0f);
     std::snprintf(label, sizeof(label), "%+d", db);
-    ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.72f);
+    ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
     const ImVec2 size = ImGui::CalcTextSize(label);
     draw->AddText(ImVec2(left - 6 - size.x, y - size.y * 0.5f), secondary(), label);
     ImGui::PopFont();
@@ -99,7 +99,7 @@ void EqualizerWindow::drawResponse(float width, float height) {
   for (int i = 0; i < Equalizer::BANDS; i++) {
     const float x = xForHz(Equalizer::FREQUENCIES[i], left, right - left);
     draw->AddLine(ImVec2(x, top), ImVec2(x, bottom), grid());
-    ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.72f);
+    ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
     const ImVec2 size = ImGui::CalcTextSize(BAND_LABELS[i]);
     draw->AddText(ImVec2(x - size.x * 0.5f, bottom + 3), secondary(), BAND_LABELS[i]);
     ImGui::PopFont();
@@ -127,7 +127,7 @@ void EqualizerWindow::drawBands() {
   const float column = (WIDTH - gap * (Equalizer::BANDS - 1)) / Equalizer::BANDS;
   const ImVec2 start = ImGui::GetCursorScreenPos();
   ImDrawList *draw = ImGui::GetWindowDrawList();
-  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.8f);
+  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
   const float textHeight = ImGui::GetTextLineHeight();
   ImGui::PopFont();
 
@@ -135,7 +135,7 @@ void EqualizerWindow::drawBands() {
     const float x = start.x + i * (column + gap);
     char value[16];
     std::snprintf(value, sizeof(value), "%+.0f", std::round(settings.gainDb[i]));
-    ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.8f);
+    ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
     const ImVec2 size = ImGui::CalcTextSize(value);
     draw->AddText(ImVec2(x + (column - size.x) * 0.5f, start.y), settings.gainDb[i] != 0 ? ui::accentText() : secondary(), value);
     ImGui::PopFont();
@@ -150,7 +150,7 @@ void EqualizerWindow::drawBands() {
     ImGui::EndDisabled();
     ImGui::PopID();
 
-    ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.72f);
+    ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
     const ImVec2 labelSize = ImGui::CalcTextSize(BAND_LABELS[i]);
     draw->AddText(ImVec2(x + (column - labelSize.x) * 0.5f, start.y + textHeight + 4 + SLIDER_HEIGHT + 2), secondary(), BAND_LABELS[i]);
     ImGui::PopFont();
@@ -192,7 +192,7 @@ void EqualizerWindow::draw(bool *open) {
   ui::BeforeWindow("Equalizer");
   if (ui::BeginWindow("Equalizer", open, ImGuiWindowFlags_AlwaysAutoResize)) {
     caption(ImGui::GetWindowDrawList(), ImGui::GetCursorScreenPos(), "RESPONSE", secondary());
-    ImGui::Dummy(ImVec2(0, ImGui::GetFontSize() * 0.72f + 2));
+    ImGui::Dummy(ImVec2(0, ImGui::GetFontSize() * ui::SMALL_TEXT + 2));
     drawResponse(WIDTH, RESPONSE_HEIGHT);
     ImGui::Dummy(ImVec2(0, 6));
     drawBands();

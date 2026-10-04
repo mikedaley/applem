@@ -9,9 +9,20 @@
 
 #import <Foundation/Foundation.h>
 
+#include <cstdlib>
+
 namespace a2e::native {
 
 std::string appSupportDirectory() {
+  // A developer's override, so a second copy can run with its own settings
+  // (and its own windows open) beside the one in use.
+  if (const char *dir = std::getenv("APPLEM_SETTINGS_DIR"); dir && *dir) {
+    [NSFileManager.defaultManager createDirectoryAtPath:@(dir)
+                            withIntermediateDirectories:YES
+                                             attributes:nil
+                                                  error:nil];
+    return dir;
+  }
   @autoreleasepool {
     NSFileManager *files = NSFileManager.defaultManager;
     NSURL *base = [files URLsForDirectory:NSApplicationSupportDirectory
