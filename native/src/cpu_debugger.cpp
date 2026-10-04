@@ -569,6 +569,9 @@ void CpuDebugger::handleStop() {
       std::snprintf(line, sizeof line, "Beam at line %d, position %d", debug->beamBreakScanline(),
                     debug->beamBreakHPos());
       reason = line;
+    } else if (debug->isSwitchBreakpointHit()) {
+      // The Soft Switches window keeps these; the stop is said the same way.
+      reason = host.switchHitText();
     } else {
       reason = "Paused";
     }

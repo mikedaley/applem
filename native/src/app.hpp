@@ -22,6 +22,7 @@
 #include "memory_viewer.hpp"
 #include "mockingboard_window.hpp"
 #include "ensoniq_window.hpp"
+#include "soft_switch_window.hpp"
 #include "basic_window.hpp"
 #include "platform.hpp"
 
@@ -61,6 +62,7 @@ struct Settings {
   bool mockingboardMono = true;      // MockingboardCard::setMono
   bool showCpuDebugger = false;
   bool showMemoryViewer = false;
+  bool showSoftSwitches = false;
   int mockingboardMutes = 0; // a bit a channel, PSG 1's A B C then PSG 2's
   bool showEnsoniq = false;
   bool showBasic = false;
@@ -152,6 +154,7 @@ private:
   void registerSlotsHandler();
   void registerDebuggerHandler();
   void registerMemoryHandler();
+  void registerSwitchesHandler();
   void registerBasicHandler();
   void startEmulation();
 
@@ -229,6 +232,7 @@ private:
   EqualizerWindow equalizer_{emulation_};
   CpuDebugger debugger_{emulation_, platform_};
   MemoryViewer memory_{emulation_, platform_, debugger_};
+  SoftSwitchWindow switches_{emulation_};
   bool started_ = false;
 
   // The machine profile currently built, for drawing; refreshed on a switch.

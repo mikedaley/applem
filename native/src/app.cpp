@@ -72,6 +72,7 @@ App::App(std::string settingsDirectory, Platform platform)
   registerSlotsHandler();
   registerDebuggerHandler();
   registerMemoryHandler();
+  registerSwitchesHandler();
   registerBasicHandler();
   memory_.showDebugger = [this] {
     settings_.showCpuDebugger = true;
@@ -149,6 +150,7 @@ void App::registerSettingsHandler() {
     else if (unsigned mutes = 0; std::sscanf(line, "EnsoniqMutes=%u", &mutes) == 1) s.ensoniqMutes = mutes;
     else if (std::sscanf(line, "ShowCpuDebugger=%d", &value) == 1) s.showCpuDebugger = value;
     else if (std::sscanf(line, "ShowMemoryViewer=%d", &value) == 1) s.showMemoryViewer = value;
+    else if (std::sscanf(line, "ShowSoftSwitches=%d", &value) == 1) s.showSoftSwitches = value;
     else if (std::sscanf(line, "MockingboardMutes=%d", &value) == 1) s.mockingboardMutes = value & 0x3F;
     else if (std::sscanf(line, "MockingboardPhaseLock=%d", &value) == 1) s.mockingboardPhaseLock = value;
     else if (std::sscanf(line, "MockingboardMono=%d", &value) == 1) s.mockingboardMono = value;
@@ -202,6 +204,7 @@ void App::registerSettingsHandler() {
     out->appendf("EnsoniqMutes=%u\n", static_cast<unsigned>(s.ensoniqMutes));
     out->appendf("ShowCpuDebugger=%d\n", s.showCpuDebugger ? 1 : 0);
     out->appendf("ShowMemoryViewer=%d\n", s.showMemoryViewer ? 1 : 0);
+    out->appendf("ShowSoftSwitches=%d\n", s.showSoftSwitches ? 1 : 0);
     out->appendf("MockingboardMutes=%d\n", s.mockingboardMutes);
     out->appendf("MockingboardPhaseLock=%d\n", s.mockingboardPhaseLock ? 1 : 0);
     out->appendf("MockingboardMono=%d\n", s.mockingboardMono ? 1 : 0);
@@ -310,6 +313,28 @@ void App::registerMemoryHandler() {
   ImGui::AddSettingsHandler(&handler);
 }
 
+// The soft switch breakpoints, under [ApplEmSwitches][State].
+void App::registerSwitchesHandler() {
+  ImGuiSettingsHandler handler;
+  handler.TypeName = "ApplEmSwitches";
+  handler.TypeHash = ImHashStr("ApplEmSwitches");
+  handler.UserData = &switches_;
+  handler.ReadOpenFn = [](ImGuiContext *, ImGuiSettingsHandler *, const char *name) -> void * {
+    return std::strcmp(name, "State") == 0 ? reinterpret_cast<void *>(1) : nullptr;
+  };
+  handler.ReadLineFn = [](ImGuiContext *, ImGuiSettingsHandler *h, void *, const char *line) {
+    static_cast<SoftSwitchWindow *>(h->UserData)->readSetting(line);
+  };
+  handler.WriteAllFn = [](ImGuiContext *, ImGuiSettingsHandler *h, ImGuiTextBuffer *out) {
+    std::string text;
+    static_cast<const SoftSwitchWindow *>(h->UserData)->writeSettings(text);
+    out->appendf("[%s][State]\n", h->TypeName);
+    out->append(text.c_str());
+    out->append("\n");
+  };
+  ImGui::AddSettingsHandler(&handler);
+}
+
 // The BASIC window's program, breakpoints and layout, under
 // [ApplEmBasic][State].
 void App::registerBasicHandler() {
@@ -381,6 +406,7 @@ void App::startEmulation() {
   applyMockingboardSound();
   ensoniq_.mutes = settings_.ensoniqMutes;
   debugger_.setMachine(*wanted);
+  switches_.setMachine();
   memory_.setMachine(*wanted);
   applySpeed();
   emulation_.setPowered(true);
@@ -404,6 +430,7 @@ void App::frame() {
   ensoniq_.update();
   basic_.update(settings_.showBasic);
   debugger_.update();
+  switches_.update();
   memory_.update(settings_.showMemoryViewer);
   updateMouse();
 
@@ -709,6 +736,7 @@ MenuItem App::machineMenu() {
                               if (profile_) {
                                 debugger_.setMachine(*profile_);
                                 memory_.setMachine(*profile_);
+                                switches_.setMachine();
                               }
                             }, "", 0, settings_.iigsMemoryKB == kb));
     }
@@ -825,6 +853,10 @@ std::optional<MenuItem> App::debugMenu() {
              settings_.showMemoryViewer = !settings_.showMemoryViewer;
              ImGui::MarkIniSettingsDirty();
            }, "m", MOD_COMMAND | MOD_SHIFT, settings_.showMemoryViewer),
+      item(a, "debug.switches", "Soft Switches", [this] {
+             settings_.showSoftSwitches = !settings_.showSoftSwitches;
+             ImGui::MarkIniSettingsDirty();
+           }, "", 0, settings_.showSoftSwitches),
   };
   if (mockingboard_.available()) {
     items.push_back(item(a, "debug.mockingboard", "Mockingboard", [this] {
@@ -945,6 +977,7 @@ bool *App::focusedToolWindow() {
       {"Applesoft BASIC", &settings_.showBasic},
       {"CPU Debugger", &settings_.showCpuDebugger},
       {"Memory Viewer", &settings_.showMemoryViewer},
+      {"Soft Switches", &settings_.showSoftSwitches},
   };
   for (const auto &[title, flag] : windows) {
     if (name == title) return *flag ? flag : nullptr;
@@ -1042,6 +1075,7 @@ bool App::switchMachine(MachineId id) {
   joystick_.machineRebuilt();
   debugger_.setMachine(*profile_);
   memory_.setMachine(*profile_);
+  switches_.setMachine();
   drives_->machineChanged();
   hardDrives_->machineChanged();
   disk35_->machineChanged();
@@ -1251,6 +1285,8 @@ void App::drawDiskDrives() {
   debugger_.draw(&settings_.showCpuDebugger);
   firstPosition(100, 70);
   memory_.draw(&settings_.showMemoryViewer);
+  firstPosition(160, 80);
+  switches_.draw(&settings_.showSoftSwitches);
   firstPosition(80, 60);
   states_->draw(&settings_.showSaveStates);
   if (states_->autosave != settings_.autosave) {
@@ -1478,6 +1514,7 @@ void App::setVideoStandard(VideoStandard standard) {
   profile_ = &machineProfile(profile_->id, standard);
   debugger_.setMachine(*profile_);
   memory_.setMachine(*profile_);
+  switches_.setMachine();
   dropNotice(standard == VideoStandard::PAL ? "PAL, 50Hz: reboot to start a program afresh"
                                             : "NTSC, 60Hz: reboot to start a program afresh",
              false);

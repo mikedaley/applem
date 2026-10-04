@@ -69,6 +69,7 @@ set(NATIVE_SOURCES
     src/save_states.cpp
     src/screen_renderer_metal.mm
     src/slot_layout.cpp
+    src/soft_switch_window.cpp
     src/state_store.cpp
     src/ui_controls.cpp
     src/ui_theme.mm
