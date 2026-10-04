@@ -640,8 +640,15 @@ MenuItem App::machineMenu() {
       MenuItem::separatorItem(),
   };
 
-  for (int i = 0; i < MACHINE_COUNT; i++) {
-    const MachineProfile &machine = machineProfileAt(i);
+  // In the order Apple sold them, as the browser's machine menu lists them:
+  // the registry is in id order, which is not that. The toolbar's pull-down
+  // is built from these entries, so it follows.
+  std::vector<const MachineProfile *> machines;
+  for (int i = 0; i < MACHINE_COUNT; i++) machines.push_back(&machineProfileAt(i));
+  std::stable_sort(machines.begin(), machines.end(),
+                   [](const MachineProfile *a, const MachineProfile *b) { return a->released < b->released; });
+  for (const MachineProfile *profile : machines) {
+    const MachineProfile &machine = *profile;
     const bool runnable = Emulator::isMachineRunnable(machine.id);
     const bool current = profile_ && machine.id == profile_->id;
     std::string title = machine.name;
