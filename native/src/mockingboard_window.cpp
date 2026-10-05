@@ -30,8 +30,6 @@ constexpr float CARD_ROUNDING = 10;
 constexpr float ROW_HEIGHT = 40;
 constexpr float PAD = 14;
 
-// The AY and the 6522 both run from the bus's clock.
-constexpr double CLOCK = 1023000.0;
 constexpr int SAMPLE_RATE = 48000;
 
 // The browser's channel colours: a badge, and a brighter trace and meter.
@@ -196,6 +194,7 @@ void MockingboardWindow::take() {
       const AY8910 &chip = i == 0 ? mb->getPSG1() : mb->getPSG2();
       Psg &psg = psgs_[i];
       for (int r = 0; r < 16; r++) psg.registers[r] = chip.getRegister(r);
+      psg.clock = chip.getClock();
       psg.writes = chip.getWriteCount();
       psg.lastRegister = chip.getLastWriteReg();
       psg.lastValue = chip.getLastWriteVal();
@@ -262,20 +261,17 @@ void MockingboardWindow::drawChannel(int index, int channel, float width) {
   x += 30;
 
   // The note: the tone counter toggles every TP ticks of the clock over 8,
-  // so a whole cycle is the clock over 16 TP.
+  // so a whole cycle is the clock over 16 TP. A period of zero plays as one,
+  // as the chip has it, which is far above anything with a name.
   const uint8_t mixer = psg.registers[7];
   const int period = psg.registers[channel * 2] | ((psg.registers[channel * 2 + 1] & 0x0F) << 8);
+  const double freq = psg.clock / (16.0 * std::max(period, 1));
   char note[32] = "--";
   char hz[16] = "";
-  if (period > 0) {
-    const double freq = CLOCK / (16.0 * period);
-    std::snprintf(hz, sizeof(hz), freq >= 1000 ? "%.0f Hz" : "%.1f Hz", freq);
-    if (freq >= 20 && freq <= 20000) {
-      const int number = static_cast<int>(std::lround(12 * std::log2(freq / 440.0) + 69));
-      std::snprintf(note, sizeof(note), "%s%d", NOTE_NAMES[((number % 12) + 12) % 12], number / 12 - 1);
-    } else {
-      std::snprintf(note, sizeof(note), "--");
-    }
+  std::snprintf(hz, sizeof(hz), freq >= 1000 ? "%.0f Hz" : "%.1f Hz", freq);
+  if (freq >= 20 && freq <= 20000) {
+    const int number = static_cast<int>(std::lround(12 * std::log2(freq / 440.0) + 69));
+    std::snprintf(note, sizeof(note), "%s%d", NOTE_NAMES[number % 12], number / 12 - 1);
   }
   ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 1.15f);
   const float noteHeight = ImGui::GetTextLineHeight();
@@ -370,7 +366,7 @@ void MockingboardWindow::drawVia(int index, float width) {
   std::snprintf(value, sizeof(value), "$%04X", via.t1Latch);
   x += field(draw, ImVec2(x, y), "LATCH", value, PURPLE) + 14;
   if (via.t1Latch > 0) {
-    std::snprintf(value, sizeof(value), "%.1f Hz", CLOCK / (via.t1Latch + 2.0));
+    std::snprintf(value, sizeof(value), "%.1f Hz", psgs_[index].clock / (via.t1Latch + 2.0));
     x += field(draw, ImVec2(x, y), "RATE", value, text()) + 18;
   }
   const float pillY = y - 1;
@@ -431,13 +427,13 @@ void MockingboardWindow::drawChip(int index) {
   char value[32];
   std::snprintf(value, sizeof(value), "$%X", shape);
   x += field(draw, ImVec2(x, y), "SHAPE", value, PURPLE) + 14;
-  std::snprintf(value, sizeof(value), "%.1f ms", 256.0 * std::max(ep, 1) / CLOCK * 1000.0);
+  std::snprintf(value, sizeof(value), "%.1f ms", 256.0 * std::max(ep, 1) / psg.clock * 1000.0);
   x += field(draw, ImVec2(x, y), "RAMP", value, PURPLE) + 28;
   caption(draw, ImVec2(x, y + 2), "NOISE", secondary());
   x += 46;
   // The noise register shifts once every 2 NP ticks of the clock over 8.
   const int np = psg.registers[6] & 0x1F;
-  std::snprintf(value, sizeof(value), "%.0f Hz", CLOCK / (16.0 * std::max(np, 1)));
+  std::snprintf(value, sizeof(value), "%.0f Hz", psg.clock / (16.0 * std::max(np, 1)));
   field(draw, ImVec2(x, y), "", value, ORANGE);
   y += line + 4 + 14;
 

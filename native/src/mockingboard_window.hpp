@@ -46,6 +46,9 @@ public:
 private:
   struct Psg {
     std::array<uint8_t, 16> registers{};
+    // The clock the chip runs at, which is the machine's: a PAL machine's
+    // is slower, and every note on it lower. The 6522 beside it shares it.
+    double clock = 1023000.0;
     uint32_t writes = 0;
     uint8_t lastRegister = 0;
     uint8_t lastValue = 0;
