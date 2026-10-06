@@ -37,9 +37,9 @@ in `src/js/config/version.js`, signed with the Developer ID certificate
 found in the keychain (hardened runtime, secure timestamp, no entitlements
 needed), packed into `build-macos-release/dist/ApplEm-Native-<version>.dmg`
 with a link to Applications, notarised, stapled and checked with Gatekeeper.
-The prerequisites and the notary profile are the Tauri build's
-(`scripts/build-desktop-mac.sh`): `NOTARY_PROFILE` names the profile, a
-profile stored for the same Apple ID is used when there is no
+It needs a "Developer ID Application" certificate in the login keychain and
+a notarytool credential profile for the Apple ID: `NOTARY_PROFILE` names the
+profile, a profile stored for the same Apple ID is used when there is no
 `applem-notary`, and `NOTARIZE=0` signs without notarising.
 
 ## Layers
@@ -924,8 +924,7 @@ and, under `[ApplEm][Settings]`, the app's own settings: the machine, the IIgs
 memory size, volume, the equaliser, the open windows and the Cmd key choice per machine;
 each machine's display settings are under `[ApplEmDisplay][<machine key>]`.
 Saved display profiles are in `display-profiles.ini` beside it, so Reset to
-Defaults never takes them. Not the Tauri build's folder; the two keep
-different things.
+Defaults never takes them.
 
 ## Plan
 

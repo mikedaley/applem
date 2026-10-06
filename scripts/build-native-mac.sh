@@ -3,7 +3,7 @@
 # notarised and stapled: an .app and a .dmg that open on any Mac without a
 # Gatekeeper warning.
 #
-# The same prerequisites as scripts/build-desktop-mac.sh, the Tauri build's:
+# Prerequisites:
 #   1. A "Developer ID Application" certificate in the login keychain.
 #   2. A notarytool credential profile for the Apple ID; NOTARY_PROFILE names
 #      it, and a profile another app already stored for the same Apple ID is

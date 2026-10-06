@@ -129,8 +129,8 @@ foreach(disk ${DISK_LIBRARY})
         HEADER_FILE_ONLY TRUE)
 endforeach()
 
-# The Tauri build's icon is the app's icon.
-set(APP_ICON ${CMAKE_SOURCE_DIR}/src-tauri/icons/icon.icns)
+# The app's icon (scripts/make-app-icon.swift draws it).
+set(APP_ICON ${CMAKE_CURRENT_SOURCE_DIR}/resources/icon.icns)
 if(EXISTS ${APP_ICON})
     target_sources(ApplEmNative PRIVATE ${APP_ICON})
     set_source_files_properties(${APP_ICON} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)

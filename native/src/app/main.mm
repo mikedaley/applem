@@ -780,7 +780,7 @@ void watchMouse() {
 
   // Command keys skip the menu bar when the machine takes Command as Open
   // Apple, or an ImGui text field is being typed into; Command-Q always
-  // reaches the menu, as the Tauri build does it.
+  // reaches the menu.
   __weak AppDelegate *weakSelf = self;
   [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
                                         handler:^NSEvent *(NSEvent *event) {

@@ -3,7 +3,8 @@
 // Usage: swift scripts/make-app-icon.swift public/assets/applem-logo.png out.png [bleed]
 //
 // Without "bleed" it is a macOS app icon: a rounded square on the 1024 grid
-// with the standard margin, for `npm run tauri icon`. With "bleed" the square
+// with the standard margin, made into native/resources/icon.icns with
+// iconutil. With "bleed" the square
 // fills the canvas, for the web app's icons, which iOS and Android mask
 // themselves.
 import AppKit

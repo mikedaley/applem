@@ -24,8 +24,7 @@ enum MenuModifier : unsigned {
 // describes its menus with these each frame; the platform rebuilds the real
 // menu bar only when the description changes, and hands back the action id
 // of whatever was chosen. Built this way so the menus live with the rest of
-// the UI in plain C++, as the Tauri build's native menu reads its model from
-// the hidden header rather than duplicating it.
+// the UI in plain C++ rather than being duplicated in Cocoa.
 struct MenuItem {
   std::string title;
   std::string action; // empty for a submenu or a separator
