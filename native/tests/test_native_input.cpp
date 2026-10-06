@@ -11,10 +11,10 @@
 #define CATCH_CONFIG_MAIN
 #include "catch.hpp"
 
-#include "../src/audio_ring.hpp"
-#include "../src/frame_queue.hpp"
-#include "../src/game_port.hpp"
-#include "../src/key_mapper.hpp"
+#include "../src/sound/audio_ring.hpp"
+#include "../src/app/frame_queue.hpp"
+#include "../src/controls/game_port.hpp"
+#include "../src/controls/key_mapper.hpp"
 #include "../../src/host/machine_host.hpp"
 
 #include <string>

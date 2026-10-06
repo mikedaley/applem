@@ -11,8 +11,8 @@
 #define CATCH_CONFIG_MAIN
 #include "catch.hpp"
 
-#include "../src/display_settings.hpp"
-#include "../src/no_signal_frame.hpp"
+#include "../src/display/display_settings.hpp"
+#include "../src/display/no_signal_frame.hpp"
 #include "machine/machine_profile.hpp"
 
 using namespace a2e;

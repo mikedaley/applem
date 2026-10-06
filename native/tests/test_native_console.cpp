@@ -10,10 +10,10 @@
 #define CATCH_CONFIG_MAIN
 #include "catch.hpp"
 
-#include "../src/console_window.hpp"
-#include "../src/cpu_debugger.hpp"
-#include "../src/emulation.hpp"
-#include "../src/platform.hpp"
+#include "../src/debugger/console_window.hpp"
+#include "../src/debugger/cpu_debugger.hpp"
+#include "../src/app/emulation.hpp"
+#include "../src/app/platform.hpp"
 
 #include "imgui.h"
 

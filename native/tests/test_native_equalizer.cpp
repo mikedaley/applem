@@ -8,7 +8,7 @@
 #define CATCH_CONFIG_MAIN
 #include "catch.hpp"
 
-#include "../src/equalizer.hpp"
+#include "../src/sound/equalizer.hpp"
 
 #include <cmath>
 #include <vector>

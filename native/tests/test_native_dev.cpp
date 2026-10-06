@@ -9,8 +9,8 @@
 #define CATCH_CONFIG_MAIN
 #include "catch.hpp"
 
-#include "../src/dev_project.hpp"
-#include "../src/media_store.hpp"
+#include "../src/develop/dev_project.hpp"
+#include "../src/drives/media_store.hpp"
 #include "../../src/host/machine_host.hpp"
 #include "emulator.hpp"
 #include "filesystem/prodos.hpp"

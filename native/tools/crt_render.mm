@@ -22,9 +22,9 @@
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 
-#include "display_settings.hpp"
-#include "no_signal_frame.hpp"
-#include "screen_renderer_metal.hpp"
+#include "display/display_settings.hpp"
+#include "display/no_signal_frame.hpp"
+#include "display/screen_renderer_metal.hpp"
 
 #include "../../src/host/machine_host.hpp"
 #include "video/video.hpp"

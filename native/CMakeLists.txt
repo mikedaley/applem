@@ -31,54 +31,54 @@ target_link_libraries(imgui PUBLIC
 )
 
 set(NATIVE_SOURCES
-    src/main.mm
-    src/app.cpp
-    src/audio_output.mm
-    src/basic_language.cpp
-    src/basic_window.cpp
-    src/code_editor.cpp
-    src/cpu_debugger.cpp
-    src/disk_drives.cpp
-    src/disk_inspector_data.cpp
-    src/disk_platter.cpp
-    src/display.cpp
-    src/condition_rules.cpp
-    src/console_command.cpp
-    src/console_window.cpp
-    src/debug_breakpoints.cpp
-    src/dev_project.cpp
-    src/develop.cpp
-    src/debug_symbols.cpp
-    src/display_settings.cpp
-    src/drive_sounds.cpp
-    src/emulation.cpp
-    src/ensoniq_window.cpp
-    src/equalizer.cpp
-    src/equalizer_window.cpp
-    src/expansion_slots.cpp
-    src/game_port.cpp
-    src/hard_drives.cpp
-    src/disk35_drives.cpp
-    src/disk_inspector.cpp
-    src/joystick.cpp
-    src/key_mapper.cpp
-    src/media_store.cpp
-    src/memory_viewer.cpp
-    src/rule_builder.cpp
-    src/menu_model.cpp
-    src/mockingboard_window.cpp
-    src/native_menu.mm
-    src/native_toolbar.mm
-    src/no_signal_frame.cpp
-    src/platform_paths.mm
-    src/save_states.cpp
-    src/screen_renderer_metal.mm
-    src/slot_layout.cpp
-    src/soft_switch_window.cpp
-    src/state_store.cpp
-    src/ui_controls.cpp
-    src/ui_theme.mm
-    src/volume_map.cpp
+    src/app/main.mm
+    src/app/app.cpp
+    src/sound/audio_output.mm
+    src/applesoft/basic_language.cpp
+    src/applesoft/basic_window.cpp
+    src/applesoft/code_editor.cpp
+    src/debugger/cpu_debugger.cpp
+    src/drives/disk_drives.cpp
+    src/drives/disk_inspector_data.cpp
+    src/drives/disk_platter.cpp
+    src/display/display.cpp
+    src/debugger/condition_rules.cpp
+    src/debugger/console_command.cpp
+    src/debugger/console_window.cpp
+    src/debugger/debug_breakpoints.cpp
+    src/develop/dev_project.cpp
+    src/develop/develop.cpp
+    src/debugger/debug_symbols.cpp
+    src/display/display_settings.cpp
+    src/sound/drive_sounds.cpp
+    src/app/emulation.cpp
+    src/debugger/ensoniq_window.cpp
+    src/sound/equalizer.cpp
+    src/sound/equalizer_window.cpp
+    src/slots/expansion_slots.cpp
+    src/controls/game_port.cpp
+    src/drives/hard_drives.cpp
+    src/drives/disk35_drives.cpp
+    src/drives/disk_inspector.cpp
+    src/controls/joystick.cpp
+    src/controls/key_mapper.cpp
+    src/drives/media_store.cpp
+    src/debugger/memory_viewer.cpp
+    src/debugger/rule_builder.cpp
+    src/app/menu_model.cpp
+    src/debugger/mockingboard_window.cpp
+    src/app/native_menu.mm
+    src/app/native_toolbar.mm
+    src/display/no_signal_frame.cpp
+    src/app/platform_paths.mm
+    src/states/save_states.cpp
+    src/display/screen_renderer_metal.mm
+    src/slots/slot_layout.cpp
+    src/debugger/soft_switch_window.cpp
+    src/states/state_store.cpp
+    src/ui/ui_controls.cpp
+    src/ui/ui_theme.mm
+    src/sound/volume_map.cpp
 )
 
 # The app's version is the one the release process bumps, the browser's, so
@@ -154,8 +154,8 @@ target_link_libraries(ApplEmNative PRIVATE
 # The keyboard mapping and the emulation thread's queues, without a window.
 add_executable(test_native_input
     tests/test_native_input.cpp
-    src/game_port.cpp
-    src/key_mapper.cpp
+    src/controls/game_port.cpp
+    src/controls/key_mapper.cpp
 )
 target_include_directories(test_native_input PRIVATE
     ${CMAKE_SOURCE_DIR}/tests/catch2
@@ -169,10 +169,10 @@ add_test(NAME test_native_input COMMAND test_native_input
 # The debugger's symbols, address parsing and breakpoint list.
 add_executable(test_native_debugger
     tests/test_native_debugger.cpp
-    src/condition_rules.cpp
-    src/console_command.cpp
-    src/debug_symbols.cpp
-    src/debug_breakpoints.cpp
+    src/debugger/condition_rules.cpp
+    src/debugger/console_command.cpp
+    src/debugger/debug_symbols.cpp
+    src/debugger/debug_breakpoints.cpp
 )
 target_include_directories(test_native_debugger PRIVATE
     ${CMAKE_SOURCE_DIR}/tests/catch2
@@ -188,8 +188,8 @@ add_test(NAME test_native_debugger COMMAND test_native_debugger
 # until a frame is drawn).
 add_executable(test_native_basic
     tests/test_native_basic.cpp
-    src/basic_language.cpp
-    src/code_editor.cpp
+    src/applesoft/basic_language.cpp
+    src/applesoft/code_editor.cpp
 )
 target_include_directories(test_native_basic PRIVATE
     ${CMAKE_SOURCE_DIR}/tests/catch2
@@ -203,7 +203,7 @@ add_test(NAME test_native_basic COMMAND test_native_basic
 # The output equaliser's filters, response and settings.
 add_executable(test_native_equalizer
     tests/test_native_equalizer.cpp
-    src/equalizer.cpp
+    src/sound/equalizer.cpp
 )
 target_include_directories(test_native_equalizer PRIVATE
     ${CMAKE_SOURCE_DIR}/tests/catch2
@@ -217,9 +217,9 @@ add_test(NAME test_native_equalizer COMMAND test_native_equalizer
 # which puts the same pictures through the browser's renderer and compares.
 add_executable(crt_render
     tools/crt_render.mm
-    src/display_settings.cpp
-    src/no_signal_frame.cpp
-    src/screen_renderer_metal.mm
+    src/display/display_settings.cpp
+    src/display/no_signal_frame.cpp
+    src/display/screen_renderer_metal.mm
 )
 target_include_directories(crt_render PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_options(crt_render PRIVATE -Wall -Wextra -Wno-unused-parameter
@@ -229,8 +229,8 @@ target_link_libraries(crt_render PRIVATE a2e_core imgui)
 # The display settings' rules: presets, profiles, storage, the shader scales.
 add_executable(test_native_display
     tests/test_native_display.cpp
-    src/display_settings.cpp
-    src/no_signal_frame.cpp
+    src/display/display_settings.cpp
+    src/display/no_signal_frame.cpp
 )
 target_include_directories(test_native_display PRIVATE
     ${CMAKE_SOURCE_DIR}/tests/catch2
@@ -244,22 +244,22 @@ add_test(NAME test_native_display COMMAND test_native_display
 # The debugging console, typed into over a real machine.
 add_executable(test_native_console
     tests/test_native_console.cpp
-    src/media_store.cpp
-    src/console_command.cpp
-    src/console_window.cpp
-    src/cpu_debugger.cpp
-    src/rule_builder.cpp
-    src/condition_rules.cpp
-    src/debug_symbols.cpp
-    src/debug_breakpoints.cpp
-    src/emulation.cpp
-    src/audio_output.mm
-    src/drive_sounds.cpp
-    src/equalizer.cpp
-    src/ui_controls.cpp
-    src/ui_theme.mm
-    src/platform_paths.mm
-    src/volume_map.cpp
+    src/drives/media_store.cpp
+    src/debugger/console_command.cpp
+    src/debugger/console_window.cpp
+    src/debugger/cpu_debugger.cpp
+    src/debugger/rule_builder.cpp
+    src/debugger/condition_rules.cpp
+    src/debugger/debug_symbols.cpp
+    src/debugger/debug_breakpoints.cpp
+    src/app/emulation.cpp
+    src/sound/audio_output.mm
+    src/sound/drive_sounds.cpp
+    src/sound/equalizer.cpp
+    src/ui/ui_controls.cpp
+    src/ui/ui_theme.mm
+    src/app/platform_paths.mm
+    src/sound/volume_map.cpp
 )
 target_include_directories(test_native_console PRIVATE
     ${CMAKE_SOURCE_DIR}/tests/catch2
@@ -275,23 +275,23 @@ add_test(NAME test_native_console COMMAND test_native_console
 # The media store, the save naming rules and the seek click.
 add_executable(test_native_media
     tests/test_native_media.cpp
-    src/slot_layout.cpp
-    src/state_store.cpp
-    src/disk_drives.cpp
-    src/disk_inspector_data.cpp
-    src/disk_platter.cpp
-    src/hard_drives.cpp
-    src/disk35_drives.cpp
-    src/disk_inspector.cpp
-    src/drive_sounds.cpp
-    src/media_store.cpp
-    src/audio_output.mm
-    src/emulation.cpp
-    src/equalizer.cpp
-    src/ui_controls.cpp
-    src/ui_theme.mm
-    src/platform_paths.mm
-    src/volume_map.cpp
+    src/slots/slot_layout.cpp
+    src/states/state_store.cpp
+    src/drives/disk_drives.cpp
+    src/drives/disk_inspector_data.cpp
+    src/drives/disk_platter.cpp
+    src/drives/hard_drives.cpp
+    src/drives/disk35_drives.cpp
+    src/drives/disk_inspector.cpp
+    src/sound/drive_sounds.cpp
+    src/drives/media_store.cpp
+    src/sound/audio_output.mm
+    src/app/emulation.cpp
+    src/sound/equalizer.cpp
+    src/ui/ui_controls.cpp
+    src/ui/ui_theme.mm
+    src/app/platform_paths.mm
+    src/sound/volume_map.cpp
 )
 target_include_directories(test_native_media PRIVATE
     ${CMAKE_SOURCE_DIR}/tests/catch2
@@ -308,8 +308,8 @@ add_test(NAME test_native_media COMMAND test_native_media
 # output and errors, the boot volume, and starting it on a machine.
 add_executable(test_native_dev
     tests/test_native_dev.cpp
-    src/dev_project.cpp
-    src/media_store.cpp
+    src/develop/dev_project.cpp
+    src/drives/media_store.cpp
 )
 target_include_directories(test_native_dev PRIVATE
     ${CMAKE_SOURCE_DIR}/tests/catch2

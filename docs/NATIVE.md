@@ -45,13 +45,34 @@ profile stored for the same Apple ID is used when there is no
 ## Layers
 
 ```
-native/src/main.mm         Cocoa window, MTKView, ImGui's Cocoa + Metal backends
-native/src/app.*           every menu and window: plain C++ over ImGui
-native/src/emulation.*     the machine on its own thread, paced by Core Audio
-native/src/audio_output.*  Core Audio's default output unit
-native/src/key_mapper.*    ImGui keys as browser keycodes
-src/host/machine_host.*    which machine is running, and how to reach its parts
-src/core/                  the emulator
+native/src/app/main.mm           Cocoa window, MTKView, ImGui's Cocoa + Metal backends
+native/src/app/app.*             every menu and window: plain C++ over ImGui
+native/src/app/emulation.*       the machine on its own thread, paced by Core Audio
+native/src/sound/audio_output.*  Core Audio's default output unit
+native/src/controls/key_mapper.* ImGui keys as browser keycodes
+src/host/machine_host.*          which machine is running, and how to reach its parts
+src/core/                        the emulator
+```
+
+`native/src` is grouped by what each part does, and an include names its
+folder (`#include "drives/disk_drives.hpp"`). The folders' names are not the
+core's (`src/core/debug`, `input`, `audio`, `basic`, `machine`), so an
+include such as `debug/machine_debug.hpp` can only mean the core's:
+
+```
+app/        the app itself: main.mm, App, Emulation, Platform, the menu bar
+            and toolbar, the build stamp
+ui/         the AppKit-styled controls and the theme every window uses
+display/    the picture: display settings, the Metal renderer, CRT parameters
+sound/      audio output, the equalizer, volume, the drives' sounds
+controls/   the keyboard's mapping, the joystick and game port
+drives/     the 5.25", 3.5" and SmartPort windows, the inspector, media store
+slots/      Expansion Slots and the slot layouts
+states/     Save States and the state store
+debugger/   CPU debugger, breakpoints, symbols, console, memory viewer, soft
+            switches, rule builder, the Mockingboard and Ensoniq windows
+applesoft/  the Applesoft BASIC window, its language and the code editor
+develop/    building the user's own program and running it (ca65)
 ```
 
 **`MachineHost` is shared with the browser.** Which of `Emulator` and

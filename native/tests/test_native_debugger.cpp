@@ -14,9 +14,10 @@
 #include "catch.hpp"
 
 #include <cstring>
+#include <sstream>
 
-#include "../src/debug_breakpoints.hpp"
-#include "../src/debug_symbols.hpp"
+#include "../src/debugger/debug_breakpoints.hpp"
+#include "../src/debugger/debug_symbols.hpp"
 #include "debug/machine_debug.hpp"
 #include "debug/soft_switch_catalog.hpp"
 #include "machine/machine_profile.hpp"
@@ -91,6 +92,35 @@ TEST_CASE("Each assembler's symbol file is understood", "[debugger][symbols]") {
   REQUIRE(symbols.lookup(0x4000)->name == "TABLE");
   REQUIRE(symbols.lookup(0x2000)->category == DebugSymbols::Category::Imported);
   REQUIRE(symbols.resolve("player", 0xFFFF) == 0x0300u);
+}
+
+TEST_CASE("A ca65 .dbg says where the program keeps data", "[debugger][symbols]") {
+  // ca65 gives a type to a span its .byte (or .word, or .res) emitted, and
+  // none to an instruction's. msg's 34 bytes are the typed span, 16 bytes
+  // into CODE, which the linker put at $0803.
+  DebugSymbols symbols;
+  const uint64_t before = symbols.dataRevision();
+  symbols.importSymbols(
+      "seg\tid=0,name=\"CODE\",start=0x000803,size=0x0032,addrsize=absolute,type=rw,oname=\"hello\",ooffs=0\n"
+      "span\tid=0,seg=0,start=0,size=2\n"
+      "span\tid=8,seg=0,start=16,size=34,type=0\n"
+      "span\tid=9,seg=0,start=0,size=50\n"
+      "sym\tid=1,name=\"msg\",addrsize=absolute,size=34,val=0x813,seg=0,type=lab\n");
+  REQUIRE(symbols.dataRevision() != before);
+  REQUIRE(symbols.dataRegions().size() == 1);
+  REQUIRE(symbols.dataRegions().begin()->first == 0x0813u);
+  REQUIRE(symbols.dataRegions().begin()->second == 0x0813u + 34);
+  REQUIRE(symbols.lookup(0x0813)->name == "msg");
+
+  // And they come back from the settings file with the symbols.
+  std::string settings;
+  symbols.writeSettings(settings);
+  DebugSymbols restored;
+  std::istringstream lines(settings);
+  for (std::string line; std::getline(lines, line);) restored.readSetting(line.c_str());
+  REQUIRE(restored.dataRegions() == symbols.dataRegions());
+  symbols.clearImported();
+  REQUIRE(symbols.dataRegions().empty());
 }
 
 TEST_CASE("Labels and imports survive the settings file", "[debugger][symbols]") {
@@ -416,7 +446,7 @@ TEST_CASE("Every kind survives the settings file, and the old lines are read",
 
 // ---- The rule builder's conditions ----
 
-#include "../src/condition_rules.hpp"
+#include "../src/debugger/condition_rules.hpp"
 #include "debug/condition_evaluator.hpp"
 
 TEST_CASE("Rules write the expression the browser's builder writes", "[debugger][rules]") {
@@ -531,7 +561,7 @@ TEST_CASE("What the builder writes, the evaluator reads", "[debugger][rules]") {
 
 // ---- The console's commands ----
 
-#include "../src/console_command.hpp"
+#include "../src/debugger/console_command.hpp"
 
 namespace {
 using CK = ConsoleCommand::Kind;

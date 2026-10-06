@@ -9,8 +9,8 @@
 #define CATCH_CONFIG_MAIN
 #include "catch.hpp"
 
-#include "basic_language.hpp"
-#include "code_editor.hpp"
+#include "applesoft/basic_language.hpp"
+#include "applesoft/code_editor.hpp"
 
 #include <string>
 
