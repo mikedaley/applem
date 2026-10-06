@@ -76,6 +76,44 @@ std::optional<DebugSymbols::Symbol> DebugSymbols::lookup(uint32_t address) const
   return Symbol{found->name, found->description, symbolCategory(found->category)};
 }
 
+std::optional<DebugSymbols::Nearest> DebugSymbols::nearestCode(uint32_t address, uint32_t reach) const {
+  std::optional<Nearest> best;
+  auto consider = [&](uint32_t at, Symbol symbol) {
+    if (at > address || address - at > reach) return;
+    if (best && address - best->offset >= at) return; // one nearer already
+    best = Nearest{std::move(symbol), address - at};
+  };
+  if (auto it = labels_.upper_bound(address); it != labels_.begin()) {
+    // The nearest user label with a name; one holding only a comment names
+    // nothing.
+    for (auto at = std::prev(it);; --at) {
+      if (!at->second.name.empty()) {
+        consider(at->first, Symbol{at->second.name, at->second.name, Category::User});
+        break;
+      }
+      if (at == labels_.begin()) break;
+    }
+  }
+  if (auto it = imported_.upper_bound(address); it != imported_.begin()) {
+    const auto at = std::prev(it);
+    consider(at->first, Symbol{at->second, "Imported symbol", Category::Imported});
+  }
+  if (address <= 0xFFFF) {
+    const auto *found = std::upper_bound(std::begin(BUILT_IN), std::end(BUILT_IN), address,
+                                         [](uint32_t a, const BuiltIn &s) { return a < s.address; });
+    while (found != std::begin(BUILT_IN)) {
+      --found;
+      if (address - found->address > reach) break;
+      const Category category = symbolCategory(found->category);
+      if (category == Category::Rom || category == Category::Basic || category == Category::Disk) {
+        consider(found->address, Symbol{found->name, found->description, category});
+        break;
+      }
+    }
+  }
+  return best;
+}
+
 const DebugSymbols::Label *DebugSymbols::label(uint32_t address) const {
   auto it = labels_.find(address);
   return it == labels_.end() ? nullptr : &it->second;

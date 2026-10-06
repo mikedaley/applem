@@ -715,6 +715,33 @@ The rows in view and a few either side are read once a frame under one
 lock, and the map a few times a second; a closed viewer reads nothing and
 turns the access counting off.
 
+Debug > Profiler (`profiler_window.*`, Shift-Command-P; Start Profiling is
+Option-Shift-Command-R) shows where a program spends its time. The core's
+`Profiler` (`src/core/debug/profiler.hpp`, owned by `MachineDebug`) is fed
+every instruction while it records: a shadow stack follows JSR, JSL, JSR
+(a,X), BRK, COP and every interrupt taken, and **pops by the stack pointer,
+not by the returning instruction**, so an RTS used as a jump, a routine that
+reads its inline arguments, an error handler that discards frames and a TXS
+all come out right. Time is the 1.023MHz clock, and on a IIgs the slow
+clock's time with its fractions, so a fast instruction and one that waited on
+the Mega II each cost what they cost. It keeps a node per call path, each
+frame's share per node, and the time and runs at every address (64K pages,
+allocated as a bank is used).
+
+The window reads it four times a second while recording. Across the top, a
+timeline of every frame split between the seven routines with the most self
+time, with the selected routine's share (calls included) traced over it; a
+drag across it looks at those frames alone. Then four views: Routines
+(self, total, calls, per call, per frame, sortable), the Call Tree (opened
+down the hot path), a Flame Graph (click to zoom, eased, Escape out) and Hot
+Lines; and down the right the selected routine's numbers, its callers and
+callees, and its code with each line's share. Routines are named by the CPU
+debugger's symbols, so a ca65 build is profiled by its own names; double
+click anything to open it in the listing. `profile_model.*` is the
+arithmetic (recursion counted once, ranges, bands), plain C++ pinned by
+`test_native_debugger`; `test_profiler` pins the core and
+`test_emulator_debug`/`test_iigs_debug` the machines feeding it.
+
 ## Developing with ca65
 
 The user's own editor, Makefile and cl65, with ApplEm as where a build lands

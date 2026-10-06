@@ -75,6 +75,8 @@ set(NATIVE_SOURCES
     src/display/screen_renderer_metal.mm
     src/slots/slot_layout.cpp
     src/debugger/soft_switch_window.cpp
+    src/debugger/profile_model.cpp
+    src/debugger/profiler_window.cpp
     src/states/state_store.cpp
     src/ui/ui_controls.cpp
     src/ui/ui_theme.mm
@@ -169,6 +171,7 @@ add_test(NAME test_native_input COMMAND test_native_input
 # The debugger's symbols, address parsing and breakpoint list.
 add_executable(test_native_debugger
     tests/test_native_debugger.cpp
+    src/debugger/profile_model.cpp
     src/debugger/condition_rules.cpp
     src/debugger/console_command.cpp
     src/debugger/debug_symbols.cpp

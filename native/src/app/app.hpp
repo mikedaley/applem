@@ -24,6 +24,7 @@
 #include "debugger/ensoniq_window.hpp"
 #include "debugger/soft_switch_window.hpp"
 #include "debugger/console_window.hpp"
+#include "debugger/profiler_window.hpp"
 #include "applesoft/basic_window.hpp"
 #include "develop/develop.hpp"
 #include "app/platform.hpp"
@@ -68,6 +69,8 @@ struct Settings {
   bool showMemoryViewer = false;
   bool showSoftSwitches = false;
   bool showConsole = false;
+  bool showProfiler = false;
+  int profilerView = 0; // routines, call tree, flame graph or hot lines
   bool showBuild = false;
   std::string devProject; // the project last open, reopened at launch
   bool devWatch = false;
@@ -257,6 +260,7 @@ private:
   MemoryViewer memory_{emulation_, platform_, debugger_};
   SoftSwitchWindow switches_{emulation_, breakpoints_};
   ConsoleWindow console_{emulation_, debugger_, breakpoints_};
+  ProfilerWindow profiler_{emulation_, debugger_};
   bool started_ = false;
 
   // The machine profile currently built, for drawing; refreshed on a switch.

@@ -41,6 +41,14 @@ public:
 
   // The name for an address, if anything has one.
   std::optional<Symbol> lookup(uint32_t address) const;
+  // The nearest name at or below an address that could name code (not a
+  // zero page location, a soft switch or a vector), no more than `reach`
+  // bytes below it, and how far past it the address is: "HGR+$12".
+  struct Nearest {
+    Symbol symbol;
+    uint32_t offset = 0;
+  };
+  std::optional<Nearest> nearestCode(uint32_t address, uint32_t reach = 0x400) const;
   // A label or comment the user put at an address.
   const Label *label(uint32_t address) const;
 

@@ -83,6 +83,12 @@ App::App(std::string settingsDirectory, Platform platform)
     ImGui::MarkIniSettingsDirty();
   };
   registerBasicHandler();
+  profiler_.showAddress = [this](uint32_t address) {
+    settings_.showCpuDebugger = true;
+    debugger_.showInListing(address);
+    ImGui::SetWindowFocus("CPU Debugger");
+    ImGui::MarkIniSettingsDirty();
+  };
   memory_.showDebugger = [this] {
     settings_.showCpuDebugger = true;
     ImGui::SetWindowFocus("CPU Debugger");
@@ -227,6 +233,8 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "ShowMemoryViewer=%d", &value) == 1) s.showMemoryViewer = value;
     else if (std::sscanf(line, "ShowSoftSwitches=%d", &value) == 1) s.showSoftSwitches = value;
     else if (std::sscanf(line, "ShowConsole=%d", &value) == 1) s.showConsole = value;
+    else if (std::sscanf(line, "ShowProfiler=%d", &value) == 1) s.showProfiler = value;
+    else if (std::sscanf(line, "ProfilerView=%d", &value) == 1) s.profilerView = std::clamp(value, 0, 3);
     else if (std::sscanf(line, "ShowBuild=%d", &value) == 1) s.showBuild = value;
     else if (std::sscanf(line, "DevWatch=%d", &value) == 1) s.devWatch = value;
     else if (std::strncmp(line, "DevProject=", 11) == 0) s.devProject = line + 11;
@@ -286,6 +294,8 @@ void App::registerSettingsHandler() {
     out->appendf("ShowMemoryViewer=%d\n", s.showMemoryViewer ? 1 : 0);
     out->appendf("ShowSoftSwitches=%d\n", s.showSoftSwitches ? 1 : 0);
     out->appendf("ShowConsole=%d\n", s.showConsole ? 1 : 0);
+    out->appendf("ShowProfiler=%d\n", s.showProfiler ? 1 : 0);
+    out->appendf("ProfilerView=%d\n", s.profilerView);
     out->appendf("ShowBuild=%d\n", s.showBuild ? 1 : 0);
     out->appendf("DevWatch=%d\n", s.devWatch ? 1 : 0);
     if (!s.devProject.empty()) out->appendf("DevProject=%s\n", s.devProject.c_str());
@@ -517,6 +527,7 @@ void App::startEmulation() {
   debugger_.setMachine(*wanted);
   console_.setMachine(*wanted);
   switches_.setMachine();
+  profiler_.setMachine();
   memory_.setMachine(*wanted);
   applySpeed();
   emulation_.setPowered(true);
@@ -989,6 +1000,16 @@ std::optional<MenuItem> App::debugMenu() {
              settings_.showSoftSwitches = !settings_.showSoftSwitches;
              ImGui::MarkIniSettingsDirty();
            }, "", 0, settings_.showSoftSwitches),
+      item(a, "debug.profiler", "Profiler", [this] {
+             settings_.showProfiler = !settings_.showProfiler;
+             ImGui::MarkIniSettingsDirty();
+           }, "p", MOD_COMMAND | MOD_SHIFT, settings_.showProfiler),
+      // Recording needs the machine running; the window opens to show it.
+      item(a, "debug.profile", profiler_.recording() ? "Stop Profiling" : "Start Profiling", [this] {
+             if (!profiler_.recording()) settings_.showProfiler = true;
+             profiler_.toggleRecording();
+             ImGui::MarkIniSettingsDirty();
+           }, "r", MOD_COMMAND | MOD_SHIFT | MOD_OPTION, false, on),
   };
   if (mockingboard_.available()) {
     items.push_back(item(a, "debug.mockingboard", "Mockingboard", [this] {
@@ -1146,6 +1167,7 @@ bool *App::focusedToolWindow() {
       {"Memory Viewer", &settings_.showMemoryViewer},
       {"Soft Switches", &settings_.showSoftSwitches},
       {"Console", &settings_.showConsole},
+      {"Profiler", &settings_.showProfiler},
       {"Build", &settings_.showBuild},
   };
   for (const auto &[title, flag] : windows) {
@@ -1292,6 +1314,7 @@ void App::setIIgsMemory(int kb) {
   console_.setMachine(*profile_);
   memory_.setMachine(*profile_);
   switches_.setMachine();
+  profiler_.setMachine();
   drives_->syncWithMachine();
   hardDrives_->syncWithMachine();
   disk35_->syncWithMachine();
@@ -1325,6 +1348,7 @@ bool App::switchMachine(MachineId id) {
   console_.setMachine(*profile_);
   memory_.setMachine(*profile_);
   switches_.setMachine();
+  profiler_.setMachine();
   drives_->machineChanged();
   hardDrives_->machineChanged();
   disk35_->machineChanged();
@@ -1585,6 +1609,13 @@ void App::drawDiskDrives() {
   switches_.draw(&settings_.showSoftSwitches);
   firstPosition(180, 120);
   console_.draw(&settings_.showConsole);
+  firstPosition(140, 90);
+  profiler_.view = settings_.profilerView;
+  profiler_.draw(&settings_.showProfiler);
+  if (profiler_.view != settings_.profilerView) {
+    settings_.profilerView = profiler_.view;
+    ImGui::MarkIniSettingsDirty();
+  }
   develop_->draw(&settings_.showBuild);
   firstPosition(80, 60);
   states_->draw(&settings_.showSaveStates);
@@ -1839,6 +1870,7 @@ void App::setVideoStandard(VideoStandard standard) {
   console_.setMachine(*profile_);
   memory_.setMachine(*profile_);
   switches_.setMachine();
+  profiler_.setMachine();
   dropNotice(standard == VideoStandard::PAL ? "PAL, 50Hz: reboot to start a program afresh"
                                             : "NTSC, 60Hz: reboot to start a program afresh",
              false);

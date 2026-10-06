@@ -18,6 +18,7 @@
 
 #include "../src/debugger/debug_breakpoints.hpp"
 #include "../src/debugger/debug_symbols.hpp"
+#include "../src/debugger/profile_model.hpp"
 #include "debug/machine_debug.hpp"
 #include "debug/soft_switch_catalog.hpp"
 #include "machine/machine_profile.hpp"
@@ -778,4 +779,133 @@ TEST_CASE("Every command has help, and every alias reaches it", "[debugger][cons
   REQUIRE(parse("delete 1").kind == CK::BreakDelete);
   REQUIRE(parse("disable all").kind == CK::BreakDisable);
   REQUIRE(parse("print A").kind == CK::Evaluate);
+}
+
+TEST_CASE("A line is named by the nearest routine below it", "[debugger][symbols]") {
+  DebugSymbols symbols;
+  const auto home = symbols.nearestCode(0xFC5A);
+  REQUIRE(home);
+  CHECK(home->symbol.name == "HOME");
+  CHECK(home->offset == 2);
+  CHECK(symbols.nearestCode(0xFC58)->offset == 0);
+  // A soft switch names no code, and nothing is too far away.
+  CHECK_FALSE(symbols.nearestCode(0xC001, 0x10));
+  symbols.importSymbols("$6000 DRAWSPRITE\n$6040 ERASE\n");
+  CHECK(symbols.nearestCode(0x6044)->symbol.name == "ERASE");
+  CHECK(symbols.nearestCode(0x603F)->symbol.name == "DRAWSPRITE");
+  CHECK_FALSE(symbols.nearestCode(0x6400, 0x100));
+}
+
+namespace {
+
+// A tree as the core's profiler builds one: each node a path, its parent
+// made before it.
+ProfileModel::Node node(uint32_t function, int32_t parent, double self, uint64_t calls,
+                        Profiler::Entry entry = Profiler::Entry::Call) {
+  ProfileModel::Node n;
+  n.function = function;
+  n.parent = parent;
+  n.self = self;
+  n.calls = calls;
+  n.entry = entry;
+  return n;
+}
+
+} // namespace
+
+TEST_CASE("A routine's time is summed over every path to it", "[debugger][profiler]") {
+  // Top level -> A -> C, and Top level -> B -> C.
+  ProfileModel model;
+  model.setTree({node(Profiler::TOP_LEVEL, -1, 10, 0, Profiler::Entry::TopLevel), node(0xA000, 0, 20, 2),
+                 node(0xC000, 1, 30, 4), node(0xB000, 0, 5, 1), node(0xC000, 3, 35, 3)},
+                0);
+  model.rebuild();
+  CHECK(model.time() == 100);
+  CHECK(model.nodeTotal(0) == 100);
+  CHECK(model.nodeTotal(1) == 50);
+
+  const auto *c = model.function(0xC000);
+  REQUIRE(c);
+  CHECK(c->self == 65);
+  CHECK(c->total == 65);
+  CHECK(c->calls == 7);
+  // Most self time first, and it has the first colour.
+  CHECK(model.functions().front().address == 0xC000);
+  CHECK(c->band == 0);
+
+  const auto callers = model.callers(0xC000);
+  REQUIRE(callers.size() == 2);
+  CHECK(callers[0].address == 0xB000);
+  CHECK(callers[0].time == 35);
+  CHECK(callers[1].address == 0xA000);
+  CHECK(callers[1].calls == 4);
+
+  const auto callees = model.callees(0xA000);
+  REQUIRE(callees.size() == 1);
+  CHECK(callees[0].address == 0xC000);
+  CHECK(callees[0].time == 30);
+  CHECK(model.children(0).front() == 1); // A's 50 before B's 40
+}
+
+TEST_CASE("Recursion is not counted twice", "[debugger][profiler]") {
+  // Top level -> R -> R -> R.
+  ProfileModel model;
+  model.setTree({node(Profiler::TOP_LEVEL, -1, 0, 0, Profiler::Entry::TopLevel), node(0x3000, 0, 10, 1),
+                 node(0x3000, 1, 10, 1), node(0x3000, 2, 10, 1)},
+                0);
+  model.rebuild();
+  const auto *r = model.function(0x3000);
+  REQUIRE(r);
+  CHECK(r->self == 30);
+  CHECK(r->total == 30); // not 30 + 20 + 10
+  CHECK(r->calls == 3);
+  // Its only caller from outside is the top level.
+  const auto callers = model.callers(0x3000);
+  REQUIRE(callers.size() == 1);
+  CHECK(callers[0].address == Profiler::TOP_LEVEL);
+  CHECK(model.callees(0x3000).empty());
+}
+
+TEST_CASE("A range of frames is looked at alone, and the timeline follows the selection", "[debugger][profiler]") {
+  ProfileModel model;
+  model.setTree({node(Profiler::TOP_LEVEL, -1, 60, 0, Profiler::Entry::TopLevel), node(0xA000, 0, 30, 3),
+                 node(0xC000, 1, 10, 1)},
+                3);
+  std::vector<Profiler::Frame> frames(3);
+  for (uint64_t i = 0; i < 3; i++) {
+    frames[i].index = i;
+    frames[i].time = 33.0 + (i == 0 ? 1 : 0);
+  }
+  frames[0].samples = {{0, 24, 0}, {1, 10, 1}};
+  frames[1].samples = {{0, 18, 0}, {1, 10, 1}, {2, 5, 1}};
+  frames[2].samples = {{0, 18, 0}, {1, 10, 1}, {2, 5, 0}};
+  model.addFrames(frames);
+  model.setSelected(0xA000);
+  model.rebuild();
+  CHECK(model.frameCount() == 3);
+  CHECK(model.time() == 100);
+
+  model.setRange(std::make_pair<uint64_t, uint64_t>(2, 1)); // either way round
+  model.rebuild();
+  CHECK(model.frameCount() == 2);
+  CHECK(model.time() == 66);
+  CHECK(model.function(0xC000)->self == 10);
+  CHECK(model.function(0xC000)->calls == 1);
+  CHECK(model.function(0xA000)->total == 30);
+
+  // The selected routine's share of each frame takes in what it called.
+  REQUIRE(model.frameBands().size() == 3);
+  CHECK(model.frameBands()[0].selected == 10);
+  CHECK(model.frameBands()[1].selected == 15);
+  // And every frame's bands add up to the frame.
+  for (const auto &fb : model.frameBands()) {
+    float sum = 0;
+    for (float t : fb.time) sum += t;
+    CHECK(sum == Approx(fb.total));
+  }
+
+  // Frames already held are not taken twice.
+  model.addFrames(frames);
+  CHECK(model.frames().size() == 3);
+  CHECK(model.nextFrame() == 3);
 }
