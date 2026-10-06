@@ -909,7 +909,10 @@ void ConsoleWindow::draw(bool *open) {
         const ImVec2 a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
         ImGui::GetWindowDrawList()->AddLine(ImVec2(a.x, b.y), ImVec2(b.x, b.y), colour);
         ImGui::SetTooltip("Show %s in the CPU debugger", formatAddress(*line.address).c_str());
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && showAddress) showAddress(*line.address);
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && showAddress) {
+          showAddress(*line.address);
+          followedLink_ = true;
+        }
       }
     }
   }
@@ -918,6 +921,18 @@ void ConsoleWindow::draw(bool *open) {
     ImGui::SetScrollHereY(1.0f);
     scrollToEnd_ = false;
   }
+  // A click in the output is a click toward typing, as in a terminal: the
+  // output is not something to select, and the input is the only thing here
+  // to type into. It is taken when the button comes up, and only if the
+  // pointer did not move: on the press the window still holds the click, and
+  // a press that becomes a drag is moving the window or the scroll bar. An
+  // address followed to the debugger keeps the focus it gave that window.
+  if (ImGui::IsWindowHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+    const float drag = ImGui::GetIO().MouseDragMaxDistanceSqr[ImGuiMouseButton_Left];
+    const float threshold = ImGui::GetIO().MouseDragThreshold;
+    if (!followedLink_ && drag < threshold * threshold) focusInput_ = true;
+  }
+  if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) followedLink_ = false;
   ImGui::EndChild();
 
   // The prompt: the monitor's asterisk, and the line being typed.

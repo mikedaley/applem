@@ -89,6 +89,24 @@ private:
     int status = -1;
     std::string output;
   };
+  // What the last run started, for the window's summary.
+  struct LastRun {
+    size_t bytes = 0;
+    uint16_t load = 0;
+    uint16_t entry = 0;
+    bool fromDisk = false;
+    bool smartPort = false;
+    int symbols = -1; // none imported
+    double at = 0;
+  };
+  enum class State { Idle, Building, Ran, Failed };
+
+  void drawEmpty();
+  void drawHeader(float width);
+  void drawActions(float width);
+  void drawSummary(float width);
+  void drawIssues(float width);
+  void drawOutput();
 
   void run();
   void startFromMemory(const dev::Program &program);
@@ -108,6 +126,9 @@ private:
   std::vector<dev::Issue> issues_;
   std::string status_;
   bool problem_ = false;
+  State state_ = State::Idle;
+  std::optional<LastRun> lastRun_;
+  double lastBuildSeconds_ = -1;
   bool wantsWindow_ = false;
 
   // The output and its .dbg as last run, and a change seen but not yet run:

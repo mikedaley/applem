@@ -105,6 +105,7 @@ private:
   bool scrollToEnd_ = false;
   std::array<char, 512> input_{};
   bool focusInput_ = true;
+  bool followedLink_ = false; // the click in progress followed an address
   std::vector<std::string> history_;
   int historyAt_ = -1; // -1: the line being typed, not one from history
   std::string typed_;  // what was being typed before going back in history
