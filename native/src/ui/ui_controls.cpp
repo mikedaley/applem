@@ -588,6 +588,11 @@ constexpr float LIGHT_PITCH = 20.0f;
 // Where a zoomed window was, to go back to.
 std::unordered_map<ImGuiID, ImRect> g_unzoomed;
 
+// The window behind under the pointer this frame, which ClickToFocus hides
+// from ImGui: its traffic lights still light up for the pointer, as AppKit's
+// do on a window that is not the key one.
+ImGuiWindow *g_behind = nullptr;
+
 enum class Light { Close, Minimise, Zoom };
 
 void drawLight(ImDrawList *draw, ImVec2 c, Light light, bool active, bool enabled, bool showGlyph, bool held) {
@@ -678,9 +683,11 @@ bool BeginWindow(const char *name, bool *open, ImGuiWindowFlags flags) {
   const float cy = (bar.Min.y + bar.Max.y) * 0.5f;
   const ImRect group(ImVec2(bar.Min.x + LIGHT_FIRST - LIGHT_PITCH * 0.5f, bar.Min.y),
                      ImVec2(bar.Min.x + LIGHT_FIRST + LIGHT_PITCH * 2.5f, bar.Max.y));
-  // macOS shows all three symbols while the pointer is over any of them.
-  const bool overGroup = g.HoveredWindow && g.HoveredWindow->RootWindow == window->RootWindow &&
-                         ImGui::IsMouseHoveringRect(group.Min, group.Max, false);
+  // macOS shows all three symbols while the pointer is over any of them, and
+  // in their colours even on a window that is not the active one.
+  const bool underPointer = (g.HoveredWindow && g.HoveredWindow->RootWindow == window->RootWindow) ||
+                            g_behind == window->RootWindow;
+  const bool overGroup = underPointer && ImGui::IsMouseHoveringRect(group.Min, group.Max, false);
 
   // The buttons are items in the title bar, as ImGui's own close button is:
   // on the menu layer, never taking keyboard focus, and clipped to the
@@ -700,7 +707,7 @@ bool BeginWindow(const char *name, bool *open, ImGuiWindowFlags flags) {
     bool hovered = false, held = false;
     bool pressed = false;
     if (ImGui::ItemAdd(bb, id) && enabled[i]) pressed = ImGui::ButtonBehavior(bb, id, &hovered, &held);
-    drawLight(window->DrawList, c, lights[i], active, enabled[i], overGroup, held);
+    drawLight(window->DrawList, c, lights[i], active || overGroup, enabled[i], overGroup, held);
     if (!pressed) continue;
     switch (lights[i]) {
     case Light::Close: *open = false; break;
@@ -717,10 +724,16 @@ bool BeginWindow(const char *name, bool *open, ImGuiWindowFlags flags) {
 void ClickToFocus() {
   ImGuiContext &g = *GImGui;
   ImGuiIO &io = g.IO;
+  g_behind = nullptr;
   ImGuiWindow *hovered = g.HoveredWindow;
   if (!hovered || g.OpenPopupStack.Size > 0) return;
   ImGuiWindow *root = hovered->RootWindow;
   if (g.NavWindow && g.NavWindow->RootWindow == root) return;
+  // A press let through to a window behind (a traffic light in its title
+  // bar) is followed to its release: ImGui's buttons act on the release, and
+  // with the window hidden from ImGui the release landed on nothing, so the
+  // button never fired.
+  if (g.ActiveId != 0 && g.ActiveIdWindow && g.ActiveIdWindow->RootWindow == root) return;
 
   bool clicked = false;
   for (int b = 0; b < ImGuiMouseButton_COUNT; b++) clicked |= io.MouseClicked[b];
@@ -728,6 +741,7 @@ void ClickToFocus() {
   if (clicked && !(root->Flags & ImGuiWindowFlags_NoTitleBar) && root->TitleBarRect().Contains(io.MousePos)) return;
   // Otherwise nothing in a window behind is hovered: no tooltips, no hover
   // highlights, no scrolling, until it is brought to the front.
+  g_behind = root;
   g.HoveredWindow = nullptr;
   g.HoveredWindowUnderMovingWindow = nullptr;
   io.MouseWheel = 0;

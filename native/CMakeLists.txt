@@ -275,6 +275,24 @@ target_link_libraries(test_native_console PRIVATE a2e_core imgui
 add_test(NAME test_native_console COMMAND test_native_console
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
+# The app's own window chrome (traffic lights, click to focus), driven a frame
+# at a time through ImGui's input queue.
+add_executable(test_native_ui
+    tests/test_native_ui.cpp
+    src/ui/ui_controls.cpp
+    src/ui/ui_theme.mm
+    src/app/platform_paths.mm
+)
+target_include_directories(test_native_ui PRIVATE
+    ${CMAKE_SOURCE_DIR}/tests/catch2
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_compile_options(test_native_ui PRIVATE -Wall -Wextra -Wno-unused-parameter
+    $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
+target_link_libraries(test_native_ui PRIVATE imgui "-framework AppKit")
+add_test(NAME test_native_ui COMMAND test_native_ui
+         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
 # The media store, the save naming rules and the seek click.
 add_executable(test_native_media
     tests/test_native_media.cpp

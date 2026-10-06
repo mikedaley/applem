@@ -69,7 +69,8 @@ float SwitchWidth(const char *label);
 // window behind shows no tooltips or hover highlights and does not scroll,
 // and a click on it only focuses it, as a Mac's does; the controls under it
 // do not hear the click or its release. A click on a title bar still drags
-// the window, and while a popup is open ImGui deals with clicks itself.
+// the window, and its traffic lights work, as AppKit's do on a window behind;
+// while a popup is open ImGui deals with clicks itself.
 void ClickToFocus();
 
 // Whether the pointer is over a rectangle of the window being drawn, and that

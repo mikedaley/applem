@@ -875,8 +875,11 @@ The app is meant to feel like a Mac app rather than an ImGui tool:
 - **Every window has a macOS title bar** (`ui::BeginWindow`, which window
   code calls instead of `ImGui::Begin`): 28 points tall, the title centred,
   and close, minimise and zoom on the left in AppKit's colours, grey while
-  the window is not the active one and showing their symbols while the
-  pointer is over them. Minimise rolls the window up to its title bar and
+  the window is not the active one and in colour with their symbols while
+  the pointer is over them. They work in one click on a window behind, as
+  AppKit's do: `ui::ClickToFocus` lets a title bar click through, and
+  follows a press it let through to its release, since an ImGui button acts
+  on the release (`test_native_ui`). Minimise rolls the window up to its title bar and
   back; zoom fills the screen the window is on and puts it back, and is
   greyed out on a window that sizes itself. A docked window keeps ImGui's tab
   and its close button.
