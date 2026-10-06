@@ -87,6 +87,73 @@ TEST_CASE("Recent disks are newest first, one per name, ten at most", "[media]")
   REQUIRE(store.recent(0).empty());
 }
 
+TEST_CASE("A disk from a file is remembered by its path, and read from it again", "[media]") {
+  // What the machine writes goes back to the user's file, so starting again
+  // reads that file rather than a copy taken when it went in.
+  TempDir dir;
+  MediaStore store(dir.path.string(), "floppy");
+  const std::string file = (dir.path / "Work.dsk").string();
+  REQUIRE(writeFile(file, bytes(1).data(), 64));
+  store.saveInserted(0, "Work.dsk", bytes(1), file);
+  REQUIRE(writeFile(file, bytes(2).data(), 64)); // written back since
+  auto image = store.loadInserted(0);
+  REQUIRE(image);
+  REQUIRE(image->path == file);
+  REQUIRE(image->data == bytes(2));
+  REQUIRE_FALSE(image->missing);
+
+  // Moved away: the drive says so rather than silently coming up empty.
+  fs::remove(file);
+  image = store.loadInserted(0);
+  REQUIRE(image);
+  REQUIRE(image->missing);
+  REQUIRE(image->data.empty());
+
+  // A disk with no file is kept as bytes, and replaces the path.
+  store.saveInserted(0, "Blank.woz", bytes(3));
+  image = store.loadInserted(0);
+  REQUIRE(image->path.empty());
+  REQUIRE(image->data == bytes(3));
+}
+
+TEST_CASE("A recent disk with a path is the file, not a copy", "[media]") {
+  TempDir dir;
+  MediaStore store(dir.path.string(), "floppy");
+  fs::create_directories(dir.path / "a");
+  fs::create_directories(dir.path / "b");
+  const std::string first = (dir.path / "a" / "DISK1.DSK").string();
+  const std::string second = (dir.path / "b" / "DISK1.DSK").string();
+  REQUIRE(writeFile(first, bytes(1).data(), 64));
+  REQUIRE(writeFile(second, bytes(2).data(), 64));
+  store.addRecent(0, "DISK1.DSK", bytes(1), first);
+  store.addRecent(0, "DISK1.DSK", bytes(2), second);
+
+  // Two files of the same name are two entries, and nothing was copied.
+  auto recent = store.recent(0);
+  REQUIRE(recent.size() == 2);
+  REQUIRE(recent.front().path == second);
+  for (const auto &entry : fs::directory_iterator(dir.path / "floppy")) {
+    REQUIRE(entry.path().extension() != ".img");
+  }
+  // Chosen, it is read from the file as it is now.
+  REQUIRE(writeFile(first, bytes(9).data(), 64));
+  auto image = store.loadRecent(0, recent.back());
+  REQUIRE(image);
+  REQUIRE(image->data == bytes(9));
+  REQUIRE(image->path == first);
+  // The same file again moves to the front rather than adding another.
+  store.addRecent(0, "DISK1.DSK", bytes(9), first);
+  REQUIRE(store.recent(0).size() == 2);
+  REQUIRE(store.recent(0).front().path == first);
+}
+
+TEST_CASE("A failed write leaves nothing behind", "[media]") {
+  TempDir dir;
+  const std::string into = (dir.path / "no-such-folder" / "x.dsk").string();
+  REQUIRE_FALSE(writeFile(into, bytes(1).data(), 64));
+  REQUIRE_FALSE(fs::exists(into + ".tmp"));
+}
+
 TEST_CASE("The disk library is read from the browser's library.json", "[media]") {
   const std::string json = R"([
     {"id": "prodos", "name": "ProDOS 2.4.3", "file": "ProDOS 2.4.3.po", "type": "floppy",
@@ -109,8 +176,10 @@ TEST_CASE("A saved disk takes its format's extension", "[media]") {
 }
 
 TEST_CASE("Floppy images are known by their extension", "[media]") {
-  for (const char *name : {"a.dsk", "a.DO", "a.po", "a.woz", "a.nib"}) REQUIRE(DiskDrives::isFloppyImage(name));
-  for (const char *name : {"a.2mg", "a.hdv", "a.txt", "dsk"}) REQUIRE_FALSE(DiskDrives::isFloppyImage(name));
+  for (const char *name : {"a.dsk", "a.DO", "a.po", "a.woz"}) REQUIRE(DiskDrives::isFloppyImage(name));
+  // A .nib is not offered: the core reads sector and WOZ images, and every
+  // NIB used to fail with "Could not load the disk image".
+  for (const char *name : {"a.nib", "a.2mg", "a.hdv", "a.txt", "dsk"}) REQUIRE_FALSE(DiskDrives::isFloppyImage(name));
 }
 
 TEST_CASE("A dropped image goes to the drive it belongs in", "[media]") {
@@ -311,7 +380,10 @@ TEST_CASE("Each slot offers what it conventionally takes", "[slots]") {
   REQUIRE(slotOffers(iie, 4) ==
           std::vector<std::string>{"mockingboard", "mouse", "smartport", "softcard"});
   const auto &gs = a2e::machineProfile(a2e::MachineId::AppleIIgs);
-  REQUIRE(slotOffers(gs, 4).size() == 6);
+  // No printer or serial card until there is a printer, and no second
+  // SmartPort on a IIgs, which has one built in.
+  REQUIRE(slotOffers(gs, 4) == std::vector<std::string>{"mockingboard", "mouse", "thunderclock"});
+  REQUIRE(slotOffers(iie, 1) == std::vector<std::string>{"softcard"});
   REQUIRE(builtInDevice(gs, 5) == std::optional<std::string>("SmartPort"));
   REQUIRE_FALSE(builtInDevice(gs, 3)); // slot 3 has no switch
   REQUIRE_FALSE(builtInDevice(iie, 5));

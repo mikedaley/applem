@@ -145,6 +145,11 @@ void Display::applyToRenderer(ScreenRenderer &renderer, float beamX, float beamY
   CrtParams params = crtParamsFor(settings());
   params.beamX = beamX;
   params.beamY = beamY;
+  // Burn In shows what the persistence texture holds, and that texture stops
+  // being refreshed while it is off: turned on again, it showed the picture
+  // from whenever it was last on, another machine's perhaps, for a few frames.
+  if (params.burnIn > 0.001f && lastBurnIn_ <= 0.001f) renderer.clearPersistence();
+  lastBurnIn_ = params.burnIn;
   renderer.setParams(params);
 }
 

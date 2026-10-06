@@ -13,6 +13,8 @@
 #include "state_store.hpp"
 
 #include <functional>
+#include <future>
+#include <set>
 #include <map>
 #include <optional>
 #include <string>
@@ -41,6 +43,9 @@ public:
     std::function<const MachineProfile *()> machine;
     // Rebuild as another machine, without asking: the state already asked.
     std::function<bool(MachineId)> switchTo;
+    // A state is about to go in: what was written to the disks it replaces
+    // goes to their files first.
+    std::function<void()> loading;
     // A state went in: the drives hold what it held.
     std::function<void()> loaded;
   };
@@ -49,10 +54,13 @@ public:
   ~SaveStates();
 
   void draw(bool *open);
+  // A state file from the Finder, loaded as one chosen in the window is.
+  void loadFile(const std::string &path);
   // Every frame: the autosave's timer.
   void update(double now);
-  // Before quitting or replacing the machine.
-  void autosaveNow();
+  // Before quitting or replacing the machine it is written there and then;
+  // the timer's is written in the background.
+  void autosaveNow(bool background = false);
 
   bool autosave = false;
 
@@ -64,9 +72,12 @@ private:
 
   void refresh();
   void releaseThumbnails();
-  void saveTo(const std::string &id);
-  void loadBytes(const std::vector<uint8_t> &data, const std::string &what);
-  void importNow(const std::vector<uint8_t> &data, const std::string &what);
+  // Each says whether it did it: a load from another machine waits on a
+  // question, and a failure has said why.
+  bool saveTo(const std::string &id, bool background = false);
+  void finishBackgroundSave(bool wait);
+  bool loadBytes(const std::vector<uint8_t> &data, const std::string &what);
+  bool importNow(const std::vector<uint8_t> &data, const std::string &what);
   void exportRecord(const std::string &id, const std::string &suggestedName);
   void drawAutosave(float width);
   void drawSlot(int slot, ImVec2 at, ImVec2 size);
@@ -87,6 +98,10 @@ private:
   bool stale_ = true;
   bool wasOpen_ = false;
   double lastAutosave_ = 0;
+  // Machines whose autosave from the last session has been kept aside, so
+  // it is only done before this session's first autosave for each.
+  std::set<std::string> keptLastSession_;
+  std::future<bool> backgroundSave_;
 
   // A load waiting for the user to agree to switch machines.
   std::vector<uint8_t> pendingLoad_;

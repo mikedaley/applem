@@ -162,16 +162,21 @@ void MockingboardWindow::update() {
   if (!emulation_.poll(updatePoll_, [&](host::MachineHost &host) {
     MockingboardCard *mb = host.mockingboard();
     fitted_ = mb != nullptr;
-    if (!mb || mb == card_) return;
-    card_ = mb;
+    if (!mb) return;
+    // The chips are asked rather than remembered by address: a card refitted
+    // or a machine rebuilt often comes back at the same address, and the new
+    // card's channels were then left playing with the window showing them
+    // muted. Six flags a frame is nothing.
     for (int psg = 0; psg < 2; psg++) {
       AY8910 &chip = psg == 0 ? mb->getPSG1() : mb->getPSG2();
-      for (int ch = 0; ch < 3; ch++) chip.setChannelMute(ch, mutes & (1 << (psg * 3 + ch)));
+      for (int ch = 0; ch < 3; ch++) {
+        const bool muted = mutes & (1 << (psg * 3 + ch));
+        if (chip.isChannelMuted(ch) != muted) chip.setChannelMute(ch, muted);
+      }
     }
   })) {
     return;
   }
-  if (!fitted_) card_ = nullptr;
 }
 
 void MockingboardWindow::setMute(int psg, int channel, bool muted) {

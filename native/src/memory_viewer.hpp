@@ -9,6 +9,7 @@
 
 #include "machine_poll.hpp"
 #include "debug_breakpoints.hpp"
+#include "debug_symbols.hpp"
 #include "platform.hpp"
 
 #include "../../src/host/machine_host.hpp"
@@ -123,6 +124,10 @@ private:
   void paintMap();
 
   const host::MemorySpace *space() const;
+  // The name an address in the space being shown has, if any. The machine's
+  // own names describe what the processor sees, so a bank shown whatever the
+  // switches say takes only those that are true of it.
+  std::optional<DebugSymbols::Symbol> symbolAt(uint32_t address) const;
   uint32_t spaceEnd() const;
   int rowCount() const;
   uint32_t rowAddress(int row) const;

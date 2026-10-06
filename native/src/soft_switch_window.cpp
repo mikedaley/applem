@@ -115,7 +115,9 @@ void SoftSwitchWindow::drawBreakpoints() {
   int remove = -1;
   for (size_t i : rows) {
     Breakpoint &bp = breakpoints_.all()[i];
-    ImGui::PushID(static_cast<int>(i));
+    // By id, so a row keeps its widgets' state when another window deletes
+    // a breakpoint above it.
+    ImGui::PushID(static_cast<int>(bp.id));
     const bool present = find(bp.key) != nullptr;
     const std::string text = Breakpoints::describeSwitch(bp, catalog_);
     ImGui::BeginDisabled(!present);

@@ -116,6 +116,7 @@ void Emulation::refill(float *scratch, bool toDevice) {
   std::lock_guard<std::mutex> lock(mutex_);
   applyPosted();
   host_.generateStereoAudioSamples(scratch, SAMPLES_PER_FRAME);
+  refills_.fetch_add(1, std::memory_order_release);
   clockMHz_.store(host_.clockHz() / 1.0e6);
   // A paused machine is silent, as the browser's is: its sound sources would
   // otherwise hold whatever they were playing, a Mockingboard or an Ensoniq

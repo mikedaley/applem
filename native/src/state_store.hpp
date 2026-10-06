@@ -52,12 +52,18 @@ public:
 
   static std::string slotId(int slot) { return "slot-" + std::to_string(slot); }
   static std::string autosaveId(const std::string &machine) { return "autosave-" + machine; }
+  // The autosave a session started with, kept aside before the session's own
+  // first autosave replaces it: the one written at the last quit.
+  static std::string lastSessionId(const std::string &machine) { return "last-session-" + machine; }
 
   bool save(const std::string &id, const std::string &machine, const std::vector<uint8_t> &state,
             const std::vector<uint8_t> &thumbnail);
   std::optional<StateRecord> info(const std::string &id) const;
   std::optional<std::vector<uint8_t>> load(const std::string &id) const;
   void clear(const std::string &id);
+  // A record copied under another id, replacing what was there. False if
+  // there was nothing to copy.
+  bool copy(const std::string &from, const std::string &to);
 
 private:
   std::string path(const std::string &id, const char *extension) const;

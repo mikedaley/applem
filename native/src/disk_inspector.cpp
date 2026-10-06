@@ -572,8 +572,9 @@ void DiskInspector::drawStrip(float width) {
     if (x < p0.x - 40 || x > p1.x) continue;
     const bool picked = static_cast<int>(s) == selectedSector_;
     draw->AddLine(ImVec2(x, labelTop + 2), ImVec2(x, bandTop - 2), picked ? accent() : PANE_DIM, 1.0f);
+    // In hex, as the sector chips below have them and Apple II tools do.
     char name[8];
-    std::snprintf(name, sizeof(name), "S%d", sector.sector);
+    std::snprintf(name, sizeof(name), "S%X", sector.sector);
     draw->AddText(ImVec2(x + 3, labelTop), picked ? accent() : PANE_TEXT, name);
   }
   ImGui::PopFont();

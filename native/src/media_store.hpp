@@ -14,15 +14,20 @@
 
 namespace a2e::native {
 
-// A disk image with the name it was inserted under.
+// A disk image with the name it was inserted under, and the file it came
+// from when it came from one: what the machine writes goes back there.
 struct StoredImage {
   std::string filename;
   std::vector<uint8_t> data;
+  std::string path;
+  // The file it came from is not where it was: there are no bytes.
+  bool missing = false;
 };
 
 struct RecentEntry {
   std::string filename;
-  std::string file; // where its bytes are kept, inside the store
+  std::string file; // where its bytes are kept, inside the store, if it has no path
+  std::string path; // the user's file, read again when it is chosen
   int64_t accessed = 0;
 };
 
@@ -36,12 +41,18 @@ struct LibraryEntry {
 
 // The browser build's disk persistence (disk-persistence.js), in files.
 //
-// Each unit (a floppy drive, or a SmartPort device) remembers the image that
-// was inserted into it, as it was inserted: what the machine writes to a disk
-// afterwards is not kept, so starting again brings the pristine image back.
-// Each unit also keeps its ten most recent images, newest first, one entry
-// per filename; the bytes are copied in, so a recent disk still loads after
-// the original file has moved.
+// Each unit (a floppy drive, or a SmartPort device) remembers the disk that
+// was inserted into it. A disk that came from a file is remembered by its
+// path, because what the machine writes goes back to that file and starting
+// again should bring back the disk as it was left, as a Mac app reopens a
+// document. A disk with no file of its own (a blank one, one from the app's
+// library) is remembered by a copy of its bytes.
+//
+// Each unit also keeps its ten most recent disks, newest first, one entry
+// per file: a path for a disk that has one, which is read again when chosen,
+// and otherwise a copy. Copying every recent disk kept up to ten 32MB hard
+// drive images per device in the app's own folder, and named them by bare
+// filename, so two DISK1.DSKs from different folders overwrote each other.
 //
 // `kind` names the set of units ("floppy", "hard-drive"), so the floppies'
 // and the hard drives' records never mix.
@@ -51,12 +62,15 @@ public:
 
   MediaStore(std::string directory, std::string kind);
 
-  void saveInserted(int unit, const std::string &filename, const std::vector<uint8_t> &data);
+  // With a path, only the path is kept; without one, the bytes.
+  void saveInserted(int unit, const std::string &filename, const std::vector<uint8_t> &data,
+                    const std::string &path = "");
   std::optional<StoredImage> loadInserted(int unit) const;
   void clearInserted(int unit);
 
   // Put an image at the front of a unit's recent list.
-  void addRecent(int unit, const std::string &filename, const std::vector<uint8_t> &data);
+  void addRecent(int unit, const std::string &filename, const std::vector<uint8_t> &data,
+                 const std::string &path = "");
   std::vector<RecentEntry> recent(int unit) const;
   std::optional<StoredImage> loadRecent(int unit, const RecentEntry &entry) const;
   void clearRecent(int unit);

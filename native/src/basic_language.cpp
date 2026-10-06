@@ -7,6 +7,7 @@
 
 #include "basic_language.hpp"
 
+#include "basic/basic_control_text.hpp"
 #include "basic/basic_tokens.hpp"
 
 #include <algorithm>
@@ -68,8 +69,12 @@ const std::vector<Keyword> &keywords() {
       if (t.size() == 1 && t != "&") continue;
       found.emplace(t, Kind::Keyword);
     }
+    // A category colours a token; a word in one that is not a token (CLEAR)
+    // is not a keyword to Applesoft, so it is not one here.
     for (const Category &c : categories()) {
-      for (const char *w : c.words) found[w] = c.kind;
+      for (const char *w : c.words) {
+        if (const auto it = found.find(w); it != found.end()) it->second = c.kind;
+      }
     }
     std::vector<Keyword> out;
     for (const auto &[text, kind] : found) out.push_back({text, kind});
@@ -81,18 +86,18 @@ const std::vector<Keyword> &keywords() {
   return list;
 }
 
-// The keyword at a position, if one is there. One that ends in a letter or a
-// digit must not run on into another, so TOTAL is a variable and not TO TAL;
-// one that ends in punctuation (COLOR=, TAB(, PR#, HIMEM:) needs no gap.
+// The keyword at a position, if one is there, found as Applesoft's tokenizer
+// finds it (and the core's, basic_tokenizer.cpp): the longest keyword that
+// starts here, whatever follows it. So TOTAL is TO then TAL and SCORE is SC,
+// OR, E, which is what the program will do, and the colours say so rather
+// than showing a name Applesoft never sees.
 const Keyword *keywordAt(std::string_view line, size_t pos) {
   for (const Keyword &k : keywords()) {
     const size_t n = k.text.size();
     if (pos + n > line.size()) continue;
     bool same = true;
     for (size_t i = 0; i < n && same; i++) same = upper(line[pos + i]) == k.text[i];
-    if (!same) continue;
-    if (isAlnum(k.text.back()) && pos + n < line.size() && isAlnum(line[pos + n])) continue;
-    return &k;
+    if (same) return &k;
   }
   return nullptr;
 }
@@ -266,6 +271,19 @@ std::vector<Span> highlight(std::string_view line) {
         add(pos, line.size() - pos, Kind::Comment);
         break;
       }
+      // DATA's items are kept as typed, keywords and all, up to a colon
+      // outside quotes: strings and numbers are coloured, nothing else.
+      if (k->text == "DATA") {
+        bool quote = false;
+        while (pos < line.size() && (quote || line[pos] != ':')) {
+          const char d = line[pos];
+          if (d == '"') quote = !quote;
+          add(pos, 1, quote || d == '"' ? Kind::String : isDigit(d) || d == '.' ? Kind::Number
+                                                         : d == ','                ? Kind::Punctuation
+                                                                                   : Kind::Plain);
+          pos++;
+        }
+      }
       continue;
     }
     if (isDigit(c)) {
@@ -284,8 +302,10 @@ std::vector<Span> highlight(std::string_view line) {
       continue;
     }
     if (isAlpha(c)) {
+      // A name ends where a keyword starts inside it, as it does for the
+      // tokenizer.
       size_t end = pos + 1;
-      while (end < line.size() && isAlnum(line[end])) end++;
+      while (end < line.size() && isAlnum(line[end]) && !keywordAt(line, end)) end++;
       if (end < line.size() && (line[end] == '$' || line[end] == '%')) end++;
       add(pos, end - pos, Kind::Variable);
       pos = end;
@@ -393,8 +413,9 @@ Renumbered renumber(const std::string &source, int first, int step) {
         const size_t from = i;
         while (i < code.size() && isDigit(code[i])) i++;
         if (i == from) return;
-        const int n = std::stoi(code.substr(from, i - from));
-        const auto it = result.mapping.find(n);
+        // A target longer than five digits names no line, and is too long
+        // for std::stoi, which throws.
+        const auto it = i - from > 5 ? result.mapping.end() : result.mapping.find(std::stoi(code.substr(from, i - from)));
         out += it == result.mapping.end() ? code.substr(from, i - from) : std::to_string(it->second);
         if (!list) return;
         size_t j = i;
@@ -718,6 +739,30 @@ std::vector<Completion> complete(const std::string &source, std::string_view bef
   std::sort(words.begin(), words.end(), [](const Completion &x, const Completion &y) { return x.text < y.text; });
   for (Completion &c : words) push(std::move(c));
   return out;
+}
+
+RunChoice chooseRun(const RunFacts &f) {
+  // Nothing to choose between: no program in the editor, or the same one in
+  // both places.
+  if (f.editorEmpty || f.memoryMatchesEditor) return RunChoice::RunMemory;
+  // Nothing in memory to lose.
+  if (f.memoryEmpty) return RunChoice::WriteThenRun;
+  if (f.synced) {
+    // Read or written, and not edited since: memory is the program, even if
+    // something has since LOADed another into it.
+    if (!f.editedSinceSync) return RunChoice::RunMemory;
+    // Edited, and memory still holds what the editor last agreed with: the
+    // edits are what is meant.
+    if (!f.memoryChangedSinceSync) return RunChoice::WriteThenRun;
+  }
+  // Two different programs and nothing to say which: a text restored at
+  // launch or opened from a file against one in memory, or edits against a
+  // program that has changed under them.
+  return RunChoice::Ask;
+}
+
+std::string controlText(unsigned char c) {
+  return a2e::basic_text::needsToken(c) ? a2e::basic_text::tokenFor(c) : std::string();
 }
 
 std::string errorMessage(uint8_t code) {

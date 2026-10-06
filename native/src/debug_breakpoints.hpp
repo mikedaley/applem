@@ -42,6 +42,11 @@ struct Breakpoint {
   enum BeamMode { BeamVbl, BeamHbl, BeamLine, BeamColumn, BeamLineColumn };
 
   Kind kind = Kind::Exec;
+  // Given by the list when the breakpoint joins it and never reused, so a
+  // number the console printed, a stop being shown or a condition being
+  // built still names the same breakpoint after another one is deleted. 0
+  // until it joins.
+  uint32_t id = 0;
   uint32_t start = 0;
   uint32_t end = 0; // == start for a single address
   bool enabled = true;
@@ -86,6 +91,10 @@ public:
   // False if the same one is already there.
   bool add(const Breakpoint &breakpoint);
   void remove(size_t index);
+  // By the id the list gave it. -1, nullptr and false when it has gone.
+  int indexOf(uint32_t id) const;
+  Breakpoint *find(uint32_t id);
+  bool removeId(uint32_t id);
   // A switch breakpoint taken away if it is there, added if it is not.
   void toggle(const Breakpoint &breakpoint);
   // The plain execution breakpoint at an address, as a gutter click makes.
@@ -103,7 +112,9 @@ public:
 
   // Make the core hold exactly the enabled entries. A switch breakpoint is
   // found in the machine's catalog by its key, and one the machine does not
-  // have is kept and not applied.
+  // have is kept and not applied. Only what changed is touched: taking every
+  // breakpoint out and putting it back forgot which one the machine was
+  // stopped on, so the next Continue stopped on it again.
   void apply(MachineDebug &debug, const std::vector<SoftSwitchInfo> &switches);
   // Whether the list differs from what the core was last given, or the
   // machine was rebuilt (invalidate) and holds none of it.
@@ -125,6 +136,7 @@ private:
   // What was handed to the core last time, so it can be taken back.
   std::vector<Breakpoint> applied_;
   bool stale_ = true;
+  uint32_t nextId_ = 1;
 };
 
 const char *kindName(Breakpoint::Kind kind);

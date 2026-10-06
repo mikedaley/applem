@@ -50,11 +50,15 @@ struct Platform {
   // Whether Caps Lock is on. It is a toggle, not a held key, so it comes from
   // the system rather than from ImGui's key state.
   std::function<bool()> capsLockOn;
+  // What a key types unshifted on the keyboard layout in use, or 0. Letters
+  // and punctuation follow it (key_mapper's followsLayout).
+  std::function<char32_t(ImGuiKey)> layoutCharacter;
   std::function<void(const std::string &)> setWindowTitle;
   // The app's appearance: 0 follows the system, 1 is light, 2 is dark.
   std::function<void(int)> setAppearance;
   // Enter or leave macOS full screen for the main window.
   std::function<void()> toggleFullScreen;
+  std::function<bool()> isFullScreen;
   // Resize the main window so its content is this size in points, kept on
   // its screen. Nothing happens in full screen, where the system owns it.
   std::function<void(float width, float height)> setMainContentSize;
@@ -71,6 +75,8 @@ struct Platform {
   std::function<void(const std::string &title, const std::string &suggestedName,
                      const std::vector<std::string> &extensions, FileChosen done)>
       saveFile;
+  // RGBA rows from the top, written as a PNG.
+  std::function<bool(const std::string &path, const std::vector<uint8_t> &rgba, int width, int height)> savePng;
 
   // The mouse, taken for the machine: the pointer hidden and held where it
   // is, and its movement and left button handed over instead of reaching the

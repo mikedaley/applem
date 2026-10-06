@@ -21,13 +21,16 @@ struct SlotUI {
   const char *note;
 };
 
-// slot-configuration-window.js's SLOT_UI.
+// slot-configuration-window.js's SLOT_UI, without the Parallel Card and the
+// Super Serial Card: the native app has no printer or serial line for them
+// to reach yet, and a card that drops every byte it is sent would only look
+// like a broken printer. They come back with a printer window.
 const std::map<int, SlotUI> &slotUI() {
   static const std::map<int, SlotUI> table = {
       {0, {{}, "16K RAM"}},
-      {1, {{"parallel", "ssc", "softcard"}, "Printer"}},
-      {2, {{"parallel", "ssc", "smartport", "softcard"}, "Modem / Serial"}},
-      {3, {{"parallel", "ssc", "smartport", "softcard"}, "80-Column / Serial"}},
+      {1, {{"softcard"}, "Printer"}},
+      {2, {{"smartport", "softcard"}, "Modem / Serial"}},
+      {3, {{"smartport", "softcard"}, "80-Column / Serial"}},
       {4, {{"mockingboard", "mouse", "smartport", "softcard"}, "Mouse / Sound"}},
       {5, {{"thunderclock", "smartport", "softcard"}, "3.5\" Drives / Clock"}},
       {6, {{"disk2"}, "5.25\" Drives"}},
@@ -36,9 +39,11 @@ const std::map<int, SlotUI> &slotUI() {
   return table;
 }
 
-// A IIgs's sockets each take any of these.
-const std::vector<std::string> IIGS_CARDS = {"mockingboard", "mouse", "thunderclock",
-                                             "ssc", "parallel", "smartport"};
+// A IIgs's sockets each take any of these. Not a SmartPort card: the machine
+// has its own in slot 5, and that is the one its drives window reaches, so a
+// second in a socket could never be given an image. Not the printer and
+// serial cards either, as above.
+const std::vector<std::string> IIGS_CARDS = {"mockingboard", "mouse", "thunderclock"};
 
 // IIGS_SLOT_UI: the built-in device each slot has besides its socket.
 const std::map<int, const char *> &iigsBuiltIn() {

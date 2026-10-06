@@ -12,6 +12,7 @@
 #include "ui_controls.hpp"
 #include "ui_theme.hpp"
 
+#include "basic/basic_control_text.hpp"
 #include "basic/basic_detokenizer.hpp"
 #include "basic/basic_tokenizer.hpp"
 
@@ -225,7 +226,11 @@ size_t countChars(const std::vector<std::string> &lines) {
 
 } // namespace
 
-BasicWindow::BasicWindow(Emulation &emulation, Platform &platform) : emulation_(emulation), platform_(platform) {}
+BasicWindow::BasicWindow(Emulation &emulation, Platform &platform) : emulation_(emulation), platform_(platform) {
+  // A control character pasted or opened becomes the token the listing
+  // shows it as, so Write puts the byte back.
+  editor_.setControlText(basic::controlText);
+}
 
 // ---------------------------------------------------------------------------
 // Reading the machine
@@ -261,14 +266,11 @@ void BasicWindow::take() {
   emulation_.poll(poll_, [&](host::MachineHost &host) {
     Emulator *e = host.emulator();
     available_ = e != nullptr;
-    if (!e) {
-      machine_ = nullptr;
-      return;
-    }
+    if (!e) return;
     // A machine built since the breakpoints were given to one starts with
     // none.
-    if (e != machine_) {
-      machine_ = e;
+    if (host.generation() != machineGeneration_) {
+      machineGeneration_ = host.generation();
       e->clearBasicBreakpoints();
       for (const Breakpoint &b : breakpoints_) {
         if (b.enabled && !b.isRule()) e->addBasicBreakpoint(static_cast<uint16_t>(b.line), b.statement);
@@ -396,11 +398,19 @@ void BasicWindow::take() {
     // The variables: while it runs, a few times a second, and once more as
     // it stops.
     const bool settled = !s.running || s.paused;
+    // Only Applesoft's own tables are read: it must be at its prompt or
+    // running a program, and its pointers must describe a program. Before
+    // it has started (a disk booting) the zero page is whatever was there.
     if (open_ && s.powered && (now - variablesAt_ > (settled ? 0.5 : 0.12))) {
       const VarMemReadFn reader = [e](uint16_t a) { return e->peekMemory(a); };
-      variables_ = ApplesoftVarReader::readVariables(reader);
-      arrays_ = ApplesoftVarReader::readArrays(reader);
       variablesAt_ = now;
+      if ((s.atPrompt || s.running) && ApplesoftVarReader::tablesValid(reader)) {
+        variables_ = ApplesoftVarReader::readVariables(reader);
+        arrays_ = ApplesoftVarReader::readArrays(reader);
+      } else {
+        variables_.clear();
+        arrays_.clear();
+      }
       for (const BasicVariableInfo &v : variables_) {
         std::string value = v.type == BasicVarType::String ? v.stringValue
                             : v.type == BasicVarType::Integer ? std::to_string(v.intValue)
@@ -482,8 +492,10 @@ void BasicWindow::message(const std::string &text, bool problem) {
 // ---------------------------------------------------------------------------
 
 // Run: a paused program carries on; otherwise the editor's program goes into
-// memory if it has changed (the browser ran whatever was in memory, which
-// was rarely what was in front of the user) and RUN is typed.
+// memory when it is plainly the one meant (the browser ran whatever was in
+// memory, which was rarely what was in front of the user), the user is asked
+// when two different programs could be meant (basic::chooseRun), and RUN is
+// typed.
 void BasicWindow::run() {
   if (!state_.powered) {
     message("The machine is off", true);
@@ -500,9 +512,39 @@ void BasicWindow::run() {
     message("The machine must be at the ] prompt to run a program", true);
     return;
   }
-  if (!editor_.empty() && (!syncedText_ || *syncedText_ != editor_.text())) {
-    if (!write()) return;
+  basic::RunFacts facts;
+  facts.editorEmpty = editor_.empty();
+  facts.synced = syncedText_.has_value();
+  facts.editedSinceSync = syncedText_ && *syncedText_ != editor_.text();
+  if (!facts.editorEmpty) {
+    // The editor's program as Write would put it in memory, to compare.
+    const BasicProgramImage image = tokenizeBasicProgram(basic::format(editor_.text()).c_str());
+    emulation_.withMachine([&](host::MachineHost &host) {
+      Emulator *e = host.emulator();
+      if (!e) return;
+      MMU &mmu = e->getMMU();
+      const uint16_t txttab = static_cast<uint16_t>(mmu.readRAM(0x67, false) | (mmu.readRAM(0x68, false) << 8));
+      facts.memoryEmpty = mmu.readRAM(txttab, false) == 0 && mmu.readRAM(static_cast<uint16_t>(txttab + 1), false) == 0;
+      facts.memoryChangedSinceSync = programHash(*e) != syncedHash_;
+      bool same = txttab == 0x0801 && image.lines > 0 && txttab + image.bytes.size() <= 0xC000;
+      for (size_t i = 0; same && i < image.bytes.size(); i++) {
+        same = mmu.readRAM(static_cast<uint16_t>(txttab + i), false) == image.bytes[i];
+      }
+      facts.memoryMatchesEditor = same;
+    });
   }
+  switch (basic::chooseRun(facts)) {
+  case basic::RunChoice::RunMemory: break;
+  case basic::RunChoice::WriteThenRun:
+    if (!write()) return;
+    break;
+  case basic::RunChoice::Ask: confirmRun_ = true; return;
+  }
+  startRun();
+}
+
+// RUN, typed at the prompt, over whatever program memory holds.
+void BasicWindow::startRun() {
   error_.reset();
   heatLevels_.clear();
   stepRequested_ = false;
@@ -590,6 +632,7 @@ bool BasicWindow::read() {
   syncedText_ = editor_.text();
   syncedHash_ = hash;
   state_.programHash = hash;
+  cleanText_ = editor_.text();
   error_.reset();
   message("Read " + std::to_string(countLines(editor_.lines())) + " lines from memory");
   return true;
@@ -611,28 +654,43 @@ bool BasicWindow::write() {
   }
   formatNow(true);
   const std::string source = editor_.text();
-  int lines = -1;
+  BasicWriteResult result;
   uint32_t hash = 0;
   emulation_.withMachine([&](host::MachineHost &host) {
     Emulator *e = host.emulator();
     if (!e) return;
-    lines = a2e::loadBasicProgram(
+    result = a2e::writeBasicProgram(
         source.c_str(), [e](uint16_t a) { return e->readMemory(a); },
         [e](uint16_t a, uint8_t v) { e->writeMemory(a, v); });
     hash = programHash(*e);
   });
-  if (lines < 0) {
-    message("The program is too large: it would run past $C000", true);
+  switch (result.status) {
+  case BasicWriteStatus::Written: break;
+  case BasicWriteStatus::NoSource: message("The machine is off", true); return false;
+  case BasicWriteStatus::Empty: message("No lines numbered 0 to 63999 to write", true); return false;
+  case BasicWriteStatus::TooLarge: {
+    char text[160];
+    std::snprintf(text, sizeof text, "The program is %zu bytes and HIMEM at $%04X leaves room for %d: nothing was written",
+                  result.size, result.limit, std::max(0, result.limit - 0x0801));
+    message(text, true);
     return false;
   }
-  if (lines == 0) {
-    message("There are no numbered lines to write", true);
-    return false;
   }
   syncedText_ = source;
   syncedHash_ = hash;
   state_.programHash = hash;
-  message("Wrote " + std::to_string(lines) + " lines into memory");
+  cleanText_ = source;
+  std::string said = "Wrote " + std::to_string(result.lines) + " lines into memory";
+  if (!result.replacedLines.empty()) {
+    // The later of two lines with one number is the one Applesoft keeps.
+    said += result.replacedLines.size() == 1 ? "; line " : "; lines ";
+    for (size_t i = 0; i < result.replacedLines.size(); i++) {
+      said += (i ? ", " : "") + std::to_string(result.replacedLines[i]);
+    }
+    said += result.replacedLines.size() == 1 ? " is given twice and the later one was written"
+                                              : " are given twice and the later ones were written";
+  }
+  message(said, !result.replacedLines.empty());
   return true;
 }
 
@@ -832,8 +890,9 @@ void BasicWindow::toggleBreakpoint(int line, int statement) {
   applyBreakpoints();
 }
 
-void BasicWindow::editValue(uint16_t at, BasicVarType type, const std::string &input, int stringLength) {
+void BasicWindow::editValue(uint16_t at, BasicVarType type, const std::string &input) {
   std::string value = input;
+  bool noRoom = false;
   emulation_.withMachine([&](host::MachineHost &host) {
     Emulator *e = host.emulator();
     if (!e) return;
@@ -847,20 +906,19 @@ void BasicWindow::editValue(uint16_t at, BasicVarType type, const std::string &i
       ApplesoftVars::encodeFloat(std::strtod(value.c_str(), nullptr), bytes);
       for (int i = 0; i < APPLESOFT_FLOAT_SIZE; i++) e->writeMemory(static_cast<uint16_t>(at + i), bytes[i]);
     } else {
-      // A string is changed where it is: its descriptor's length and the
-      // bytes it points at, never longer than it was, and in plain ASCII as
-      // Applesoft stores it (the browser set the top bit, which no
-      // comparison then matched).
+      // A string gets new space, as Applesoft's own assignment gives it: the
+      // descriptor of A$ = "HI" points into the program's text, and writing
+      // through it rewrote the listing. Plain ASCII, as Applesoft stores it
+      // (the browser set the top bit, which no comparison then matched), and
+      // a control character typed as its token is the byte it names.
       if (value.size() >= 2 && value.front() == '"' && value.back() == '"') value = value.substr(1, value.size() - 2);
-      if (static_cast<int>(value.size()) > stringLength) value.resize(static_cast<size_t>(stringLength));
-      const uint16_t ptr = static_cast<uint16_t>(e->peekMemory(static_cast<uint16_t>(at + 1)) |
-                                                 (e->peekMemory(static_cast<uint16_t>(at + 2)) << 8));
-      e->writeMemory(at, static_cast<uint8_t>(value.size()));
-      for (size_t i = 0; i < value.size(); i++) {
-        e->writeMemory(static_cast<uint16_t>(ptr + i), static_cast<uint8_t>(value[i] & 0x7F));
-      }
+      value = basic_text::decode(value);
+      if (value.size() > 255) value.resize(255);
+      noRoom = !assignApplesoftString([e](uint16_t a) { return e->peekMemory(a); },
+                                      [e](uint16_t a, uint8_t v) { e->writeMemory(a, v); }, at, value);
     }
   });
+  if (noRoom) message("There is no room in string space for that string", true);
   variablesAt_ = -10.0;
 }
 
@@ -957,12 +1015,15 @@ void BasicWindow::drawToolbar() {
     platform_.openFile("Open a BASIC program", {"bas", "txt"}, [this](const std::string &path) {
       if (path.empty()) return;
       if (auto bytes = readFile(path)) {
-        editor_.setText(std::string(bytes->begin(), bytes->end()));
-        filePath_ = path;
-        syncedText_.reset();
-        error_.reset();
-        formattedRevision_ = editor_.revision();
-        ImGui::MarkIniSettingsDirty();
+        // Edits nobody has kept are not thrown away unasked, as New asks.
+        std::string text(bytes->begin(), bytes->end());
+        if (editorDirty()) {
+          pendingOpenPath_ = path;
+          pendingOpenText_ = std::move(text);
+          confirmOpen_ = true;
+        } else {
+          openText(path, text);
+        }
       } else {
         message("Could not read the file", true);
       }
@@ -972,6 +1033,7 @@ void BasicWindow::drawToolbar() {
     const std::string body = editor_.text() + "\n";
     if (writeFile(path, reinterpret_cast<const uint8_t *>(body.data()), body.size())) {
       filePath_ = path;
+      cleanText_ = editor_.text();
       message("Saved");
       ImGui::MarkIniSettingsDirty();
     } else {
@@ -1323,12 +1385,15 @@ void BasicWindow::drawVariables(float width, float height) {
     return t == BasicVarType::String ? p.green : t == BasicVarType::Integer ? p.blue : text(0.9f);
   };
   auto valueText = [](BasicVarType t, double real, int32_t integer, const std::string &s) {
-    return t == BasicVarType::String ? "\"" + s + "\"" : t == BasicVarType::Integer ? std::to_string(integer) : basic::formatReal(real);
+    // A string's control characters as the listing writes them.
+    return t == BasicVarType::String ? "\"" + basic_text::encode(s) + "\""
+           : t == BasicVarType::Integer ? std::to_string(integer)
+                                        : basic::formatReal(real);
   };
   // A value, editable while the program is stopped: a click turns it into a
   // field, Return writes it and Escape leaves it.
-  auto value = [&](const std::string &key, BasicVarType t, const std::string &shown, uint16_t at, int strLen, float x0,
-                   float x1, ImU32 colour) {
+  auto value = [&](const std::string &key, BasicVarType t, const std::string &shown, uint16_t at, float x0, float x1,
+                   ImU32 colour) {
     const float y = ImGui::GetCursorScreenPos().y;
     if (editingKey_ == key) {
       ImGui::SetCursorScreenPos(ImVec2(x0, y - 2));
@@ -1346,7 +1411,7 @@ void BasicWindow::drawVariables(float width, float height) {
       ImGui::PopFont();
       if (ImGui::IsItemActive()) focusEdit_ = 0;
       if (enter) {
-        editValue(at, t, editText_, strLen);
+        editValue(at, t, editText_);
         editingKey_.clear();
       } else if (ImGui::IsKeyPressed(ImGuiKey_Escape) || (!ImGui::IsItemActive() && !ImGui::IsItemFocused() && focusEdit_ == 0)) {
         editingKey_.clear();
@@ -1398,8 +1463,7 @@ void BasicWindow::drawVariables(float width, float height) {
     d->AddText(ImVec2(x0 + 24, y + 2), text(), v.name.c_str());
     ImGui::PopFont();
     value(v.name, v.type, valueText(v.type, v.realValue, v.intValue, v.stringValue), static_cast<uint16_t>(v.address + 2),
-          v.type == BasicVarType::String ? static_cast<int>(v.stringValue.size()) : 0, x0 + inner * 0.38f, x0 + inner - 2,
-          tc);
+          x0 + inner * 0.38f, x0 + inner - 2, tc);
     ImGui::SetCursorScreenPos(ImVec2(x0, y + ImGui::GetTextLineHeight() + 6));
     ImGui::Dummy(ImVec2(0, 0));
   }
@@ -1440,7 +1504,9 @@ void BasicWindow::drawVariables(float width, float height) {
     const int size = ApplesoftVars::elementSize(arr.type);
     const uint16_t dataAt = static_cast<uint16_t>(arr.address + 5 + arr.numDims * 2);
     auto element = [&](uint32_t i) {
-      if (arr.type == BasicVarType::String) return i < arr.stringValues.size() ? "\"" + arr.stringValues[i] + "\"" : std::string();
+      if (arr.type == BasicVarType::String) {
+        return i < arr.stringValues.size() ? "\"" + basic_text::encode(arr.stringValues[i]) + "\"" : std::string();
+      }
       if (arr.type == BasicVarType::Integer) return i < arr.intValues.size() ? std::to_string(arr.intValues[i]) : std::string();
       return i < arr.realValues.size() ? basic::formatReal(arr.realValues[i]) : std::string();
     };
@@ -1490,8 +1556,8 @@ void BasicWindow::drawVariables(float width, float height) {
       const float cx1 = cx0 + ImGui::GetContentRegionAvail().x;
       ImGui::SetCursorScreenPos(ImVec2(cx0, ImGui::GetCursorScreenPos().y + 1));
       const std::string shownValue = element(i);
-      value(arr.name + "#" + std::to_string(i), arr.type, shownValue, static_cast<uint16_t>(dataAt + i * size),
-            arr.type == BasicVarType::String ? static_cast<int>(shownValue.size()) - 2 : 0, cx0, cx1, tc);
+      value(arr.name + "#" + std::to_string(i), arr.type, shownValue, static_cast<uint16_t>(dataAt + i * size), cx0, cx1,
+            tc);
     };
 
     ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(4, 1));
@@ -1805,12 +1871,90 @@ void BasicWindow::drawNewConfirm() {
     editor_.setText("");
     filePath_.clear();
     syncedText_.reset();
+    cleanText_.clear();
     error_.reset();
     formattedRevision_ = editor_.revision();
     ImGui::MarkIniSettingsDirty();
     ImGui::CloseCurrentPopup();
   }
   ImGui::EndPopup();
+}
+
+// Run, when memory holds a program and the editor a different one and
+// nothing says which is meant.
+void BasicWindow::drawRunConfirm() {
+  if (confirmRun_) {
+    ImGui::OpenPopup("##basicrun");
+    confirmRun_ = false;
+  }
+  if (!ImGui::BeginPopupModal("##basicrun", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize)) return;
+  ImGui::TextUnformatted("Memory holds a different program from the editor.");
+  ImGui::TextDisabled("Write the editor's program over it, or run the one in memory?");
+  ImGui::Spacing();
+  if (ui::Button("Cancel", ImVec2(90, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) ImGui::CloseCurrentPopup();
+  ImGui::SameLine(0, 6);
+  if (ui::Button("Run Memory", ImVec2(110, 0))) {
+    ImGui::CloseCurrentPopup();
+    if (state_.powered && state_.atPrompt) startRun();
+  }
+  ImGui::SameLine(0, 6);
+  if (ui::Button("Write and Run", ImVec2(120, 0), ui::ButtonKind::Primary)) {
+    ImGui::CloseCurrentPopup();
+    if (state_.powered && state_.atPrompt && write()) startRun();
+  }
+  ImGui::EndPopup();
+}
+
+// Open, over edits that are in no file and not in memory.
+void BasicWindow::drawOpenConfirm() {
+  if (confirmOpen_) {
+    ImGui::OpenPopup("##basicopen");
+    confirmOpen_ = false;
+  }
+  if (!ImGui::BeginPopupModal("##basicopen", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize)) return;
+  ImGui::TextUnformatted("Replace the editor's program with the file?");
+  ImGui::TextDisabled("Its changes have not been saved. Undo brings them back.");
+  ImGui::Spacing();
+  if (ui::Button("Cancel", ImVec2(90, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+    pendingOpenText_.clear();
+    ImGui::CloseCurrentPopup();
+  }
+  ImGui::SameLine(0, 6);
+  if (ui::Button("Open", ImVec2(90, 0), ui::ButtonKind::Primary)) {
+    openText(pendingOpenPath_, pendingOpenText_);
+    pendingOpenText_.clear();
+    ImGui::CloseCurrentPopup();
+  }
+  ImGui::EndPopup();
+}
+
+// A file's program into the editor, as a step Undo takes back.
+void BasicWindow::openText(const std::string &path, const std::string &text) {
+  editor_.replaceAll(text, CodeEditor::Position{0, 0});
+  editor_.setCaret({0, 0});
+  filePath_ = path;
+  syncedText_.reset();
+  cleanText_ = editor_.text();
+  error_.reset();
+  formattedRevision_ = editor_.revision();
+  ImGui::MarkIniSettingsDirty();
+}
+
+// Whether the editor holds text that is in no file and nowhere in memory:
+// what Open would lose. Text restored at launch counts as kept when it is
+// what its file still says.
+bool BasicWindow::editorDirty() const {
+  if (editor_.empty()) return false;
+  const std::string text = editor_.text();
+  if (text == cleanText_) return false;
+  if (!filePath_.empty()) {
+    if (const auto bytes = readFile(filePath_)) {
+      std::string saved(bytes->begin(), bytes->end());
+      while (!saved.empty() && (saved.back() == '\n' || saved.back() == '\r')) saved.pop_back();
+      if (saved == text) return false;
+    }
+  }
+  return true;
 }
 
 void BasicWindow::draw(bool *open) {
@@ -1859,6 +2003,8 @@ void BasicWindow::draw(bool *open) {
   drawStatusBar();
 
   drawNewConfirm();
+  drawRunConfirm();
+  drawOpenConfirm();
   ImGui::End();
   drawCompletions();
 }

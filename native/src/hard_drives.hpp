@@ -17,6 +17,7 @@
 #include "imgui.h"
 
 #include <array>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -37,9 +38,12 @@ class Emulation;
 // - On a IIgs an image inserted while the machine runs takes over slot 5
 //   only at the next reset, and the window says so; otherwise it looks as if
 //   the image was ignored.
-// - A device remembers its image as inserted and keeps ten recent ones; a
-//   changed image is offered for saving as it is, with no choice of format.
-//   Cancelling the save keeps it in, as the floppies do.
+// - An image from a file writes back to it, as the floppies' do: once the
+//   device has had no transfers for a couple of seconds, on eject, before
+//   another image replaces it, and on quit. One with no file of its own is
+//   offered for saving as it is, with no choice of format; cancelling keeps
+//   it in, as the floppies do.
+// - A device remembers its image and keeps ten recent ones, by path.
 // - Images are put back only after the slot layout is in the machine:
 //   fitting the layout can rebuild the SmartPort, and an image restored
 //   before then would go with the old card.
@@ -74,6 +78,10 @@ public:
   // first as the window's own Eject does.
   void chooseImage(int device);
   void ejectDevice(int device) { requestEject(device); }
+  // As the floppies': write back every image with a file, and name those
+  // whose changes would be lost.
+  void writeBackAll();
+  std::vector<std::string> unsavedImages();
   int dropTarget() const;
   // The device whose card is at a point, as last drawn, or -1.
   int deviceAt(ImVec2 point) const;
@@ -90,6 +98,9 @@ private:
 
   struct Device {
     std::optional<std::string> filename;
+    std::optional<std::string> path; // the user's file, written back to
+    bool writeBackFailed = false;
+    uint32_t serial = 0; // which insertion, for a Save panel answered late
     size_t size = 0;
     int activityFrames = 0;
     bool lastWrite = false;
@@ -122,9 +133,13 @@ private:
   };
 
   void insertImage(int device, const std::string &filename, const std::vector<uint8_t> &data,
-                   bool remember);
+                   bool remember, const std::string &path = "");
+  void insertRecentEntry(int device, const RecentEntry &entry);
+  void replace(int device, std::function<void()> insert);
+  bool writeBack(int device);
+  void clearDevice(int device);
   void requestEject(int device);
-  void saveThenEject(int device);
+  void saveThenEject(int device, std::function<void()> then);
   void eject(int device);
   void notice(const std::string &message);
   void reportError(const std::string &message);
@@ -133,7 +148,7 @@ private:
   void drawHeader();
   // Watch the card's transfers, once per card: a refit or a machine switch
   // builds a new one.
-  void watchTransfers(SmartPortCard *card);
+  void watchTransfers(SmartPortCard *card, uint64_t generation);
   void applyTransfers(double now);
   void readVolumes(double now);
 
@@ -150,6 +165,7 @@ private:
   int cardFrame_ = -1;
   std::string location_; // "Slot 7", where the SmartPort is
   SmartPortCard *watched_ = nullptr;
+  uint64_t watchedGeneration_ = 0;
   std::vector<Transfer> transfers_;
   long historyBin_ = -1; // the bin the newest history entry is for
   double lastUpdate_ = 0;
@@ -160,6 +176,7 @@ private:
   // A changed image waiting for Save, Don't Save or Cancel before ejecting.
   int askEject_ = 0;
   bool openAskEject_ = false;
+  std::function<void()> askThen_; // another image waiting to go in
   // Where this window's dialogs open: over it.
   ui::DialogAnchor dialogs_;
 };

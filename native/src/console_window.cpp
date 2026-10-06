@@ -113,8 +113,9 @@ std::optional<int64_t> ConsoleWindow::value(const std::string &text) {
   if (auto at = debugger_.symbols().resolve(text, 0xFFFFFF)) return *at;
   int64_t result = 0;
   std::string problem;
+  // Hex, as a bare number is: w 300 10 and w 300 10+1 write $10 and $11.
   emulation_.withMachine([&](MachineHost &host) {
-    result = host.evaluateExpression(text);
+    result = host.evaluateExpression(text, true);
     problem = host.conditionError();
   });
   if (!problem.empty()) return std::nullopt;
@@ -238,39 +239,51 @@ void ConsoleWindow::execute(const ConsoleCommand &c) {
       from = address(c.from);
       if (!from) return error("No address \"" + c.from + "\"");
     }
-    emulation_.withMachine([&](MachineHost &host) {
-      if (from) host.setRegister(CpuRegister::PC, *from);
-      host.setPaused(false);
-    });
-    print(from ? "Running from " + formatAddress(*from) : "Running", Line::Style::Note);
+    if (from) {
+      if (go(*from)) {
+        print("Running from " + formatAddress(*from) + "; its RTS comes back here", Line::Style::Note);
+      } else {
+        print("Running from " + formatAddress(*from), Line::Style::Note);
+      }
+      return;
+    }
+    emulation_.withMachine([&](MachineHost &host) { host.setPaused(false); });
+    print("Running", Line::Style::Note);
     return;
   }
 
   case Kind::Step: {
     const int steps = std::clamp(c.count ? c.count : 1, 1, MAX_STEPS);
-    ownStep_ = true;
-    if (steps == 1) {
-      debugger_.stepInto();
-    } else {
+    if (steps > 1) {
+      // All but the last here; the last through the debugger, so its listing
+      // follows. s 5 is five instructions.
       emulation_.withMachine([&](MachineHost &host) {
         host.setPaused(true);
-        for (int i = 0; i < steps; i++) host.stepInstruction();
-        host.forceRenderFrame();
+        for (int i = 0; i < steps - 1; i++) host.stepInstruction();
       });
-      debugger_.stepInto(); // the last, through the debugger so it follows
-      if (steps > 1) print("Stepped " + std::to_string(steps), Line::Style::Note);
     }
+    debugger_.stepInto();
+    seenStops_ = debugger_.stopCount();
+    if (steps > 1) print("Stepped " + std::to_string(steps), Line::Style::Note);
     list(std::nullopt, 1);
     return;
   }
   case Kind::StepOver:
-    debugger_.stepOver();
-    print("Stepping over", Line::Style::Note);
+  case Kind::StepOut: {
+    // Over anything but a call, and out of nothing, is a single step, which
+    // the debugger has judged by the time it returns: said here as s says
+    // it. Otherwise the machine runs, and the stop is reported when it comes.
+    const uint32_t before = debugger_.stopCount();
+    if (c.kind == Kind::StepOver) debugger_.stepOver();
+    else debugger_.stepOut();
+    if (debugger_.stopCount() != before) {
+      seenStops_ = debugger_.stopCount();
+      list(std::nullopt, 1);
+    } else {
+      print(c.kind == Kind::StepOver ? "Stepping over" : "Running to the return", Line::Style::Note);
+    }
     return;
-  case Kind::StepOut:
-    debugger_.stepOut();
-    print("Running to the return", Line::Style::Note);
-    return;
+  }
   case Kind::Pause:
     emulation_.withMachine([](MachineHost &host) { host.setPaused(true); });
     return;
@@ -309,7 +322,7 @@ void ConsoleWindow::execute(const ConsoleCommand &c) {
     int64_t result = 0;
     std::string problem;
     emulation_.withMachine([&](MachineHost &host) {
-      result = host.evaluateExpression(c.text);
+      result = host.evaluateExpression(c.text, true);
       problem = host.conditionError();
     });
     if (!problem.empty()) return error(problem);
@@ -331,12 +344,12 @@ void ConsoleWindow::execute(const ConsoleCommand &c) {
       if (c.kind == Kind::BreakDelete) all.clear();
       for (Breakpoint &b : all) b.enabled = c.kind == Kind::BreakEnable;
     } else {
-      if (c.count < 1 || static_cast<size_t>(c.count) > all.size()) {
-        return error("No breakpoint " + std::to_string(c.count) + "; bl lists them");
-      }
-      const size_t i = static_cast<size_t>(c.count - 1);
-      if (c.kind == Kind::BreakDelete) breakpoints_.remove(i);
-      else all[i].enabled = c.kind == Kind::BreakEnable;
+      // By the number bl printed, which is the breakpoint's own and does not
+      // move when another is deleted.
+      Breakpoint *b = breakpoints_.find(static_cast<uint32_t>(c.count));
+      if (!b) return error("No breakpoint " + std::to_string(c.count) + "; bl lists them");
+      if (c.kind == Kind::BreakDelete) breakpoints_.removeId(b->id);
+      else b->enabled = c.kind == Kind::BreakEnable;
     }
     applyBreakpoints();
     ImGui::MarkIniSettingsDirty();
@@ -411,8 +424,14 @@ void ConsoleWindow::execute(const ConsoleCommand &c) {
     }
     for (const host::TraceLine &t : lines) {
       char regs[64];
-      std::snprintf(regs, sizeof regs, "  A=%02X X=%02X Y=%02X SP=%02X", t.a & 0xFF, t.x & 0xFF, t.y & 0xFF,
-                    t.sp & 0xFF);
+      // A 65816's registers whole, as the trace recorded them.
+      if (wide_) {
+        std::snprintf(regs, sizeof regs, "  A=%04X X=%04X Y=%04X SP=%04X", t.a & 0xFFFF, t.x & 0xFFFF,
+                      t.y & 0xFFFF, t.sp & 0xFFFF);
+      } else {
+        std::snprintf(regs, sizeof regs, "  A=%02X X=%02X Y=%02X SP=%02X", t.a & 0xFF, t.x & 0xFF, t.y & 0xFF,
+                      t.sp & 0xFF);
+      }
       std::string text = formatAddress(t.instruction.address) + "  " + t.instruction.mnemonic;
       if (!t.instruction.operand.empty()) text += " " + t.instruction.operand;
       while (text.size() < 28) text += ' ';
@@ -553,6 +572,12 @@ std::string ConsoleWindow::describe(const Breakpoint &b) const {
 
 void ConsoleWindow::breakpoint(const ConsoleCommand &c) {
   Breakpoint b = c.breakpoint;
+  // A condition that cannot be read would never stop the machine, or stop
+  // it every time; either way the user should hear now, not at the stop.
+  if (!b.condition.empty()) {
+    const std::string problem = ConditionEvaluator::check(b.condition.c_str());
+    if (!problem.empty()) return error("Condition: " + problem);
+  }
   switch (b.kind) {
   case Breakpoint::Kind::Switch:
     if (!findSoftSwitch(switches_, b.key.c_str())) {
@@ -599,10 +624,12 @@ void ConsoleWindow::breakpoint(const ConsoleCommand &c) {
 }
 
 // One breakpoint, numbered as bd, be and bx take it, a dash if it is off.
+// The number is the breakpoint's id, so it is the same in every listing
+// for as long as the breakpoint lives.
 void ConsoleWindow::printBreakpoint(size_t index) {
   const Breakpoint &b = breakpoints_.all()[index];
   char head[24];
-  std::snprintf(head, sizeof head, "%-3zu%s ", index + 1, b.enabled ? " " : "-");
+  std::snprintf(head, sizeof head, "%-3u%s ", b.id, b.enabled ? " " : "-");
   std::string text = head + describe(b);
   if (b.hits) text += "  (" + std::to_string(b.hits) + (b.hits == 1 ? " hit)" : " hits)");
   print(text, b.enabled ? Line::Style::Output : Line::Style::Note,
@@ -690,7 +717,10 @@ void ConsoleWindow::help(const std::string &topic) {
   if (!shown) error("No command \"" + topic + "\"");
   if (want.empty()) {
     print("Monitor: 300 300.3FF 300: A9 00 300L 300G, and E1/2000 on a IIgs", Line::Style::Note);
-    print("Addresses are $hex or names (COUT, HOME); values may be expressions (PEEK($24)+1)", Line::Style::Note);
+    print("Numbers are hex, #10 is decimal; values may be expressions (PEEK(24)+1) or names (COUT)",
+          Line::Style::Note);
+    print("A condition after \"if\" reads numbers as decimal, as the debugger's do: if A == $C1",
+          Line::Style::Note);
   }
 }
 
@@ -704,14 +734,72 @@ void ConsoleWindow::update() {
   const uint32_t stops = debugger_.stopCount();
   if (stops == seenStops_) return;
   seenStops_ = stops;
-  if (ownStep_) {
-    ownStep_ = false;
-    return;
+  if (goReturn_) {
+    host::CpuState now;
+    emulation_.withMachine([&](MachineHost &host) { now = host.cpuState(); });
+    if (now.pc == goReturn_->address && now.sp == goReturn_->before.sp) {
+      returnedFromGo();
+      return;
+    }
+    // Stopped inside the routine, or somewhere else entirely: the debugger
+    // has dropped the temporary breakpoint, so the return will not be caught.
+    goReturn_.reset();
   }
   const std::string &reason = debugger_.stopReason();
   if (reason == "Stepped") return;
   print("Stopped: " + reason, Line::Style::Stop);
   list(std::nullopt, 1);
+}
+
+// The monitor's G is a JSR: it calls the address, and the routine's RTS comes
+// back to the monitor. Jumping there instead left the routine's RTS to pull
+// whatever the interrupted code had on the stack, which at the BASIC prompt
+// ended in a SYNTAX ERROR. So the address the machine is at is pushed, less
+// one as a JSR pushes it, and the temporary breakpoint waits there.
+//
+// It cannot be done across banks: an RTS stays in the bank it runs in, so a
+// routine in another bank from the PC is only jumped to.
+bool ConsoleWindow::go(uint32_t from) {
+  bool pushed = false;
+  emulation_.withMachine([&](MachineHost &host) {
+    const bool wasRunning = !host.isPaused();
+    host.setPaused(true);
+    const host::CpuState cpu = host.cpuState();
+    MachineDebug *debug = host.debug();
+    const uint32_t mask = addressMask();
+    if (debug && (cpu.pc & 0xFF0000) == (from & 0xFF0000)) {
+      const uint32_t ret = (cpu.pc - 1) & 0xFFFF;
+      const bool pageOne = !wide_ || cpu.emulation();
+      auto stackAddress = [&](uint32_t sp) { return pageOne ? 0x0100 | (sp & 0xFF) : sp & 0xFFFF; };
+      const uint32_t hi = stackAddress(cpu.sp), lo = stackAddress(cpu.sp - 1);
+      if (host.pokeSpace(processorSpace(hi), hi, static_cast<uint8_t>(ret >> 8)) &&
+          host.pokeSpace(processorSpace(lo), lo, static_cast<uint8_t>(ret))) {
+        const uint32_t sp = pageOne ? ((cpu.sp & 0xFF00) | ((cpu.sp - 2) & 0xFF)) : (cpu.sp - 2) & 0xFFFF;
+        host.setRegister(CpuRegister::SP, sp);
+        goReturn_ = GoReturn{cpu.pc & mask, from & mask, cpu, wasRunning};
+        pushed = true;
+      }
+    }
+    host.setRegister(CpuRegister::PC, from & mask);
+    if (pushed) debug->setTempBreakpoint(goReturn_->address);
+    host.setPaused(false);
+  });
+  return pushed;
+}
+
+// Back from a G: what the routine left, then the machine as it was found.
+void ConsoleWindow::returnedFromGo() {
+  const GoReturn g = *goReturn_;
+  goReturn_.reset();
+  print("Returned from " + formatAddress(g.from), Line::Style::Stop);
+  registers();
+  emulation_.withMachine([&](MachineHost &host) {
+    host.setRegister(CpuRegister::A, g.before.a);
+    host.setRegister(CpuRegister::X, g.before.x);
+    host.setRegister(CpuRegister::Y, g.before.y);
+    host.setRegister(CpuRegister::P, g.before.p);
+    if (g.wasRunning) host.setPaused(false);
+  });
 }
 
 namespace {
@@ -791,6 +879,9 @@ void ConsoleWindow::draw(bool *open) {
     ImGui::End();
     return;
   }
+  // Each time it is opened, not only the first: reopened without it, what
+  // was typed went to the machine until the field was clicked.
+  if (ImGui::IsWindowAppearing()) focusInput_ = true;
   const ui::Palette &p = ui::palette();
   const float inputHeight = ImGui::GetFrameHeightWithSpacing() + 6;
 

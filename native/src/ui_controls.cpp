@@ -538,6 +538,32 @@ void DialogAnchor::placeNext() const {
                           ImVec2(0.5f, 0.5f));
 }
 
+// Room left above a window kept on its monitor, for the menu bar and a
+// margin, so its title bar can still be reached.
+constexpr float TITLE_ROOM = 48.0f;
+
+void KeepOnMonitor(const char *name) {
+  float maxHeight = FLT_MAX;
+  if (ImGuiWindow *window = ImGui::FindWindowByName(name); window && window->Viewport) {
+    const ImGuiPlatformIO &io = ImGui::GetPlatformIO();
+    const int monitor = static_cast<ImGuiViewportP *>(window->Viewport)->PlatformMonitor;
+    if (monitor >= 0 && monitor < io.Monitors.Size) {
+      const ImGuiPlatformMonitor &screen = io.Monitors[monitor];
+      maxHeight = screen.WorkSize.y - TITLE_ROOM;
+      // No taller than the screen, and moved up when it grew past its
+      // bottom: a window low on the screen grows downward, so a cap alone
+      // still left the inspector's lower half off the screen.
+      const float bottom = screen.WorkPos.y + screen.WorkSize.y;
+      const float height = std::min(window->Size.y, maxHeight);
+      if (window->Pos.y + height > bottom) {
+        const float top = std::max(screen.WorkPos.y + TITLE_ROOM * 0.5f, bottom - height);
+        ImGui::SetNextWindowPos(ImVec2(window->Pos.x, top), ImGuiCond_Always);
+      }
+    }
+  }
+  ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, maxHeight));
+}
+
 void BeforeWindow(const char *name) {
   if (g_windowDocking) return;
   ImGuiWindowClass own;

@@ -61,7 +61,9 @@ bool Breakpoint::same(const Breakpoint &other) const {
   case Kind::Switch:
     return key == other.key && equals == other.equals && (!equals || (value == other.value && mask == other.mask));
   case Kind::Beam: return scanline == other.scanline && hPos == other.hPos;
-  default: return start == other.start;
+  // Both ends: a range that begins where another breakpoint is, a single
+  // address included, is a different breakpoint.
+  default: return start == other.start && end == other.end;
   }
 }
 
@@ -71,6 +73,27 @@ bool Breakpoints::add(const Breakpoint &breakpoint) {
   }
   list_.push_back(breakpoint);
   list_.back().coreId = -1;
+  list_.back().id = nextId_++;
+  return true;
+}
+
+int Breakpoints::indexOf(uint32_t id) const {
+  if (!id) return -1;
+  for (size_t i = 0; i < list_.size(); i++) {
+    if (list_[i].id == id) return static_cast<int>(i);
+  }
+  return -1;
+}
+
+Breakpoint *Breakpoints::find(uint32_t id) {
+  const int i = indexOf(id);
+  return i < 0 ? nullptr : &list_[static_cast<size_t>(i)];
+}
+
+bool Breakpoints::removeId(uint32_t id) {
+  const int i = indexOf(id);
+  if (i < 0) return false;
+  remove(static_cast<size_t>(i));
   return true;
 }
 
@@ -105,6 +128,7 @@ void Breakpoints::toggleExec(uint32_t address) {
   }
   Breakpoint b;
   b.start = b.end = address;
+  b.id = nextId_++;
   list_.push_back(b);
 }
 
@@ -167,42 +191,95 @@ bool Breakpoints::needsApply() const {
   return false;
 }
 
-// Everything handed over last time is taken back first. After a rebuild the
-// core holds none of it, and taking back what is not there does nothing, so
-// the same path serves both. The switch and beam breakpoints are only ever
-// this list's, so those are cleared whole.
+// Only the difference is handed over. An entry the core already holds as it
+// is stays there untouched, which is what keeps the core's record of the one
+// the machine is stopped on (and a beam breakpoint's frame, and a range's
+// sense of being inside), so editing any breakpoint while stopped does not
+// make the next Continue stop again where it is. After a rebuild the core
+// holds none of it, so everything is handed over afresh.
 void Breakpoints::apply(MachineDebug &debug, const std::vector<SoftSwitchInfo> &switches) {
-  for (const Breakpoint &b : applied_) {
-    if (!b.enabled) continue;
+  using Kind = Breakpoint::Kind;
+  auto isWatch = [](const Breakpoint &b) {
+    return b.kind == Kind::Read || b.kind == Kind::Write || b.kind == Kind::ReadWrite;
+  };
+
+  // Which of last time's entries each of this time's is, if any.
+  std::vector<int> match(list_.size(), -1);
+  std::vector<bool> kept(applied_.size(), false);
+  if (!stale_) {
+    for (size_t i = 0; i < list_.size(); i++) {
+      if (!list_[i].enabled) continue;
+      for (size_t j = 0; j < applied_.size(); j++) {
+        if (kept[j] || !applied_[j].enabled || !sameInCore(list_[i], applied_[j])) continue;
+        kept[j] = true;
+        match[i] = static_cast<int>(j);
+        break;
+      }
+    }
+  } else {
+    // The switch and beam breakpoints are only ever this list's, so after a
+    // rebuild (or before anything was applied) they are cleared whole.
+    debug.clearSwitchBreakpoints();
+    debug.clearBeamBreakpoints();
+  }
+
+  // The core finds a watchpoint by its start alone, so taking one away may
+  // take another that begins at the same address. Every watchpoint at an
+  // address that loses one is therefore taken away and the rest put back.
+  std::vector<uint32_t> watchStarts;
+  for (size_t j = 0; j < applied_.size(); j++) {
+    const Breakpoint &b = applied_[j];
+    if (!b.enabled || kept[j]) continue;
     switch (b.kind) {
-    case Breakpoint::Kind::Exec:
-      if (b.isRange()) debug.removeBreakpointRange(b.start);
+    case Kind::Exec:
+      if (b.isRange()) debug.removeBreakpointRange(b.start, b.end);
       else debug.removeBreakpoint(b.start);
       break;
-    case Breakpoint::Kind::Stack: debug.removeStackBreakpoint(b.start); break;
-    case Breakpoint::Kind::Read:
-    case Breakpoint::Kind::Write:
-    case Breakpoint::Kind::ReadWrite: debug.removeWatchpoint(b.start); break;
-    case Breakpoint::Kind::Switch:
-    case Breakpoint::Kind::Beam: break;
+    case Kind::Stack: debug.removeStackBreakpoint(b.start, b.end); break;
+    case Kind::Read:
+    case Kind::Write:
+    case Kind::ReadWrite:
+      if (std::find(watchStarts.begin(), watchStarts.end(), b.start) == watchStarts.end()) {
+        watchStarts.push_back(b.start);
+      }
+      break;
+    case Kind::Switch:
+      if (!stale_ && b.coreId >= 0) debug.removeSwitchBreakpoint(b.coreId);
+      break;
+    case Kind::Beam:
+      if (!stale_ && b.coreId >= 0) debug.removeBeamBreakpoint(b.coreId);
+      break;
     }
   }
-  debug.clearSwitchBreakpoints();
-  debug.clearBeamBreakpoints();
+  for (uint32_t at : watchStarts) {
+    for (const Breakpoint &b : applied_) {
+      if (b.enabled && isWatch(b) && b.start == at) debug.removeWatchpoint(at);
+    }
+  }
 
-  for (Breakpoint &b : list_) {
+  for (size_t i = 0; i < list_.size(); i++) {
+    Breakpoint &b = list_[i];
+    if (!b.enabled) {
+      b.coreId = -1;
+      continue;
+    }
+    const bool rewatch =
+        isWatch(b) && std::find(watchStarts.begin(), watchStarts.end(), b.start) != watchStarts.end();
+    if (match[i] >= 0 && !rewatch) {
+      b.coreId = applied_[static_cast<size_t>(match[i])].coreId;
+      continue;
+    }
     b.coreId = -1;
-    if (!b.enabled) continue;
     switch (b.kind) {
-    case Breakpoint::Kind::Exec:
-      if (b.isRange()) debug.addBreakpointRange(b.start, b.end);
+    case Kind::Exec:
+      if (b.isRange()) debug.addBreakpointRange(b.start, b.end, false);
       else debug.addBreakpoint(b.start);
       break;
-    case Breakpoint::Kind::Stack: debug.addStackBreakpoint(b.start, b.end); break;
-    case Breakpoint::Kind::Read: debug.addWatchpoint(b.start, b.end, MachineDebug::WP_READ); break;
-    case Breakpoint::Kind::Write: debug.addWatchpoint(b.start, b.end, MachineDebug::WP_WRITE); break;
-    case Breakpoint::Kind::ReadWrite: debug.addWatchpoint(b.start, b.end, MachineDebug::WP_READWRITE); break;
-    case Breakpoint::Kind::Switch:
+    case Kind::Stack: debug.addStackBreakpoint(b.start, b.end, false); break;
+    case Kind::Read: debug.addWatchpoint(b.start, b.end, MachineDebug::WP_READ); break;
+    case Kind::Write: debug.addWatchpoint(b.start, b.end, MachineDebug::WP_WRITE); break;
+    case Kind::ReadWrite: debug.addWatchpoint(b.start, b.end, MachineDebug::WP_READWRITE); break;
+    case Kind::Switch:
       if (const SoftSwitchInfo *sw = findSoftSwitch(switches, b.key.c_str())) {
         const uint64_t mask = sw->isRegister() ? b.mask : sw->mask();
         const uint64_t value = sw->isRegister() ? b.value : (b.value ? mask : 0);
@@ -212,7 +289,7 @@ void Breakpoints::apply(MachineDebug &debug, const std::vector<SoftSwitchInfo> &
                                              value);
       }
       break;
-    case Breakpoint::Kind::Beam:
+    case Kind::Beam:
       b.coreId = debug.addBeamBreakpoint(static_cast<int16_t>(b.scanline), static_cast<int16_t>(b.hPos));
       break;
     }

@@ -274,3 +274,23 @@ TEST_CASE("The Joyport's switches reach a //e's pushbuttons, active low", "[nati
   host.setJoyportStick(0, 0);
   REQUIRE((host.emulator()->peekMemory(0xC061) & 0x80) != 0);
 }
+
+TEST_CASE("Letters and punctuation follow the keyboard layout", "[input][layout]") {
+  // ImGui names a key by its place on a US keyboard; the browser's keycode
+  // for a letter or a punctuation key is what the key types. So an AZERTY
+  // user's A key (ImGui's Q) is asked of the layout, and sent as an A.
+  REQUIRE(followsLayout(ImGuiKey_Q));
+  REQUIRE(followsLayout(ImGuiKey_Semicolon));
+  REQUIRE_FALSE(followsLayout(ImGuiKey_1)); // the number row stays put, as a browser's does
+  REQUIRE_FALSE(followsLayout(ImGuiKey_Enter));
+
+  REQUIRE(browserKeyForCharacter(U'a') == 65);
+  REQUIRE(browserKeyForCharacter(U'z') == 90);
+  REQUIRE(browserKeyForCharacter(U'M') == 77);
+  REQUIRE(browserKeyForCharacter(U';') == 186);
+  REQUIRE(browserKeyForCharacter(U',') == 188);
+  REQUIRE(browserKeyForCharacter(U'\'') == 222);
+  // Nothing a US key types: the key keeps its own place.
+  REQUIRE_FALSE(browserKeyForCharacter(U'é'));
+  REQUIRE_FALSE(browserKeyForCharacter(0));
+}

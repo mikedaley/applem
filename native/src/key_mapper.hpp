@@ -64,6 +64,17 @@ struct CoreKeyEvent {
 // ImGuiKey_LeftSuper/RightSuper, and this undoes that.
 std::optional<HostKey> browserKeyFor(ImGuiKey key, bool macSwap);
 
+// The keys whose meaning follows the user's keyboard layout: the letters and
+// the punctuation keys. ImGui names keys by where they are on a US keyboard,
+// and a browser's keycode for these follows what the key types instead, so
+// an AZERTY A, which ImGui calls Q, reaches the machine as an A.
+bool followsLayout(ImGuiKey key);
+
+// The browser keycode for the key that types `c` unshifted: a letter is its
+// capital, a digit itself, and punctuation the US key that bears it. Nothing
+// for anything a US key does not type, which keeps the key's own place.
+std::optional<int> browserKeyForCharacter(char32_t c);
+
 // The modifiers held, from ImGui's key state, with the same swap undone.
 HeldModifiers heldModifiers(bool macSwap);
 

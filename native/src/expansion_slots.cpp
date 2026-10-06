@@ -31,19 +31,30 @@ SlotLayout *ExpansionSlots::openSection(const char *machine) {
   if (!findMachineProfile(machine)) return nullptr;
   SlotLayout &layout = saved_[machine];
   layout.clear();
+  sockets_[machine].clear();
+  section_ = machine;
   return &layout;
 }
 
 void ExpansionSlots::readLine(SlotLayout *layout, const char *line) {
   int slot = 0;
+  int socket = 0;
   std::string card;
-  if (layout && parseSlotLine(line, slot, card)) (*layout)[slot] = card;
+  if (!layout) return;
+  if (std::sscanf(line, "Socket%d=%d", &slot, &socket) == 2) {
+    if (slot >= 1 && slot <= 7) sockets_[section_][slot] = socket != 0;
+    return;
+  }
+  if (parseSlotLine(line, slot, card)) (*layout)[slot] = card;
 }
 
 void ExpansionSlots::writeAll(ImGuiTextBuffer *out, const char *typeName) const {
   for (const auto &[machine, layout] : saved_) {
     out->appendf("[%s][%s]\n", typeName, machine.c_str());
     for (const auto &[slot, card] : layout) out->appendf("%s\n", formatSlotLine(slot, card).c_str());
+    if (const auto it = sockets_.find(machine); it != sockets_.end()) {
+      for (const auto &[slot, socket] : it->second) out->appendf("Socket%d=%d\n", slot, socket ? 1 : 0);
+    }
     out->append("\n");
   }
 }
@@ -56,10 +67,13 @@ void ExpansionSlots::apply() {
   auto it = saved_.find(machine_->key);
   const SlotLayout layout = it != saved_.end() ? it->second : defaultLayout(*machine_);
   const bool clock = noSlotClock;
+  const std::map<int, bool> sockets = sockets_[machine_->key];
   emulation_.withMachine([&](host::MachineHost &host) {
     for (const auto &[slot, card] : layout) {
       if (!isFixedSlot(*machine_, slot)) host.setSlotCard(slot, card);
     }
+    // Only the slots the user chose: one never touched is the firmware's.
+    for (const auto &[slot, socket] : sockets) host.setSlotInternal(slot, !socket);
     host.setNoSlotClock(clock);
   });
   dirty_ = false;
@@ -78,7 +92,15 @@ void ExpansionSlots::refreshFromMachine() {
   dirty_ = false;
 }
 
+void ExpansionSlots::adoptMachineLayout() {
+  if (!machine_) return;
+  refreshFromMachine();
+  saved_[machine_->key] = working_;
+  ImGui::MarkIniSettingsDirty();
+}
+
 void ExpansionSlots::applyAndReset() {
+  if (onApplying_) onApplying_();
   saved_[machine_->key] = working_;
   ImGui::MarkIniSettingsDirty();
   emulation_.withMachine([&](host::MachineHost &host) {
@@ -575,6 +597,13 @@ void ExpansionSlots::draw(bool *open) {
         ImGui::SetNextItemWidth(150);
         if (ui::PopUpButton("##answers", &choice, choices, 2)) {
           emulation_.withMachine([&](host::MachineHost &host) { host.setSlotInternal(slot, choice == 0); });
+          // Remembered, or a machine started again (or rebuilt) put the
+          // firmware's choice back and the user's card stopped answering.
+          sockets_[machine_->key][slot] = choice == 1;
+          // Written under the machine's section, which a machine whose cards
+          // were never changed does not have yet: it has what it has now.
+          if (!saved_.count(machine_->key)) saved_[machine_->key] = applied_;
+          ImGui::MarkIniSettingsDirty();
         }
       }
     }

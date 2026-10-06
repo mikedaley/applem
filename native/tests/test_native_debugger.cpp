@@ -177,6 +177,89 @@ TEST_CASE("The core holds exactly the enabled breakpoints", "[debugger][breakpoi
   REQUIRE_FALSE(debug.shouldBreakBefore(0x2000, 0xFF));
 }
 
+TEST_CASE("Editing the list while stopped keeps the stop", "[debugger][breakpoints]") {
+  // Stopped on $2000, the user adds another breakpoint. Applying used to take
+  // every breakpoint out of the core and put it back, which forgot the hit,
+  // so Continue did not skip it and stopped on $2000 again having run nothing.
+  MachineDebug debug;
+  Breakpoints list;
+  list.toggleExec(0x2000);
+  Breakpoint beam;
+  beam.kind = Breakpoint::Kind::Beam;
+  beam.scanline = 100;
+  list.add(beam);
+  list.apply(debug, {});
+  const int32_t beamId = list.all()[1].coreId;
+  REQUIRE(debug.shouldBreakBefore(0x2000, 0xFF));
+
+  list.toggleExec(0x3000);
+  Breakpoint watch;
+  watch.kind = Breakpoint::Kind::Write;
+  watch.start = watch.end = 0x0400;
+  list.add(watch);
+  list.all()[0].condition = "A == 1"; // the host's business, not the core's
+  REQUIRE(list.needsApply());
+  list.apply(debug, {});
+  REQUIRE(debug.isBreakpointHit());
+  REQUIRE(debug.breakpointAddress() == 0x2000);
+  // The beam breakpoint is the same one in the core, not a new one.
+  REQUIRE(list.all()[1].coreId == beamId);
+
+  // Continue: the stop is skipped once, and $3000 is there to hit.
+  debug.skipNextBreakpoint();
+  debug.clearHits();
+  REQUIRE_FALSE(debug.shouldBreakBefore(0x2000, 0xFF));
+  REQUIRE(debug.shouldBreakBefore(0x3000, 0xFF));
+
+  // Taking one away takes only that one.
+  list.remove(2);
+  list.apply(debug, {});
+  debug.clearHits();
+  REQUIRE(debug.shouldBreakBefore(0x2000, 0xFF));
+  debug.clearHits();
+  REQUIRE_FALSE(debug.shouldBreakBefore(0x3000, 0xFF));
+  REQUIRE(debug.hasWatchpoints());
+}
+
+TEST_CASE("A range is its own breakpoint even where another begins", "[debugger][breakpoints]") {
+  Breakpoints list;
+  list.toggleExec(0x2000);
+  Breakpoint range;
+  range.start = 0x2000;
+  range.end = 0x20FF;
+  REQUIRE(list.add(range)); // used to be refused as the same as $2000
+  Breakpoint longer = range;
+  longer.end = 0x2FFF;
+  REQUIRE(list.add(longer));
+  REQUIRE_FALSE(list.add(range)); // but not twice
+  Breakpoint read = range;
+  read.kind = Breakpoint::Kind::Read;
+  REQUIRE(list.add(read)); // nor across kinds
+
+  // And the core holds both ranges.
+  MachineDebug debug;
+  list.apply(debug, {});
+  list.all()[1].enabled = false; // $2000-$20FF
+  list.apply(debug, {});
+  REQUIRE_FALSE(debug.shouldBreakBefore(0x1000, 0xFF));
+  REQUIRE(debug.shouldBreakBefore(0x2800, 0xFF));
+}
+
+TEST_CASE("A breakpoint's number stays with it", "[debugger][breakpoints]") {
+  Breakpoints list;
+  list.toggleExec(0x2000);
+  list.toggleExec(0x3000);
+  list.toggleExec(0x4000);
+  const uint32_t third = list.all()[2].id;
+  REQUIRE(list.removeId(list.all()[0].id));
+  // The others keep their numbers, and a deleted one is not reused.
+  REQUIRE(list.find(third)->start == 0x4000);
+  list.toggleExec(0x5000);
+  REQUIRE(list.all().back().id > third);
+  REQUIRE_FALSE(list.removeId(9999));
+  REQUIRE(list.indexOf(0) == -1);
+}
+
 TEST_CASE("Breakpoints survive the settings file", "[debugger][breakpoints]") {
   Breakpoints list;
   Breakpoint b;
@@ -423,6 +506,14 @@ TEST_CASE("A rule that cannot be evaluated says why", "[debugger][rules]") {
   REQUIRE(toExpression(ch, resolve) == "PEEK($0024)==0");
 }
 
+TEST_CASE("A rule with no value previews as missing, not as zero", "[debugger][rules]") {
+  // The preview used to read (C==0) for a rule nobody had given a value.
+  ConditionNode c = ConditionNode::rule(ConditionNode::Subject::Flag);
+  c.detail = "C";
+  REQUIRE(toExpression(c) == "C==?");
+  REQUIRE_FALSE(problem(c).empty()); // and Apply stays off
+}
+
 TEST_CASE("What the builder writes, the evaluator reads", "[debugger][rules]") {
   uint8_t memory[0x10000] = {};
   memory[0x24] = 12;
@@ -635,6 +726,15 @@ TEST_CASE("The console reads every kind of breakpoint", "[debugger][console][bre
   REQUIRE(parse("bx 1").kind == CK::BreakDisable);
   REQUIRE(parse("bd 0").kind == CK::Error);
   REQUIRE(parse("bd").kind == CK::Error);
+  // Too large for a number is not a number, rather than whatever it wraps to.
+  REQUIRE(parse("bd 4294967297").kind == CK::Error);
+  REQUIRE(parse("s 99999999999").kind == CK::Error);
+
+  // "break" is a breakpoint, as in every other debugger, and never a pause.
+  c = parse("break 2000");
+  REQUIRE(c.kind == CK::BreakAdd);
+  REQUIRE(c.from == "2000");
+  REQUIRE(parse("stop").kind == CK::Pause);
 }
 
 TEST_CASE("Every command has help, and every alias reaches it", "[debugger][console]") {

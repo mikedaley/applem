@@ -110,9 +110,23 @@ private:
   std::string typed_;  // what was being typed before going back in history
 
   // The debugger's stop count when this last looked, to report each stop once.
+  // A stop this console made by stepping it reports itself, and marks seen.
   uint32_t seenStops_ = 0;
-  // A stop this console caused by stepping, which it reports itself.
-  bool ownStep_ = false;
+
+  // A run from an address, as the monitor's G: a return address was pushed
+  // for the routine's RTS, and the temporary breakpoint waits there. When
+  // it is reached with the stack back where it was, the registers the
+  // routine left are shown and the ones it found are put back, and a machine
+  // that was running carries on.
+  struct GoReturn {
+    uint32_t address = 0; // where the RTS comes back to
+    uint32_t from = 0;    // where the routine began
+    host::CpuState before;
+    bool wasRunning = false;
+  };
+  std::optional<GoReturn> goReturn_;
+  bool go(uint32_t from);
+  void returnedFromGo();
 
   static constexpr size_t MAX_OUTPUT = 4000;
   static constexpr size_t MAX_HISTORY = 200;

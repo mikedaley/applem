@@ -29,6 +29,8 @@ namespace {
 
 constexpr const char *ERROR_POPUP = "SmartPort Error";
 constexpr const char *EJECT_POPUP = "Eject Hard Drive Image";
+// How long a written volume has had no transfers before it goes back to its file.
+constexpr double WRITE_BACK_QUIET_SECONDS = 2.0;
 constexpr const char *NOT_INSTALLED =
     "There is no SmartPort to take an image. Fit a SmartPort card in the Expansion Slots "
     "window first.";
@@ -196,7 +198,7 @@ void HardDrives::reportError(const std::string &message) {
 }
 
 void HardDrives::insertImage(int device, const std::string &filename,
-                             const std::vector<uint8_t> &data, bool remember) {
+                             const std::vector<uint8_t> &data, bool remember, const std::string &path) {
   bool installed = false;
   bool pending = false;
   const bool ok = emulation_.withMachine([&](host::MachineHost &host) {
@@ -214,12 +216,13 @@ void HardDrives::insertImage(int device, const std::string &filename,
     reportError("Could not load the SmartPort image " + filename + ".");
     return;
   }
-  devices_[device] = Device{};
+  clearDevice(device);
   devices_[device].filename = filename;
+  if (!path.empty()) devices_[device].path = path;
   devices_[device].size = data.size();
   if (remember) {
-    store_.saveInserted(device, filename, data);
-    store_.addRecent(device, filename, data);
+    store_.saveInserted(device, filename, data, path);
+    store_.addRecent(device, filename, data, path);
   }
   if (pending) notice("Image inserted. Press Ctrl+Reset or Reboot to start from it.");
 }
@@ -238,16 +241,43 @@ void HardDrives::insertFile(int device, const std::string &path) {
     reportError("Could not read " + path + ".");
     return;
   }
-  insertImage(device, baseName(path), *data, true);
+  replace(device, [this, device, path, data = std::move(*data)] { insertImage(device, baseName(path), data, true, path); });
+}
+
+void HardDrives::insertRecentEntry(int device, const RecentEntry &entry) {
+  auto image = store_.loadRecent(device, entry);
+  if (!image) {
+    reportError(entry.path.empty() ? "Could not read the recent image " + entry.filename + "."
+                                   : entry.filename + " is no longer at " + entry.path + ".");
+    return;
+  }
+  replace(device, [this, device, image = std::move(*image)] {
+    insertImage(device, image.filename, image.data, true, image.path);
+  });
+}
+
+// A device emptied or given a new image: everything shown of the old one goes,
+// and the insertion count moves on.
+void HardDrives::clearDevice(int device) {
+  const uint32_t serial = devices_[device].serial;
+  devices_[device] = Device{};
+  devices_[device].serial = serial + 1;
 }
 
 void HardDrives::restore() {
   for (int device = 0; device < DEVICES; device++) {
-    if (auto image = store_.loadInserted(device)) {
-      // Quietly: a machine without a SmartPort keeps the record for when it has one.
-      const bool installed = emulation_.withMachine([](host::MachineHost &host) { return host.smartPort() != nullptr; });
-      if (installed) insertImage(device, image->filename, image->data, false);
+    auto image = store_.loadInserted(device);
+    if (!image) continue;
+    // Quietly: a machine without a SmartPort keeps the record for when it has one.
+    const bool installed = emulation_.withMachine([](host::MachineHost &host) { return host.smartPort() != nullptr; });
+    if (!installed) continue;
+    if (image->missing) {
+      reportError(image->filename + " is no longer at " + image->path + ", so SmartPort device " +
+                  std::to_string(device + 1) + " is empty.");
+      store_.clearInserted(device);
+      continue;
     }
+    insertImage(device, image->filename, image->data, false, image->path);
   }
 }
 
@@ -255,18 +285,26 @@ void HardDrives::machineChanged() {
   watched_ = nullptr; // the old machine's card is gone, and a new one may take its address
   transfers_.clear();
   for (int device = 0; device < DEVICES; device++) {
-    devices_[device] = Device{};
+    clearDevice(device);
     store_.clearInserted(device);
   }
 }
 
+// What each device holds, from the machine. An image whose name is not the
+// one shown came from a save state, and is that state's rather than the
+// file's, so it is not written back over the user's file.
 void HardDrives::syncWithMachine() {
+  watched_ = nullptr;
   emulation_.withMachine([&](host::MachineHost &host) {
     for (int device = 0; device < DEVICES; device++) {
       if (host.isBlockImageInserted(device)) {
-        if (!devices_[device].filename) devices_[device].filename = host.blockImageFilename(device);
+        const std::string name = host.blockImageFilename(device);
+        if (devices_[device].filename != name) {
+          clearDevice(device);
+          devices_[device].filename = name.empty() ? std::string("Restored image") : name;
+        }
       } else {
-        devices_[device] = Device{};
+        clearDevice(device);
       }
     }
   });
@@ -288,20 +326,68 @@ int HardDrives::dropTarget() const {
   return 0;
 }
 
-// An image the machine changed is asked about first: save it, eject it
-// without saving, or keep it in. Asking was missing, and the save panel's
-// Cancel kept the image in, so there was no way to eject without saving.
+// Exported and marked saved under one hold of the machine, so a write made in
+// between is never counted as kept; the file is written after, outside it.
+bool HardDrives::writeBack(int device) {
+  Device &d = devices_[device];
+  if (!d.filename) return true;
+  bool written = false;
+  std::vector<uint8_t> data;
+  emulation_.withMachine([&](host::MachineHost &host) {
+    written = host.isBlockImageModified(device);
+    if (!written || !d.path) return;
+    size_t size = 0;
+    const uint8_t *bytes = host.exportBlockImage(device, &size);
+    if (bytes && size) data.assign(bytes, bytes + size);
+    host.markBlockImageSaved(device);
+  });
+  if (!written) return !d.writeBackFailed;
+  if (!d.path) return false;
+  d.modified = false;
+  if (data.empty() || !writeFile(*d.path, data.data(), data.size())) {
+    if (!d.writeBackFailed) reportError("Could not write " + *d.filename + " back to " + *d.path + ".");
+    d.writeBackFailed = true;
+    return false;
+  }
+  d.writeBackFailed = false;
+  return true;
+}
+
+void HardDrives::writeBackAll() {
+  for (int device = 0; device < DEVICES; device++) writeBack(device);
+}
+
+std::vector<std::string> HardDrives::unsavedImages() {
+  std::vector<std::string> names;
+  for (int device = 0; device < DEVICES; device++) {
+    if (!writeBack(device) && devices_[device].filename) names.push_back(*devices_[device].filename);
+  }
+  return names;
+}
+
+void HardDrives::replace(int device, std::function<void()> insert) {
+  if (!devices_[device].filename || writeBack(device)) {
+    insert();
+    return;
+  }
+  askEject_ = device;
+  askThen_ = std::move(insert);
+  openAskEject_ = true;
+}
+
+// An image whose changes cannot go back to a file is asked about first:
+// save it, eject it without saving, or keep it in.
 void HardDrives::requestEject(int device) {
-  const bool changed = emulation_.withMachine([&](host::MachineHost &host) { return host.isBlockImageModified(device); });
-  if (!changed) {
+  if (writeBack(device)) {
     eject(device);
     return;
   }
   askEject_ = device;
+  askThen_ = nullptr;
   openAskEject_ = true;
 }
 
-void HardDrives::saveThenEject(int device) {
+void HardDrives::saveThenEject(int device, std::function<void()> then) {
   std::vector<uint8_t> data;
   emulation_.withMachine([&](host::MachineHost &host) {
     size_t size = 0;
@@ -315,19 +401,23 @@ void HardDrives::saveThenEject(int device) {
   std::string name = devices_[device].filename.value_or("harddrive" + std::to_string(device + 1) + ".hdv");
   if (name.find('.') == std::string::npos) name += ".hdv";
   platform_.saveFile("Save the image in SmartPort device " + std::to_string(device + 1), name,
-                     {"hdv", "po", "2mg"}, [this, device, data](const std::string &path) {
+                     {"hdv", "po", "2mg"},
+                     [this, device, data, serial = devices_[device].serial, then](const std::string &path) {
                        if (path.empty()) return; // kept in, as the floppies are
                        if (!writeFile(path, data.data(), data.size())) {
                          reportError("Could not write " + path + ".");
                          return;
                        }
+                       // An image put in while the panel was open is not this one.
+                       if (devices_[device].serial != serial) return;
                        eject(device);
+                       if (then) then();
                      });
 }
 
 void HardDrives::eject(int device) {
   emulation_.withMachine([&](host::MachineHost &host) { host.ejectBlockImage(device); });
-  devices_[device] = Device{};
+  clearDevice(device);
   store_.clearInserted(device);
 }
 
@@ -337,9 +427,14 @@ HardDrives::~HardDrives() {
   });
 }
 
-void HardDrives::watchTransfers(SmartPortCard *card) {
-  if (card == watched_) return;
+// The card is told about again when it is a different card, when the machine
+// was rebuilt, or after anything that refits cards (syncWithMachine forgets
+// it): a new card often has the old one's address, and an address check alone
+// left the new one with no callback and the window's map and graph dead.
+void HardDrives::watchTransfers(SmartPortCard *card, uint64_t generation) {
+  if (card == watched_ && generation == watchedGeneration_) return;
   watched_ = card;
+  watchedGeneration_ = generation;
   transfers_.clear();
   card->setTransferCallback([this](uint8_t op, int device, uint32_t block, uint32_t) {
     // 1 is a read and 2 a write; a status call moves no block.
@@ -412,7 +507,7 @@ void HardDrives::update() {
       transfers_.clear();
       return;
     }
-    watchTransfers(card);
+    watchTransfers(card, host.generation());
     // The SmartPort's light is the card's, not a device's, so a transfer
     // lights every device with an image in it.
     activity = card->hasActivity();
@@ -437,6 +532,16 @@ void HardDrives::update() {
     }
   });
 
+  // A written image goes back to its file once nothing has reached the
+  // device for a couple of seconds: a volume is written in bursts, and a
+  // 32MB file is not one to write between two blocks of the same burst.
+  for (int index = 0; index < DEVICES; index++) {
+    Device &d = devices_[index];
+    if (d.path && d.modified && !d.writeBackFailed && now - d.lightAt >= WRITE_BACK_QUIET_SECONDS) {
+      writeBack(index);
+    }
+  }
+
   const float cool = std::exp(-static_cast<float>(now - lastUpdate_) * 3.0f / HEAT_SECONDS);
   lastUpdate_ = now;
   for (Device &device : devices_) {
@@ -459,12 +564,9 @@ void HardDrives::drawRecentPopup(int index) {
     ImGui::TextDisabled("No recent images");
   } else {
     for (const RecentEntry &entry : recent) {
-      if (ImGui::Selectable(entry.filename.c_str())) {
-        if (auto image = store_.loadRecent(index, entry)) {
-          insertImage(index, image->filename, image->data, true);
-        } else {
-          reportError("Could not read the recent image " + entry.filename + ".");
-        }
+      if (ImGui::Selectable(entry.filename.c_str())) insertRecentEntry(index, entry);
+      if (!entry.path.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+        ImGui::SetTooltip("%s", entry.path.c_str());
       }
     }
     ImGui::Separator();
@@ -475,7 +577,10 @@ void HardDrives::drawRecentPopup(int index) {
     for (const LibraryEntry &entry : library_) {
       if (ImGui::Selectable(entry.name.c_str())) {
         if (auto data = readFile(libraryDirectory_ + "/" + entry.file)) {
-          insertImage(index, entry.file, *data, true);
+          // No path: the app's own copy is not the user's to write to.
+          replace(index, [this, index, file = entry.file, data = std::move(*data)] {
+            insertImage(index, file, data, true);
+          });
         } else {
           reportError("Could not read " + entry.name + " from the app.");
         }
@@ -742,21 +847,25 @@ void HardDrives::draw(bool *open) {
   if (ImGui::BeginPopupModal(EJECT_POPUP, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
     const int device = askEject_;
     const std::string name = devices_[device].filename.value_or("the image");
-    ImGui::Text("The image in SmartPort device %d has changed.", device + 1);
-    ImGui::TextDisabled("Save %s before ejecting it?", name.c_str());
+    ImGui::Text("The image in SmartPort device %d has changes that are not saved.", device + 1);
+    ImGui::TextDisabled(askThen_ ? "Save %s before it is replaced?" : "Save %s before ejecting it?", name.c_str());
     ImGui::Spacing();
     if (ui::Button("Save\u2026", ImVec2(110, 0), ui::ButtonKind::Primary)) {
       ImGui::CloseCurrentPopup();
-      saveThenEject(device);
+      saveThenEject(device, std::move(askThen_));
+      askThen_ = nullptr;
     }
     ImGui::SameLine();
     if (ui::Button("Don't Save", ImVec2(110, 0))) {
       ImGui::CloseCurrentPopup();
       eject(device);
+      if (askThen_) askThen_();
+      askThen_ = nullptr;
     }
     ImGui::SameLine();
     if (ui::Button("Cancel", ImVec2(110, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
       ImGui::CloseCurrentPopup();
+      askThen_ = nullptr;
     }
     ImGui::EndPopup();
   }

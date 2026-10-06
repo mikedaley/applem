@@ -71,8 +71,6 @@ private:
   MachinePoll updatePoll_;
   MachinePoll takePoll_;
   bool fitted_ = false;
-  // The card the mutes were last applied to, to tell a new one.
-  const void *card_ = nullptr;
   bool enabled_ = false;
   std::array<Psg, 2> psgs_;
   std::array<Via, 2> vias_;

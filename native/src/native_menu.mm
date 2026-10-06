@@ -62,6 +62,10 @@ NSEventModifierFlags modifierMask(unsigned modifiers) {
   _tracking = NO;
 }
 
+- (void)toggleFullScreen:(id)sender {
+  [self.primaryWindow toggleFullScreen:sender];
+}
+
 - (void)chosen:(NSMenuItem *)item {
   if (_chosen && [item.representedObject isKindOfClass:NSString.class]) _chosen(item.representedObject);
 }
@@ -84,7 +88,10 @@ NSEventModifierFlags modifierMask(unsigned modifiers) {
     for (const MenuItem &child : model.children) [menu addItem:[self itemFor:child]];
     item.submenu = menu;
   } else if (model.action == "toggleFullScreen") {
-    // AppKit's own, so the system knows the item and titles it itself.
+    // AppKit's own selector, so the system knows the item and adds no second
+    // one, but aimed at the main window: left to the responder chain it went
+    // to whichever tool window had the keyboard. The model titles it.
+    item.target = self;
     item.action = @selector(toggleFullScreen:);
   } else if (!model.action.empty()) {
     item.target = self;

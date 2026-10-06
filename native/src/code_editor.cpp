@@ -38,13 +38,30 @@ std::vector<std::string> splitLines(const std::string &text) {
 }
 
 // Text from outside as the editor can hold it: plain ASCII, quotes straight,
-// tabs as spaces.
-std::string cleaned(const char *text) {
+// tabs as spaces, and every line ending (CR, LF or CRLF) a line feed. Other
+// control characters are given to the owner to write as text, or dropped
+// when it has no way to.
+std::string cleaned(const char *text, const std::function<std::string(unsigned char)> &controlText) {
   std::string out;
   if (!text) return out;
   const unsigned char *p = reinterpret_cast<const unsigned char *>(text);
   while (*p) {
     unsigned int c = *p++;
+    if (c == '\r') {
+      // A listing from an Apple II or an old Mac ends its lines with CR
+      // alone, and opened as one long line.
+      if (*p == '\n') p++;
+      out += '\n';
+      continue;
+    }
+    if (c < 32 && c != '\t' && c != '\n') {
+      if (controlText) out += controlText(static_cast<unsigned char>(c));
+      continue;
+    }
+    if (c == 127) {
+      if (controlText) out += controlText(127);
+      continue;
+    }
     if (c >= 0x80) {
       // A UTF-8 sequence: decode it to see whether it is a quote.
       int extra = (c & 0xE0) == 0xC0 ? 1 : (c & 0xF0) == 0xE0 ? 2 : (c & 0xF8) == 0xF0 ? 3 : 0;
@@ -68,7 +85,7 @@ std::string cleaned(const char *text) {
 // ---------------------------------------------------------------------------
 
 void CodeEditor::setText(const std::string &text) {
-  lines_ = splitLines(cleaned(text.c_str()));
+  lines_ = splitLines(cleaned(text.c_str(), controlText_));
   caret_ = anchor_ = {0, 0};
   undo_.clear();
   redo_.clear();
@@ -136,7 +153,7 @@ void CodeEditor::deleteSelection() {
 }
 
 void CodeEditor::insert(const std::string &raw) {
-  const std::string text = cleaned(raw.c_str());
+  const std::string text = cleaned(raw.c_str(), controlText_);
   if (text.empty() && !hasSelection()) return;
   record(text.size() == 1 && text != "\n" ? EditKind::Typing : EditKind::Other);
   deleteSelection();
@@ -173,7 +190,7 @@ void CodeEditor::replaceOnLine(int from, int to, const std::string &text) {
 void CodeEditor::replaceAll(const std::string &text, std::optional<Position> caret) {
   if (text == this->text()) return;
   record(EditKind::Other);
-  lines_ = splitLines(cleaned(text.c_str()));
+  lines_ = splitLines(cleaned(text.c_str(), controlText_));
   caret_ = anchor_ = clamp(caret.value_or(caret_));
   changed();
 }

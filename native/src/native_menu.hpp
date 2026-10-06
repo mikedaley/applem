@@ -18,5 +18,8 @@
 // rebuild under the user's pointer would close the menu they are reading.
 @interface NativeMenu : NSObject
 - (instancetype)initWithChosen:(void (^)(NSString *action))chosen;
+// The window full screen is for. AppKit sends toggleFullScreen: to the key
+// window, and with a tool window key that did nothing at all.
+@property(nonatomic, weak) NSWindow *primaryWindow;
 - (void)update:(const a2e::native::MenuBar &)bar;
 @end

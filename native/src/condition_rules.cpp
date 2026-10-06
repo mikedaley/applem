@@ -62,7 +62,9 @@ bool isDecimal(const std::string &s) { return allOf(s, std::isdigit); }
 // are decimal, and bare hex that is not decimal gets its "#$".
 std::string normaliseValue(const std::string &typed) {
   const std::string v = trim(typed);
-  if (v.empty()) return "0";
+  // A value not yet typed is shown as missing, not as a zero the user never
+  // wrote: the builder previews C==? and refuses to apply it (problem()).
+  if (v.empty()) return "?";
   if (v.rfind("#$", 0) == 0 || v[0] == '$' || isDecimal(v)) return v;
   if (isHex(v)) return "#$" + v;
   return v;

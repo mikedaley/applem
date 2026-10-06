@@ -105,6 +105,7 @@ private:
 
   // The core needs telling when the decoder or monochrome switch changes.
   bool machineDirty_ = false;
+  mutable float lastBurnIn_ = 0.0f; // the renderer's, as last applied
 
   // The Save As and Delete dialogs.
   bool openSaveAs_ = false;

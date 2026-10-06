@@ -83,6 +83,10 @@ bool IsHoveringRect(ImVec2 min, ImVec2 max);
 // the window a docking class of its own, which nothing else shares, so it
 // stays a window, and takes it out of any dock it is already in.
 void SetWindowDocking(bool allowed);
+// A window that sizes itself to what it holds, kept no taller than the
+// screen it is on: the drives' windows grow by the inspector's height when
+// it is shown, and ran off the bottom of the screen. It scrolls instead.
+void KeepOnMonitor(const char *name);
 void BeforeWindow(const char *name);
 
 // ImGui::Begin, with a macOS window's title bar: the window's own close,

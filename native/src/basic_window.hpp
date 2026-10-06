@@ -96,6 +96,7 @@ private:
   void take();
   void applyBreakpoints();
   void run();
+  void startRun();
   void pause();
   void stop();
   void step(bool wholeLine);
@@ -124,7 +125,11 @@ private:
   void drawStatusBar();
   void drawCompletions();
   void drawNewConfirm();
-  void editValue(uint16_t valueAddress, BasicVarType type, const std::string &text, int stringLength);
+  void drawRunConfirm();
+  void drawOpenConfirm();
+  void openText(const std::string &path, const std::string &text);
+  bool editorDirty() const;
+  void editValue(uint16_t valueAddress, BasicVarType type, const std::string &text);
 
   Emulation &emulation_;
   Platform &platform_;
@@ -197,12 +202,22 @@ private:
   // The settings' text, until the editor is first drawn.
   std::vector<std::string> pendingText_;
   bool haveText_ = false;
-  const void *machine_ = nullptr; // the Emulator breakpoints were given to
+  // The machine the breakpoints were given to, by MachineHost::generation:
+  // its address cannot say, since a machine built after a switch can be
+  // given the address of the one it replaced.
+  uint64_t machineGeneration_ = 0;
   double hashedAt_ = -10.0;
 
   float sidebarWidth_ = 300.0f;
   float breakpointsHeight_ = 200.0f;
   bool confirmNew_ = false;
+  bool confirmRun_ = false;
+  // A file chosen to open over edits, waiting for the user to say so.
+  bool confirmOpen_ = false;
+  std::string pendingOpenPath_, pendingOpenText_;
+  // The text as last opened, saved, read or written: what Open would lose
+  // is whatever differs from it.
+  std::string cleanText_;
   std::string message_;
   bool messageProblem_ = false;
   double messageAt_ = -10.0;

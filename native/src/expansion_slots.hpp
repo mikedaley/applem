@@ -37,13 +37,27 @@ class ExpansionSlots {
 public:
   explicit ExpansionSlots(Emulation &emulation);
 
-  void setMachine(const MachineProfile &machine) { machine_ = &machine; dirty_ = false; }
+  // A different machine: the window's list is read again from it at the next
+  // draw. It used to be read only when the window opened, so a window left
+  // open across a switch showed, and would have applied, the last machine's.
+  void setMachine(const MachineProfile &machine) {
+    machine_ = &machine;
+    dirty_ = false;
+    wasOpen_ = false;
+  }
+  // A save state refitted the cards. They are what the user asked for by
+  // loading it, so they are remembered as this machine's layout too, or the
+  // next start would put the old layout back.
+  void adoptMachineLayout();
   // Put the remembered layout (or the defaults) into the machine.
   void apply();
 
   void draw(bool *open);
   // After Apply & Reset: the cards may have been rebuilt.
   void setAppliedCallback(std::function<void()> callback) { onApplied_ = std::move(callback); }
+  // Before Apply & Reset refits the cards: a SmartPort's images go with its
+  // card, so what was written to them goes to their files first.
+  void setApplyingCallback(std::function<void()> callback) { onApplying_ = std::move(callback); }
 
   // Settings file: [ApplEmSlots][<machine key>] with SlotN=id lines.
   SlotLayout *openSection(const char *machine);
@@ -58,11 +72,17 @@ private:
   Emulation &emulation_;
   const MachineProfile *machine_ = nullptr;
   std::map<std::string, SlotLayout> saved_; // by machine key
+  // A IIgs slot the user gave to its socket ("Your Card") rather than to the
+  // built-in device, by machine key: the Control Panel's choice, which the
+  // firmware would otherwise keep in battery RAM. Written as SocketN=1.
+  std::map<std::string, std::map<int, bool>> sockets_;
+  std::string section_; // the machine whose section is being read
   SlotLayout working_;
   SlotLayout applied_; // what the machine has, to mark what will change
   bool dirty_ = false;
   bool wasOpen_ = false;
   std::function<void()> onApplied_;
+  std::function<void()> onApplying_;
 };
 
 } // namespace a2e::native

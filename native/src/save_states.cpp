@@ -52,7 +52,10 @@ const MachineProfile *profileForId(uint32_t id) {
 SaveStates::SaveStates(Emulation &emulation, Platform &platform, std::string directory, Hooks hooks)
     : emulation_(emulation), platform_(platform), store_(std::move(directory)), hooks_(std::move(hooks)) {}
 
-SaveStates::~SaveStates() { releaseThumbnails(); }
+SaveStates::~SaveStates() {
+  if (backgroundSave_.valid()) backgroundSave_.wait();
+  releaseThumbnails();
+}
 
 void SaveStates::releaseThumbnails() {
   for (auto &[id, row] : rows_) {
@@ -66,7 +69,10 @@ void SaveStates::refresh() {
   releaseThumbnails();
   const MachineProfile *machine = hooks_.machine();
   std::vector<std::string> ids;
-  if (machine) ids.push_back(StateStore::autosaveId(machine->key));
+  if (machine) {
+    ids.push_back(StateStore::autosaveId(machine->key));
+    ids.push_back(StateStore::lastSessionId(machine->key));
+  }
   for (int slot = 1; slot <= StateStore::SLOTS; slot++) ids.push_back(StateStore::slotId(slot));
   for (const std::string &id : ids) {
     Row row;
@@ -89,9 +95,10 @@ void SaveStates::error(const std::string &message) {
   openError_ = true;
 }
 
-void SaveStates::saveTo(const std::string &id) {
+bool SaveStates::saveTo(const std::string &id, bool background) {
   const MachineProfile *machine = hooks_.machine();
-  if (!machine) return;
+  if (!machine) return false;
+  finishBackgroundSave(true);
   std::vector<uint8_t> state;
   std::vector<uint8_t> thumbnail;
   emulation_.withMachine([&](host::MachineHost &host) {
@@ -106,69 +113,101 @@ void SaveStates::saveTo(const std::string &id) {
   });
   if (state.empty()) {
     error("The machine could not be saved.");
-    return;
+    return false;
+  }
+  // The periodic autosave writes its file away from the UI: a machine with
+  // two hard drive images is a 72MB state, and writing it here held up a
+  // frame every five seconds. The copy above is all that needs the machine.
+  if (background) {
+    backgroundSave_ = std::async(std::launch::async, [this, id, key = machine->key, state = std::move(state),
+                                                      thumbnail = std::move(thumbnail)] {
+      return store_.save(id, key, state, thumbnail);
+    });
+    return true;
   }
   if (!store_.save(id, machine->key, state, thumbnail)) {
     error("The save state could not be written.");
-    return;
+    return false;
   }
+  stale_ = true;
+  return true;
+}
+
+// A save written in the background, collected: waited for when `wait`, as
+// before another save or the app going, otherwise only once it is done.
+void SaveStates::finishBackgroundSave(bool wait) {
+  if (!backgroundSave_.valid()) return;
+  if (!wait && backgroundSave_.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;
+  if (!backgroundSave_.get()) error("The autosave could not be written.");
   stale_ = true;
 }
 
-void SaveStates::autosaveNow() {
+void SaveStates::autosaveNow(bool background) {
   if (!autosave || !emulation_.powered() || !hooks_.machine()) return;
-  saveTo(StateStore::autosaveId(hooks_.machine()->key));
+  // The autosave the last quit wrote is kept as the last session before this
+  // session replaces it: it used to be overwritten five seconds after
+  // starting, so a quit's autosave could never be gone back to.
+  const std::string &key = hooks_.machine()->key;
+  if (keptLastSession_.insert(key).second) {
+    store_.copy(StateStore::autosaveId(key), StateStore::lastSessionId(key));
+    stale_ = true;
+  }
+  saveTo(StateStore::autosaveId(key), background);
 }
 
 void SaveStates::update(double now) {
+  finishBackgroundSave(false);
   if (!autosave || !emulation_.powered()) {
     lastAutosave_ = now;
     return;
   }
   if (now - lastAutosave_ < AUTOSAVE_SECONDS) return;
+  // One at a time: a write still going when the next is due lets it pass.
+  if (backgroundSave_.valid()) return;
   lastAutosave_ = now;
-  autosaveNow();
+  autosaveNow(true);
 }
 
 // A state names the machine that wrote it. The same machine takes it at
 // once; another is asked about first.
-void SaveStates::loadBytes(const std::vector<uint8_t> &data, const std::string &what) {
+bool SaveStates::loadBytes(const std::vector<uint8_t> &data, const std::string &what) {
   const auto header = readStateHeader(data.data(), data.size());
   if (!header) {
     error("That is not an ApplEm save state.");
-    return;
+    return false;
   }
   const MachineProfile *target = profileForId(header->machineId);
   const MachineProfile *current = hooks_.machine();
   if (!target) {
     error("That state was saved on a machine this version does not know.");
-    return;
+    return false;
   }
-  if (current && target->id == current->id) {
-    importNow(data, what);
-    return;
-  }
+  if (current && target->id == current->id) return importNow(data, what);
   if (!Emulator::isMachineRunnable(target->id)) {
     error(std::string("That state was saved on the ") + target->name +
           ", whose ROM is not built into this copy of ApplEm.");
-    return;
+    return false;
   }
   pendingLoad_ = data;
   pendingWhat_ = what;
   pendingMachine_ = static_cast<int>(target->id);
   pendingMachineName_ = target->name;
+  // Asked first; the answer loads it, or not.
   openSwitch_ = true;
+  return false;
 }
 
-void SaveStates::importNow(const std::vector<uint8_t> &data, const std::string &what) {
+bool SaveStates::importNow(const std::vector<uint8_t> &data, const std::string &what) {
   if (!emulation_.powered()) emulation_.setPowered(true);
+  if (hooks_.loading) hooks_.loading();
   const bool ok = emulation_.withMachine([&](host::MachineHost &host) { return host.importState(data.data(), data.size()); });
   if (!ok) {
     error("The state could not be loaded.");
-    return;
+    return false;
   }
   if (hooks_.loaded) hooks_.loaded();
   notice("Loaded " + what + ".");
+  return true;
 }
 
 void SaveStates::exportRecord(const std::string &id, const std::string &suggestedName) {
@@ -351,14 +390,28 @@ void SaveStates::drawAutosave(float width) {
   ImGui::BeginDisabled(!row.record);
   if (ui::Button("Load", ImVec2(76, button), ui::ButtonKind::Primary)) {
     if (auto data = store_.load(id)) {
-      loadBytes(*data, "the autosave");
-      flash(id, "Loaded");
+      if (loadBytes(*data, "the autosave")) flash(id, "Loaded");
     }
   }
   ImGui::SameLine(0, 8);
   if (ui::Button("Export", ImVec2(76, button))) exportRecord(id, machine->key + std::string("-autosave.a2state"));
   ImGui::EndDisabled();
   ImGui::PopID();
+
+  // Where the last session was left, until this one has replaced it.
+  const std::string last = StateStore::lastSessionId(machine->key);
+  if (const auto it = rows_.find(last); it != rows_.end() && it->second.record) {
+    ImGui::SetCursorScreenPos(ImVec2(end.x - 16 - 76 - 8 - 76, at.y + 14 + button + 6));
+    ImGui::PushID(last.c_str());
+    if (ui::Button("Load Last Session", ImVec2(76 + 8 + 76, button))) {
+      if (auto data = store_.load(last)) loadBytes(*data, "the last session");
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+      ImGui::SetTooltip("The autosave written when ApplEm last quit, %s",
+                        relativeTime(it->second.record->savedAt).c_str());
+    }
+    ImGui::PopID();
+  }
 
   ImGui::SetCursorScreenPos(at);
   ImGui::Dummy(ImVec2(width, height));
@@ -395,8 +448,7 @@ void SaveStates::drawSlot(int slot, ImVec2 at, ImVec2 size) {
     draw->AddLine(ImVec2(middle.x, middle.y - 9), ImVec2(middle.x, middle.y + 9), hovered ? IM_COL32_WHITE : secondary(), 2.5f);
     centredText(draw, ImVec2(middle.x, middle.y + 40), hovered ? accent() : secondary(), "Save here");
     if (clicked) {
-      saveTo(id);
-      flash(id, "Saved");
+      if (saveTo(id)) flash(id, "Saved");
     }
   } else {
     cardBackground(draw, at, end, hovered);
@@ -441,15 +493,13 @@ void SaveStates::drawSlot(int slot, ImVec2 at, ImVec2 size) {
       ImGui::SetCursorScreenPos(ImVec2(screen.x + (screenSize.x - 96) * 0.5f, screen.y + screenSize.y * 0.5f - button - 4));
       if (ui::Button("Load", ImVec2(96, button), ui::ButtonKind::Primary)) {
         if (auto data = store_.load(id)) {
-          loadBytes(*data, label);
-          flash(id, "Loaded");
+          if (loadBytes(*data, label)) flash(id, "Loaded");
         }
       }
       const float small = (screenSize.x - 24 - 12) / 3;
       ImGui::SetCursorScreenPos(ImVec2(screen.x + 12, screen.y + screenSize.y * 0.5f + 8));
       if (ui::Button("Save", ImVec2(small, button))) {
-        saveTo(id);
-        flash(id, "Saved");
+        if (saveTo(id)) flash(id, "Saved");
       }
       if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) ImGui::SetTooltip("Save over this slot");
       ImGui::SameLine(0, 6);
@@ -464,13 +514,11 @@ void SaveStates::drawSlot(int slot, ImVec2 at, ImVec2 size) {
     if (ImGui::BeginPopupContextItem("##slotmenu")) {
       if (ImGui::MenuItem("Load")) {
         if (auto data = store_.load(id)) {
-          loadBytes(*data, label);
-          flash(id, "Loaded");
+          if (loadBytes(*data, label)) flash(id, "Loaded");
         }
       }
       if (ImGui::MenuItem("Save Over")) {
-        saveTo(id);
-        flash(id, "Saved");
+        if (saveTo(id)) flash(id, "Saved");
       }
       if (ImGui::MenuItem("Export…")) exportRecord(id, row.record->machine + "-" + id + ".a2state");
       ImGui::Separator();
@@ -487,6 +535,14 @@ void SaveStates::drawSlot(int slot, ImVec2 at, ImVec2 size) {
   }
   drawFlash(id, screen, screenSize);
   ImGui::PopID();
+}
+
+void SaveStates::loadFile(const std::string &path) {
+  if (auto data = readFile(path)) {
+    loadBytes(*data, baseName(path));
+  } else {
+    error("Could not read " + path + ".");
+  }
 }
 
 // The sixth place in the grid: a state from a file.

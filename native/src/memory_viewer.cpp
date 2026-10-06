@@ -420,6 +420,23 @@ const host::MemorySpace *MemoryViewer::space() const {
   return space_ < spaces_.size() ? &spaces_[space_] : nullptr;
 }
 
+// Auxiliary RAM has none of the machine's names: its zero page is not the
+// one the firmware's names are for unless ALTZP says so, and its $C000 page
+// is the language card's, not I/O. Main RAM keeps them, except over $C000 to
+// $CFFF, which in that view is the card's first bank rather than the
+// switches. The user's names and imported ones are the user's to place.
+std::optional<DebugSymbols::Symbol> MemoryViewer::symbolAt(uint32_t address) const {
+  auto sym = debugger_.symbols().lookup(address);
+  const host::MemorySpace *sp = space();
+  if (!sym || !sp || sp->processor) return sym;
+  const bool builtIn = sym->category != DebugSymbols::Category::User &&
+                       sym->category != DebugSymbols::Category::Imported;
+  if (!builtIn) return sym;
+  if (sp->kind == host::MemorySpace::Kind::AuxRAM) return std::nullopt;
+  if (sp->kind == host::MemorySpace::Kind::MainRAM && (address & 0xF000) == 0xC000) return std::nullopt;
+  return sym;
+}
+
 uint32_t MemoryViewer::spaceEnd() const {
   const host::MemorySpace *sp = space();
   return sp ? sp->base + sp->size : 0;
@@ -1409,7 +1426,6 @@ void MemoryViewer::drawGrid(ImVec2 size) {
   const ImGuiIO &io = ImGui::GetIO();
   const double now = ImGui::GetTime();
   const std::vector<Region> regionList = regions();
-  const DebugSymbols &symbols = debugger_.symbols();
 
   ImGui::PushFont(ui::monoFont(), 0.0f);
   const float lineH = l.lineH;
@@ -1668,7 +1684,7 @@ void MemoryViewer::drawGrid(ImVec2 size) {
       draw->AddText(ImVec2(cx, ty), colour, hex);
       // A name is marked under its byte, except the built-in names for the
       // zero page and the soft switches, which would mark nearly all of both.
-      if (auto sym = symbols.lookup(a); sym && sym->category != DebugSymbols::Category::ZeroPage &&
+      if (auto sym = symbolAt(a); sym && sym->category != DebugSymbols::Category::ZeroPage &&
                                         sym->category != DebugSymbols::Category::SoftSwitch) {
         const ImU32 sc = withAlpha(symbolColour(sym->category, p), 0.8f);
         for (float dx = 0; dx < charW * 2; dx += 3) {
@@ -1829,7 +1845,7 @@ void MemoryViewer::drawStatus() {
     ImGui::SameLine(0, 12);
     ImGui::TextDisabled("%s", region->name);
   }
-  if (auto sym = debugger_.symbols().lookup(at)) {
+  if (auto sym = symbolAt(at)) {
     ImGui::SameLine(0, 12);
     ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(symbolColour(sym->category, p)), "%s", sym->name.c_str());
     if (!sym->description.empty()) {
@@ -1878,7 +1894,7 @@ void MemoryViewer::drawInspector(float width) {
            region->hue >= 0 ? hueColour(region->hue, p) : 0);
       ImGui::NewLine();
     }
-    if (auto sym = debugger_.symbols().lookup(caret_)) {
+    if (auto sym = symbolAt(caret_)) {
       ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(symbolColour(sym->category, p)), "%s", sym->name.c_str());
       if (!sym->description.empty()) {
         ImGui::SameLine(0, 6);

@@ -44,6 +44,8 @@ constexpr double TURNS_PER_SECOND = 5.0;
 constexpr double SPIN_DOWN_HALF_LIFE = 0.35;
 // How soon a disk being written is read again.
 constexpr double REREAD_SECONDS = 0.5;
+// How long a written disk's drive is idle before the disk goes back to its file.
+constexpr double WRITE_BACK_IDLE_SECONDS = 1.0;
 
 std::string lower(std::string text) {
   for (char &c : text) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -88,8 +90,7 @@ uint32_t stickerColor(const std::string &filename) {
 
 bool DiskDrives::isFloppyImage(const std::string &path) {
   const std::string extension = extensionOf(path);
-  return extension == ".dsk" || extension == ".do" || extension == ".po" ||
-         extension == ".woz" || extension == ".nib";
+  return extension == ".dsk" || extension == ".do" || extension == ".po" || extension == ".woz";
 }
 
 DiskDrives::DiskDrives(Emulation &emulation, Platform &platform, std::string mediaDirectory)
@@ -120,7 +121,7 @@ std::optional<uint32_t> DiskDrives::currentFingerprint(int drive) {
 }
 
 void DiskDrives::insertImage(int drive, const std::string &filename,
-                             const std::vector<uint8_t> &data, bool remember) {
+                             const std::vector<uint8_t> &data, bool remember, const std::string &path) {
   const bool ok = emulation_.withMachine([&](host::MachineHost &host) {
     return host.insertDisk(drive, data.data(), data.size(), filename.c_str());
   });
@@ -132,9 +133,14 @@ void DiskDrives::insertImage(int drive, const std::string &filename,
   resetVisuals(d);
   d.filename = filename;
   d.baseline = currentFingerprint(drive);
+  d.path = path.empty() ? std::nullopt : std::optional<std::string>(path);
+  d.writeBackFailed = false;
+  d.modified = false;
+  d.idleSince = -1;
+  d.serial++;
   if (remember) {
-    store_.saveInserted(drive, filename, data);
-    store_.addRecent(drive, filename, data);
+    store_.saveInserted(drive, filename, data, path);
+    store_.addRecent(drive, filename, data, path);
   }
 }
 
@@ -144,27 +150,41 @@ void DiskDrives::insertFile(int drive, const std::string &path) {
     reportError("Could not read " + path + ".");
     return;
   }
-  insertImage(drive, baseName(path), *data, true);
+  replace(drive, [this, drive, path, data = std::move(*data)] { insertImage(drive, baseName(path), data, true, path); });
 }
 
 // An unformatted WOZ for the machine to format. Not remembered: there is
 // nothing on it yet.
 void DiskDrives::insertBlank(int drive) {
-  const bool ok = emulation_.withMachine([&](host::MachineHost &host) { return host.insertBlankDisk(drive); });
-  if (!ok) {
-    reportError("Could not insert a blank disk.");
-    return;
-  }
-  Drive &d = drives_[drive];
-  resetVisuals(d);
-  d.filename = BLANK_NAME;
-  d.baseline = currentFingerprint(drive);
-  store_.clearInserted(drive);
+  replace(drive, [this, drive] {
+    const bool ok = emulation_.withMachine([&](host::MachineHost &host) { return host.insertBlankDisk(drive); });
+    if (!ok) {
+      reportError("Could not insert a blank disk.");
+      return;
+    }
+    Drive &d = drives_[drive];
+    resetVisuals(d);
+    d.filename = BLANK_NAME;
+    d.baseline = currentFingerprint(drive);
+    d.path.reset();
+    d.writeBackFailed = false;
+    d.serial++;
+    store_.clearInserted(drive);
+  });
 }
 
 void DiskDrives::restore() {
   for (int drive = 0; drive < DRIVES; drive++) {
-    if (auto image = store_.loadInserted(drive)) insertImage(drive, image->filename, image->data, false);
+    auto image = store_.loadInserted(drive);
+    if (!image) continue;
+    if (image->missing) {
+      // Said rather than silently dropped: the user may have moved it.
+      reportError(image->filename + " is no longer at " + image->path + ", so drive " + std::to_string(drive + 1) +
+                  " is empty.");
+      store_.clearInserted(drive);
+      continue;
+    }
+    insertImage(drive, image->filename, image->data, false, image->path);
   }
 }
 
@@ -173,12 +193,16 @@ void DiskDrives::machineChanged() {
     resetVisuals(drives_[drive]);
     drives_[drive].filename.reset();
     drives_[drive].baseline.reset();
+    drives_[drive].path.reset();
+    drives_[drive].serial++;
     store_.clearInserted(drive);
   }
 }
 
 // The baseline is taken afresh, so a disk is asked about on eject only if it
-// changes after the state was loaded.
+// changes after the state was loaded. A disk a state brought back is the
+// state's, not the file's, so it is not written back to any file: it would
+// overwrite the user's disk with an older one.
 void DiskDrives::syncWithMachine() {
   for (int drive = 0; drive < DRIVES; drive++) {
     std::optional<std::string> name;
@@ -188,6 +212,10 @@ void DiskDrives::syncWithMachine() {
       name = filename && *filename ? filename : "Restored Disk";
     });
     Drive &d = drives_[drive];
+    if (d.filename != name) {
+      d.path.reset();
+      d.serial++;
+    }
     resetVisuals(d);
     d.filename = name;
     d.baseline = name ? currentFingerprint(drive) : std::nullopt;
@@ -196,7 +224,7 @@ void DiskDrives::syncWithMachine() {
 
 void DiskDrives::chooseDisk(int drive) {
   platform_.openFile("Insert a disk into drive " + std::to_string(drive + 1),
-                     {"dsk", "do", "po", "woz", "nib"}, [this, drive](const std::string &path) {
+                     {"dsk", "do", "po", "woz"}, [this, drive](const std::string &path) {
                        if (!path.empty()) insertFile(drive, path);
                      });
 }
@@ -218,19 +246,100 @@ int DiskDrives::dropTarget() const {
   return 0;
 }
 
+namespace {
+
+// The format a disk goes back to its file in: the file's own.
+std::optional<DiskSaveFormat> formatForFile(const std::string &path) {
+  const std::string extension = extensionOf(path);
+  if (extension == ".dsk" || extension == ".do") return DiskSaveFormat::DOSOrder;
+  if (extension == ".po") return DiskSaveFormat::ProDOSOrder;
+  if (extension == ".woz") return DiskSaveFormat::WOZ;
+  return std::nullopt;
+}
+
+} // namespace
+
 // Two gates, the cheap one first: the core says whether anything was ever
 // written, and only then is the image fingerprinted to see whether it is
 // actually different from what went in.
-void DiskDrives::requestEject(int drive) {
+bool DiskDrives::hasUnsavedChanges(int drive) {
+  if (!drives_[drive].filename) return false;
+  if (drives_[drive].writeBackFailed) return true;
   const bool written = emulation_.withMachine([&](host::MachineHost &host) { return host.isDiskModified(drive); });
-  if (written) {
-    const auto now = currentFingerprint(drive);
-    if (!now || !drives_[drive].baseline || *now != *drives_[drive].baseline) {
-      beginSave(drive);
-      return;
+  if (!written) return false;
+  const auto now = currentFingerprint(drive);
+  return !now || !drives_[drive].baseline || *now != *drives_[drive].baseline;
+}
+
+// The image is exported and marked saved under one hold of the machine, so a
+// write the machine makes in between is never counted as kept. The file is
+// written after, outside it; a write that fails is remembered and asked about.
+bool DiskDrives::writeBack(int drive) {
+  Drive &d = drives_[drive];
+  if (!d.filename) return true;
+  if (!d.path) return !hasUnsavedChanges(drive);
+  const std::optional<DiskSaveFormat> format = formatForFile(*d.path);
+  bool written = false;
+  bool exportable = true;
+  std::vector<uint8_t> data;
+  emulation_.withMachine([&](host::MachineHost &host) {
+    written = host.isDiskModified(drive);
+    if (!written) return;
+    exportable = format && host.canExportDiskAs(drive, *format);
+    if (!exportable) return;
+    size_t size = 0;
+    const uint8_t *bytes = host.exportDiskAs(drive, *format, &size);
+    if (bytes && size) data.assign(bytes, bytes + size);
+    host.markDiskSaved(drive);
+  });
+  d.modified = false;
+  if (!written) return !d.writeBackFailed;
+  if (!exportable || data.empty()) {
+    if (!d.writeBackFailed) {
+      reportError("What was written to " + *d.filename + " cannot be kept in a ." +
+                  extensionOf(*d.path).substr(1) + " file. Eject it to save it as a WOZ.");
     }
+    d.writeBackFailed = true;
+    return false;
   }
-  eject(drive);
+  const uint32_t now = fingerprint(data.data(), data.size());
+  if (d.baseline && *d.baseline == now && !d.writeBackFailed) return true;
+  if (!writeFile(*d.path, data.data(), data.size())) {
+    if (!d.writeBackFailed) reportError("Could not write " + *d.filename + " back to " + *d.path + ".");
+    d.writeBackFailed = true;
+    return false;
+  }
+  d.baseline = now;
+  d.writeBackFailed = false;
+  return true;
+}
+
+void DiskDrives::writeBackAll() {
+  for (int drive = 0; drive < DRIVES; drive++) writeBack(drive);
+}
+
+std::vector<std::string> DiskDrives::unsavedDisks() {
+  std::vector<std::string> names;
+  for (int drive = 0; drive < DRIVES; drive++) {
+    if (!writeBack(drive) && drives_[drive].filename) names.push_back(*drives_[drive].filename);
+  }
+  return names;
+}
+
+void DiskDrives::replace(int drive, std::function<void()> insert) {
+  if (!drives_[drive].filename || writeBack(drive)) {
+    insert();
+    return;
+  }
+  beginSave(drive, std::move(insert));
+}
+
+void DiskDrives::requestEject(int drive) {
+  if (writeBack(drive)) {
+    eject(drive);
+    return;
+  }
+  beginSave(drive);
 }
 
 void DiskDrives::eject(int drive) {
@@ -238,12 +347,17 @@ void DiskDrives::eject(int drive) {
   resetVisuals(drives_[drive]);
   drives_[drive].filename.reset();
   drives_[drive].baseline.reset();
+  drives_[drive].path.reset();
+  drives_[drive].writeBackFailed = false;
+  drives_[drive].serial++;
   store_.clearInserted(drive);
 }
 
-void DiskDrives::beginSave(int drive) {
+void DiskDrives::beginSave(int drive, std::function<void()> then) {
   PendingSave save;
   save.drive = drive;
+  save.serial = drives_[drive].serial;
+  save.then = std::move(then);
   int native = 0;
   emulation_.withMachine([&](host::MachineHost &host) {
     native = static_cast<int>(host.diskNativeFormat(drive));
@@ -255,6 +369,7 @@ void DiskDrives::beginSave(int drive) {
   // as the browser ejects it.
   if (std::none_of(save.available.begin(), save.available.end(), [](bool b) { return b; })) {
     eject(drive);
+    if (save.then) save.then();
     return;
   }
   if (native < 0 || native > 2 || !save.available[native]) {
@@ -266,14 +381,16 @@ void DiskDrives::beginSave(int drive) {
       nameForFormat(drives_[drive].filename.value_or("disk" + std::to_string(drive + 1)), native);
   std::snprintf(save.name, sizeof(save.name), "%s", suggested.c_str());
   save.open = true;
-  save_ = save;
+  save_ = std::move(save);
 }
 
 void DiskDrives::finishSave(const PendingSave &save, const std::vector<uint8_t> &data) {
   const std::vector<std::string> &extensions = saveFormats()[save.format].extensions;
   const int drive = save.drive;
+  const uint32_t serial = save.serial;
+  std::function<void()> then = save.then;
   platform_.saveFile("Save the disk in drive " + std::to_string(drive + 1), save.name, extensions,
-                     [this, drive, data](const std::string &path) {
+                     [this, drive, serial, data, then](const std::string &path) {
                        // Cancelling the panel keeps the disk in the drive,
                        // so nothing the machine wrote is lost by accident.
                        if (path.empty()) return;
@@ -281,7 +398,11 @@ void DiskDrives::finishSave(const PendingSave &save, const std::vector<uint8_t> 
                          reportError("Could not write " + path + ".");
                          return;
                        }
+                       // The panel does not stop the app: a different disk
+                       // put in while it was open is not this one to eject.
+                       if (drives_[drive].serial != serial) return;
                        eject(drive);
+                       if (then) then();
                      });
 }
 
@@ -325,6 +446,8 @@ void DiskDrives::update(double now) {
       d.active = d.hasDisk && motorOn_ && i == selectedDrive_;
       d.writing = writing;
       const DiskImage *image = disk->getDiskImage(i);
+      d.modified = image && image->isModified();
+      d.writeProtected = image && image->isWriteProtected();
       if (image) {
         d.track = image->getTrack();
         d.quarterTrack = image->getQuarterTrack();
@@ -360,6 +483,22 @@ void DiskDrives::update(double now) {
       return image ? readTrackDetail(*const_cast<DiskImage *>(image), qt) : TrackDetail{};
     }, now);
   });
+
+  // A disk the machine has written to goes back to its file once the drive
+  // has been idle for a second: not while it is turning, when the program is
+  // likely part way through a run of writes.
+  for (int i = 0; i < DRIVES; i++) {
+    Drive &d = drives_[i];
+    if (!d.path || !d.modified || d.active || d.writeBackFailed) {
+      d.idleSince = -1;
+      continue;
+    }
+    if (d.idleSince < 0) d.idleSince = now;
+    if (now - d.idleSince >= WRITE_BACK_IDLE_SECONDS) {
+      writeBack(i);
+      d.idleSince = -1;
+    }
+  }
 
   for (Drive &d : drives_) {
     // The picture's turn: the core's while it moves, coasting down after.
@@ -411,30 +550,40 @@ std::vector<std::string> DiskDrives::recentNames(int drive) const {
 void DiskDrives::insertRecent(int drive, size_t index) {
   const std::vector<RecentEntry> recent = store_.recent(drive);
   if (index >= recent.size()) return;
-  if (auto image = store_.loadRecent(drive, recent[index])) {
-    insertImage(drive, image->filename, image->data, true);
-  } else {
-    reportError("Could not read the recent disk " + recent[index].filename + ".");
-  }
+  insertRecentEntry(drive, recent[index]);
 }
 
 void DiskDrives::clearRecent(int drive) { store_.clearRecent(drive); }
+
+void DiskDrives::insertRecentEntry(int drive, const RecentEntry &entry) {
+  auto image = store_.loadRecent(drive, entry);
+  if (!image) {
+    reportError(entry.path.empty() ? "Could not read the recent disk " + entry.filename + "."
+                                   : entry.filename + " is no longer at " + entry.path + ".");
+    return;
+  }
+  replace(drive, [this, drive, image = std::move(*image)] {
+    insertImage(drive, image.filename, image.data, true, image.path);
+  });
+}
 
 void DiskDrives::drawRecentPopup(int index) {
   const std::string id = "##recent" + std::to_string(index);
   if (!ImGui::BeginPopup(id.c_str())) return;
 
+  // A blank disk first: it is one more disk to put in, and the card has room
+  // for one button fewer than it has things to do.
+  if (ImGui::Selectable("Blank Disk")) insertBlank(index);
+  if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) ImGui::SetTooltip("An unformatted disk, for INIT or a copy program");
+  ImGui::Separator();
   const std::vector<RecentEntry> recent = store_.recent(index);
   if (recent.empty()) {
     ImGui::TextDisabled("No recent disks");
   } else {
     for (const RecentEntry &entry : recent) {
-      if (ImGui::Selectable(entry.filename.c_str())) {
-        if (auto image = store_.loadRecent(index, entry)) {
-          insertImage(index, image->filename, image->data, true);
-        } else {
-          reportError("Could not read the recent disk " + entry.filename + ".");
-        }
+      if (ImGui::Selectable(entry.filename.c_str())) insertRecentEntry(index, entry);
+      if (!entry.path.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+        ImGui::SetTooltip("%s", entry.path.c_str());
       }
     }
     ImGui::Separator();
@@ -446,7 +595,10 @@ void DiskDrives::drawRecentPopup(int index) {
     for (const LibraryEntry &entry : library_) {
       if (ImGui::Selectable(entry.name.c_str())) {
         if (auto data = readFile(libraryDirectory_ + "/" + entry.file)) {
-          insertImage(index, entry.file, *data, true);
+          // No path: the app's own copy is not the user's to write to.
+          replace(index, [this, index, file = entry.file, data = std::move(*data)] {
+            insertImage(index, file, data, true);
+          });
         } else {
           reportError("Could not read " + entry.name + " from the app.");
         }
@@ -502,6 +654,7 @@ void DiskDrives::drawDeck(int index) {
     if (d.summary.tracks > 0) {
       chipX += chip(draw, ImVec2(chipX, chipY), d.summary.format.c_str(), IM_COL32(0, 157, 220, 255)) + 5;
     }
+    if (d.writeProtected) chipX += chip(draw, ImVec2(chipX, chipY), "Locked", IM_COL32(245, 130, 31, 255)) + 5;
     if (d.summary.fluxTracks > 0) chipX += chip(draw, ImVec2(chipX, chipY), "Flux", IM_COL32(150, 61, 151, 255)) + 5;
     if (d.summary.nonStandardTracks > 0 && d.summary.sectors > 0) {
       const std::string unknown = std::to_string(d.summary.nonStandardTracks) + " unknown";
@@ -533,11 +686,20 @@ void DiskDrives::drawDeck(int index) {
   if (ui::Button("Recent")) ImGui::OpenPopup(recentId.c_str());
   drawRecentPopup(index);
   ImGui::SameLine(0, 5);
-  if (ui::Button("Blank")) insertBlank(index);
-  if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) ImGui::SetTooltip("Insert a blank disk");
-  ImGui::SameLine(0, 5);
   ImGui::BeginDisabled(!d.filename);
   if (ui::Button("Eject")) requestEject(index);
+  ImGui::SameLine(0, 5);
+  // The write-protect notch: covered, the drive will not write to the disk,
+  // so nothing goes back to its file either.
+  if (ui::Button(d.writeProtected ? "Unlock" : "Lock")) {
+    const bool on = !d.writeProtected;
+    emulation_.withMachine([&](host::MachineHost &host) { host.setDiskWriteProtected(index, on); });
+    d.writeProtected = on;
+  }
+  if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+    ImGui::SetTooltip(d.writeProtected ? "Let the machine write to this disk"
+                                       : "Write-protect this disk: the machine cannot change it");
+  }
   ImGui::EndDisabled();
 
   // With the inspector shown, a click anywhere else on the card inspects
@@ -605,7 +767,9 @@ void DiskDrives::drawSavePopup() {
   dialogs_.placeNext();
   if (!ImGui::BeginPopupModal(SAVE_POPUP, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
 
-  ImGui::Text("The disk in drive %d has changed. Save it as:", save_.drive + 1);
+  ImGui::Text(save_.then ? "The disk in drive %d has changes that are not saved. Save it before it is replaced?"
+                         : "The disk in drive %d has changed. Save it as:",
+              save_.drive + 1);
   ImGui::Spacing();
   for (int format = 0; format < 3; format++) {
     const SaveFormat &spec = saveFormats()[format];
@@ -640,11 +804,14 @@ void DiskDrives::drawSavePopup() {
   }
   ImGui::SameLine();
   if (ui::Button("Don't Save", ImVec2(110, 0))) {
-    eject(save_.drive);
+    if (drives_[save_.drive].serial == save_.serial) eject(save_.drive);
+    if (save_.then) save_.then();
+    save_.then = nullptr;
     ImGui::CloseCurrentPopup();
   }
   ImGui::SameLine();
   if (ui::Button("Cancel", ImVec2(110, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+    save_.then = nullptr;
     ImGui::CloseCurrentPopup();
   }
   ImGui::EndPopup();
@@ -672,6 +839,7 @@ void DiskDrives::draw(bool *open) {
     // Named for the 3.5" drives beside it, with the id it always had, so a
     // saved layout still finds it.
     ui::BeforeWindow(WINDOW_NAME);
+    ui::KeepOnMonitor(WINDOW_NAME);
     if (ui::BeginWindow(WINDOW_NAME, open, ImGuiWindowFlags_AlwaysAutoResize)) {
       dialogs_.note();
       const ImVec2 top = ImGui::GetCursorScreenPos();

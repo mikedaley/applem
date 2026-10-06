@@ -91,6 +91,10 @@ NSString *const MACHINE = @"machine";
 }
 
 - (BOOL)validateToolbarItem:(NSToolbarItem *)item {
+  // As the Machine menu has them: there is nothing to reset while it is off.
+  if ([item.itemIdentifier isEqualToString:@"reset"] || [item.itemIdentifier isEqualToString:@"reboot"]) {
+    return _powered;
+  }
   if ([item.itemIdentifier isEqualToString:@"harddrives"]) return _hardDrives;
   if ([item.itemIdentifier isEqualToString:@"slots"]) return _expansionSlots;
   return YES;

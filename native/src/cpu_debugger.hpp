@@ -19,6 +19,7 @@
 #include "imgui.h"
 
 #include <array>
+#include <map>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -112,6 +113,7 @@ private:
   struct Snapshot {
     bool valid = false;
     bool paused = false;
+    uint64_t resumes = 0;
     host::CpuState cpu;
     // The listing, with a few lines beyond each edge; lines[topIndex] is
     // the one at the top of the window.
@@ -194,7 +196,7 @@ private:
   std::vector<SoftSwitchInfo> switches_;
   // The row whose condition is being typed, which is not refreshed from the
   // list under the user's fingers.
-  int editingCondition_ = -1;
+  uint32_t editingCondition_ = 0; // a breakpoint's id
   std::vector<Watch> watches_;
 
   // The listing: following the PC, or held at an address the user chose.
@@ -235,9 +237,16 @@ private:
   // that differ from the stop before are lit, and the clock counts from it.
   std::string reason_ = "Running";
   uint32_t stopCount_ = 0;
-  bool stopHandled_ = false;
-  int hitIndex_ = -1;
-  int beamHitIndex_ = -1;
+  // The machine's resume count (MachineDebug::resumeCount) at the stop last
+  // judged. A stop seen with any other count is a new one, however soon after
+  // a resume it came; waiting to see the machine running in between missed a
+  // breakpoint a few instructions after Continue, which was then never judged.
+  uint64_t judgedResumes_ = NOT_JUDGED;
+  static constexpr uint64_t NOT_JUDGED = ~0ull;
+  // The breakpoints behind the stop, by id, so deleting another one from the
+  // console or the Soft Switches window cannot move the mark to a neighbour.
+  uint32_t hitId_ = 0;
+  uint32_t beamHitId_ = 0;
   uint64_t stoppedAtCycle_ = 0;
   host::CpuState previousStop_;
   host::CpuState lastStop_;
@@ -269,9 +278,10 @@ private:
   uint32_t editAddress_ = 0;
   char editText_[128] = "";
   bool openEdit_ = false;
-  std::vector<std::array<char, 512>> conditionText_;
-  // The rule builder, and the breakpoint whose condition it is building.
-  int ruleTarget_ = -1;
+  std::map<uint32_t, std::array<char, 512>> conditionText_; // by breakpoint id
+  // The rule builder, and the breakpoint (by id) whose condition it is
+  // building; 0 for none.
+  uint32_t ruleTarget_ = 0;
   RuleBuilder rules_;
   std::string importMessage_;
 };

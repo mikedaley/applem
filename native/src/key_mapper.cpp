@@ -118,4 +118,44 @@ std::optional<CoreKeyEvent> coreKeyEvent(HostKey key, const HeldModifiers &held,
   return event;
 }
 
+bool followsLayout(ImGuiKey key) {
+  if (key >= ImGuiKey_A && key <= ImGuiKey_Z) return true;
+  switch (key) {
+  case ImGuiKey_Apostrophe:
+  case ImGuiKey_Comma:
+  case ImGuiKey_Minus:
+  case ImGuiKey_Period:
+  case ImGuiKey_Slash:
+  case ImGuiKey_Semicolon:
+  case ImGuiKey_Equal:
+  case ImGuiKey_LeftBracket:
+  case ImGuiKey_Backslash:
+  case ImGuiKey_RightBracket:
+  case ImGuiKey_GraveAccent:
+    return true;
+  default:
+    return false;
+  }
+}
+
+std::optional<int> browserKeyForCharacter(char32_t c) {
+  if (c >= 'a' && c <= 'z') return static_cast<int>(c - 'a' + 'A');
+  if (c >= 'A' && c <= 'Z') return static_cast<int>(c);
+  if (c >= '0' && c <= '9') return static_cast<int>(c);
+  switch (c) {
+  case ';': return 186;
+  case '=': return 187;
+  case ',': return 188;
+  case '-': return 189;
+  case '.': return 190;
+  case '/': return 191;
+  case '`': return 192;
+  case '[': return 219;
+  case '\\': return 220;
+  case ']': return 221;
+  case '\'': return 222;
+  default: return std::nullopt;
+  }
+}
+
 } // namespace a2e::native

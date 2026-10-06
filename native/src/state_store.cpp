@@ -113,4 +113,16 @@ void StateStore::clear(const std::string &id) {
   for (const char *extension : {".a2state", ".meta", ".thumb"}) fs::remove(path(id, extension), error);
 }
 
+bool StateStore::copy(const std::string &from, const std::string &to) {
+  std::error_code error;
+  if (!fs::exists(path(from, ".a2state"), error)) return false;
+  clear(to);
+  for (const char *extension : {".a2state", ".meta", ".thumb"}) {
+    if (fs::exists(path(from, extension), error)) {
+      fs::copy_file(path(from, extension), path(to, extension), fs::copy_options::overwrite_existing, error);
+    }
+  }
+  return !error;
+}
+
 } // namespace a2e::native

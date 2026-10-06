@@ -317,14 +317,14 @@ void EnsoniqWindow::update() {
   emulation_.poll(updatePoll_, [&](host::MachineHost &host) {
     iigs::IIgsMachine *gs = host.iigs();
     present_ = gs != nullptr;
-    if (!gs) {
-      chip_ = nullptr;
-      return;
-    }
+    if (!gs) return;
+    // Asked of the chip rather than remembered by its address, which a
+    // machine rebuilt with a different amount of memory often reuses.
     IIgsSound &sound = gs->memory().sound();
-    if (&sound == chip_) return;
-    chip_ = &sound;
-    for (int i = 0; i < DOC_OSCILLATORS; i++) sound.setOscillatorMuted(i, mutes & (1u << i));
+    for (int i = 0; i < DOC_OSCILLATORS; i++) {
+      const bool muted = mutes & (1u << i);
+      if (sound.oscillatorMuted(i) != muted) sound.setOscillatorMuted(i, muted);
+    }
   });
 }
 

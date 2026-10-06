@@ -63,6 +63,10 @@ public:
     std::function<void()> pasted;
   };
 
+  // How a control character arriving from outside (a file, the clipboard)
+  // is written into the text. With none set it is dropped.
+  void setControlText(std::function<std::string(unsigned char)> controlText) { controlText_ = std::move(controlText); }
+
   void setText(const std::string &text);
   std::string text() const;
   const std::vector<std::string> &lines() const { return lines_; }
@@ -128,6 +132,7 @@ private:
   EditKind lastEdit_ = EditKind::None;
   double lastEditAt_ = -10.0;
   uint64_t revision_ = 0;
+  std::function<std::string(unsigned char)> controlText_;
 
   bool focused_ = false;
   bool wantFocus_ = false;

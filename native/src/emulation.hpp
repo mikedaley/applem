@@ -132,6 +132,10 @@ public:
   // The processor's clock as rated for what the machine is doing, in MHz
   // (MachineHost::clockHz), as of the last refill.
   double clockMHz() const { return clockMHz_.load(); }
+  // Refills finished: each one is a frame of the machine running. A host that
+  // must let the machine run between two things it sends (two keys, which a
+  // //e's one latch cannot hold at once) waits for this to move.
+  uint64_t refills() const { return refills_.load(std::memory_order_acquire); }
 
 private:
   void run();
@@ -166,6 +170,7 @@ private:
   bool muted_ = false;
 
   std::atomic<double> clockMHz_{0.0};
+  std::atomic<uint64_t> refills_{0};
 };
 
 } // namespace a2e::native

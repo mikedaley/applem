@@ -107,7 +107,7 @@ const std::vector<MonitorPreset> &monitorPresets() {
   static const std::vector<MonitorPreset> presets = {
       {"flat", "Pixel Exact", "No CRT simulation: sharp square pixels.",
        flatPicture(COLOR_PIXEL_EXACT)},
-      {"solid", "Solid Colour",
+      {"solid", "Solid Color",
        "Every cell its own colour, no fringing: the picture as drawn, not as a monitor would show it.",
        flatPicture(COLOR_SOLID)},
       {"composite", "Composite Color",

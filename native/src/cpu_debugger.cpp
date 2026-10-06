@@ -303,9 +303,9 @@ void CpuDebugger::setMachine(const MachineProfile &profile) {
   centreOn_.reset();
   selected_.reset();
   havePrevious_ = false;
-  stopHandled_ = false;
-  hitIndex_ = -1;
-  beamHitIndex_ = -1;
+  judgedResumes_ = NOT_JUDGED;
+  hitId_ = 0;
+  beamHitId_ = 0;
   reason_ = "Running";
   // A rebuilt machine's debugger holds none of them; the App applies the
   // list again before the next frame.
@@ -333,6 +333,7 @@ void CpuDebugger::take() {
     if (!host.isBuilt()) return;
     s.valid = true;
     s.paused = host.isPaused();
+    if (MachineDebug *debug = host.debug()) s.resumes = debug->resumeCount();
     s.cpu = host.cpuState();
 
     // Where the listing starts. Following the PC, it is left alone while the
@@ -487,7 +488,11 @@ void CpuDebugger::take() {
 void CpuDebugger::stopped(const std::string &reason) {
   reason_ = reason;
   stopCount_++;
-  stopHandled_ = true;
+  // This stop is judged: whatever the snapshot says next, it is not new until
+  // the machine has been set running again.
+  emulation_.withMachine([&](host::MachineHost &host) {
+    if (MachineDebug *debug = host.debug()) judgedResumes_ = debug->resumeCount();
+  });
   stoppedAt_ = ImGui::GetTime();
 }
 
@@ -495,22 +500,43 @@ void CpuDebugger::stopped(const std::string &reason) {
 // condition is false sends it straight back to running.
 void CpuDebugger::handleStop() {
   bool resume = false;
+  bool running = false;
+  bool otherStop = false;
   std::string reason;
   int hit = -1;
   int beamHit = -1;
   emulation_.withMachine([&](host::MachineHost &host) {
     MachineDebug *debug = host.debug();
-    if (!debug || !host.isPaused()) return;
+    if (!debug || !host.isPaused()) {
+      // Set running again since the snapshot: nothing to judge yet.
+      running = true;
+      return;
+    }
     char line[160];
+    // A condition that cannot be evaluated does not send the machine back
+    // to running: it stops, and says why, which is the only way the user
+    // learns the condition is wrong.
+    std::string conditionProblem;
     auto conditionFails = [&](int index) {
       if (index < 0) return false;
       const std::string &condition = breakpoints_.all()[static_cast<size_t>(index)].condition;
-      return !condition.empty() && !host.evaluateCondition(condition);
+      if (condition.empty()) return false;
+      const bool holds = host.evaluateCondition(condition);
+      conditionProblem = host.conditionError();
+      if (!conditionProblem.empty()) return false;
+      return !holds;
+    };
+    auto withProblem = [&](std::string text) {
+      if (!conditionProblem.empty()) text += " (condition: " + conditionProblem + ")";
+      return text;
     };
     if (debug->isTempBreakpointHit()) {
       std::snprintf(line, sizeof line, "Reached %s", formatAddress(debug->breakpointAddress()).c_str());
       reason = line;
-    } else if (debug->isBreakpointHit()) {
+      return;
+    }
+    otherStop = true;
+    if (debug->isBreakpointHit()) {
       const uint32_t at = debug->breakpointAddress();
       hit = breakpoints_.execFor(at);
       if (conditionFails(hit)) {
@@ -524,7 +550,7 @@ void CpuDebugger::handleStop() {
       } else {
         std::snprintf(line, sizeof line, "Breakpoint at %s", formatAddress(at).c_str());
       }
-      reason = line;
+      reason = withProblem(line);
     } else if (debug->isWatchpointHit()) {
       const uint32_t at = debug->watchpointAddress();
       const bool write = debug->isWatchpointWrite();
@@ -535,7 +561,7 @@ void CpuDebugger::handleStop() {
       }
       std::snprintf(line, sizeof line, write ? "Write %s \xE2\x86\x90 $%02X" : "Read %s \xE2\x86\x92 $%02X",
                     formatAddress(at).c_str(), debug->watchpointValue());
-      reason = line;
+      reason = withProblem(line);
     } else if (debug->isStackBreakpointHit()) {
       hit = breakpoints_.stackFor(debug->stackBreakpointHitLow());
       if (conditionFails(hit)) {
@@ -543,7 +569,7 @@ void CpuDebugger::handleStop() {
         return;
       }
       std::snprintf(line, sizeof line, "Stack pointer reached $%X", host.cpuState().sp);
-      reason = line;
+      reason = withProblem(line);
     } else if (debug->isBeamBreakpointHit()) {
       beamHit = breakpoints_.beamFor(debug->beamBreakpointHitId());
       if (conditionFails(beamHit)) {
@@ -552,7 +578,7 @@ void CpuDebugger::handleStop() {
       }
       std::snprintf(line, sizeof line, "Beam at line %d, position %d", debug->beamBreakScanline(),
                     debug->beamBreakHPos());
-      reason = line;
+      reason = withProblem(line);
     } else if (debug->isSwitchBreakpointHit()) {
       // Said the way the Soft Switches window says it.
       hit = breakpoints_.switchFor(debug->switchBreakpointHitId());
@@ -560,17 +586,26 @@ void CpuDebugger::handleStop() {
         resume = true;
         return;
       }
-      reason = host.switchHitText();
+      reason = withProblem(host.switchHitText());
     } else {
       reason = "Paused";
     }
   });
+  if (running) return;
   if (resume) {
     emulation_.withMachine([](host::MachineHost &host) { host.setPaused(false); });
     return;
   }
-  hitIndex_ = hit;
-  beamHitIndex_ = beamHit;
+  // Any stop but the temporary breakpoint's own ends a step over, a step out
+  // or a run to here: left armed, it would stop some later run at an address
+  // the user has long forgotten.
+  if (otherStop) {
+    emulation_.withMachine([](host::MachineHost &host) {
+      if (MachineDebug *debug = host.debug()) debug->clearTempBreakpoint();
+    });
+  }
+  hitId_ = hit >= 0 ? breakpoints_.all()[static_cast<size_t>(hit)].id : 0;
+  beamHitId_ = beamHit >= 0 ? breakpoints_.all()[static_cast<size_t>(beamHit)].id : 0;
   if (hit >= 0) breakpoints_.all()[static_cast<size_t>(hit)].hits++;
   if (beamHit >= 0) breakpoints_.all()[static_cast<size_t>(beamHit)].hits++;
   stopped(reason);
@@ -582,15 +617,15 @@ void CpuDebugger::update() {
   if (!snapshot_.valid) return;
 
   if (!snapshot_.paused) {
-    stopHandled_ = false;
-    hitIndex_ = -1;
-    beamHitIndex_ = -1;
+    hitId_ = 0;
+    beamHitId_ = 0;
     reason_ = "Running";
     return;
   }
-  if (!stopHandled_) {
+  if (snapshot_.resumes != judgedResumes_) {
+    const uint64_t before = judgedResumes_;
     handleStop();
-    if (!stopHandled_) return; // sent back to running
+    if (judgedResumes_ == before) return; // sent back to running
   }
   // A new stop, by cycle count: the registers are compared with the last
   // one, and the watches with their values then.
@@ -737,7 +772,7 @@ void CpuDebugger::drawToolbar() {
   const Palette p = palette();
   const ImVec2 at = ImGui::GetCursorScreenPos();
   const float height = ImGui::GetFrameHeight() + 6;
-  const bool breakpoint = hitIndex_ >= 0 || beamHitIndex_ >= 0;
+  const bool breakpoint = hitId_ || beamHitId_;
   const ImU32 colour = !paused ? p.green : breakpoint ? p.red : p.yellow;
   const float age = static_cast<float>(ImGui::GetTime() - stoppedAt_);
   const float flash = paused ? std::max(0.0f, 1.0f - age / 0.6f) : 0.0f;
@@ -1985,7 +2020,7 @@ void CpuDebugger::drawEditPopup() {
 
 void CpuDebugger::openRuleBuilder(size_t index) {
   if (index >= breakpoints_.all().size()) return;
-  ruleTarget_ = static_cast<int>(index);
+  ruleTarget_ = breakpoints_.all()[index].id;
   const Breakpoint &b = breakpoints_.all()[index];
   std::string what = formatAddress(b.start) + (b.isRange() ? "-" + formatAddress(b.end) : "");
   if (b.kind == Breakpoint::Kind::Stack) {
@@ -2003,13 +2038,15 @@ void CpuDebugger::openRuleBuilder(size_t index) {
 void CpuDebugger::drawRuleBuilder() {
   const auto resolve = [this](const std::string &t) { return symbols_.resolve(t, addressMask()); };
   const std::optional<std::string> applied = rules_.draw(resolve, wide_);
-  if (!applied || ruleTarget_ < 0 || ruleTarget_ >= static_cast<int>(breakpoints_.all().size())) return;
-  const size_t i = static_cast<size_t>(ruleTarget_);
-  breakpoints_.all()[i].condition = *applied;
-  conditionText_.resize(breakpoints_.all().size());
-  std::snprintf(conditionText_[i].data(), conditionText_[i].size(), "%s", applied->c_str());
-  ImGui::MarkIniSettingsDirty();
-  ruleTarget_ = -1;
+  if (!applied) return;
+  // By id: a breakpoint deleted elsewhere while the builder was open takes
+  // the condition with it rather than handing it to the one after.
+  if (Breakpoint *b = breakpoints_.find(ruleTarget_)) {
+    b->condition = *applied;
+    std::snprintf(conditionText_[b->id].data(), conditionText_[b->id].size(), "%s", applied->c_str());
+    ImGui::MarkIniSettingsDirty();
+  }
+  ruleTarget_ = 0;
 }
 
 void CpuDebugger::drawBreakpoints() {
@@ -2022,7 +2059,9 @@ void CpuDebugger::drawBreakpoints() {
   // window does not push the button off the panel.
   ImGui::SetNextItemWidth(std::clamp(ImGui::GetContentRegionAvail().x - 78.0f, 100.0f, 320.0f));
   if (newAddressBad_) ImGui::PushStyleColor(ImGuiCol_FrameBg, withAlpha(p.red, 0.18f));
-  const char *hint = newKind_ == 4 ? "$F0-$FF" : "$2000, $2000-$20FF or COUT";
+  // A 65816's stack pointer is sixteen bits, and in emulation mode it lives
+  // in page one, so the hint says so.
+  const char *hint = newKind_ == 4 ? (wide_ ? "$01E0-$01FF" : "$F0-$FF") : "$2000, $2000-$20FF or COUT";
   bool add = ImGui::InputTextWithHint("##address", hint, newAddress_, sizeof newAddress_, ImGuiInputTextFlags_EnterReturnsTrue);
   if (newAddressBad_) ImGui::PopStyleColor();
   if (ImGui::IsItemEdited()) newAddressBad_ = false;
@@ -2051,7 +2090,6 @@ void CpuDebugger::drawBreakpoints() {
     ImGui::TextDisabled("No breakpoints. Click in the gutter beside a line, or add one here.");
     return;
   }
-  conditionText_.resize(breakpoints_.all().size());
   int removeAt = -1;
   bool changed = false;
   ImGui::BeginChild("##bplist", ImVec2(0, 0), ImGuiChildFlags_None);
@@ -2060,14 +2098,15 @@ void CpuDebugger::drawBreakpoints() {
     if (b.kind == Breakpoint::Kind::Beam) continue;
     // The list is shared, so it may have changed under this window: the
     // condition is read back from it, except while it is being typed.
-    if (static_cast<int>(i) != editingCondition_) {
-      std::snprintf(conditionText_[i].data(), conditionText_[i].size(), "%s", b.condition.c_str());
+    std::array<char, 512> &conditionText = conditionText_[b.id];
+    if (b.id != editingCondition_) {
+      std::snprintf(conditionText.data(), conditionText.size(), "%s", b.condition.c_str());
     }
-    ImGui::PushID(static_cast<int>(i));
+    ImGui::PushID(static_cast<int>(b.id));
     const ImVec2 rowA = ImGui::GetCursorScreenPos();
     const float rowHeight = ImGui::GetFrameHeight() + 4;
     const float width = ImGui::GetContentRegionAvail().x;
-    const bool isHit = static_cast<int>(i) == hitIndex_ && snapshot_.paused;
+    const bool isHit = b.id == hitId_ && snapshot_.paused;
     if (isHit) draw->AddRectFilled(rowA, ImVec2(rowA.x + width, rowA.y + rowHeight), withAlpha(p.red, 0.14f), 6.0f);
     else if (i % 2) draw->AddRectFilled(rowA, ImVec2(rowA.x + width, rowA.y + rowHeight), text(0.025f), 6.0f);
     ImGui::SetCursorScreenPos(ImVec2(rowA.x + 6, rowA.y + 2));
@@ -2099,13 +2138,20 @@ void CpuDebugger::drawBreakpoints() {
     const float right = rowA.x + width;
     ImGui::SameLine(rowA.x - ImGui::GetWindowPos().x + width * 0.5f);
     ImGui::SetNextItemWidth(right - ImGui::GetCursorScreenPos().x - 180);
-    if (ImGui::InputTextWithHint("##cond", "condition, e.g. A == $41", conditionText_[i].data(), conditionText_[i].size())) {
-      b.condition = conditionText_[i].data();
+    // A condition the evaluator cannot read is marked as it is typed, and
+    // says why on hover, rather than quietly never stopping the machine.
+    const std::string conditionProblem = b.condition.empty() ? "" : ConditionEvaluator::check(b.condition.c_str());
+    if (!conditionProblem.empty()) ImGui::PushStyleColor(ImGuiCol_FrameBg, withAlpha(p.red, 0.18f));
+    if (ImGui::InputTextWithHint("##cond", "condition, e.g. A == $41", conditionText.data(), conditionText.size())) {
+      b.condition = conditionText.data();
       ImGui::MarkIniSettingsDirty();
     }
-    if (ImGui::IsItemActive()) editingCondition_ = static_cast<int>(i);
-    else if (editingCondition_ == static_cast<int>(i)) editingCondition_ = -1;
-    if (ImGui::IsItemHovered()) {
+    if (!conditionProblem.empty()) ImGui::PopStyleColor();
+    if (ImGui::IsItemActive()) editingCondition_ = b.id;
+    else if (editingCondition_ == b.id) editingCondition_ = 0;
+    if (ImGui::IsItemHovered() && !conditionProblem.empty()) {
+      ImGui::SetTooltip("%s", conditionProblem.c_str());
+    } else if (ImGui::IsItemHovered()) {
       // A condition the builder can read is said in words; any other is
       // explained.
       const auto tree = b.condition.empty() ? std::nullopt : fromExpression(b.condition);
@@ -2135,11 +2181,9 @@ void CpuDebugger::drawBreakpoints() {
   }
   ImGui::EndChild();
   if (removeAt >= 0) {
+    conditionText_.erase(breakpoints_.all()[static_cast<size_t>(removeAt)].id);
     breakpoints_.remove(static_cast<size_t>(removeAt));
-    conditionText_.erase(conditionText_.begin() + removeAt);
-    hitIndex_ = -1;
-    beamHitIndex_ = -1;
-    editingCondition_ = -1;
+    editingCondition_ = 0;
     changed = true;
   }
   if (changed) {
@@ -2249,7 +2293,7 @@ void CpuDebugger::drawBeams() {
     const ImVec2 rowA = ImGui::GetCursorScreenPos();
     const float width = ImGui::GetContentRegionAvail().x;
     const float rowHeight = ImGui::GetFrameHeight() + 4;
-    if (static_cast<int>(i) == beamHitIndex_ && snapshot_.paused) {
+    if (beam.id == beamHitId_ && snapshot_.paused) {
       draw->AddRectFilled(rowA, ImVec2(rowA.x + width, rowA.y + rowHeight), withAlpha(p.red, 0.14f), 6.0f);
     }
     ImGui::SetCursorScreenPos(ImVec2(rowA.x + 6, rowA.y + 2));
@@ -2279,8 +2323,6 @@ void CpuDebugger::drawBeams() {
   ImGui::EndChild();
   if (removeAt >= 0) {
     breakpoints_.remove(static_cast<size_t>(removeAt));
-    beamHitIndex_ = -1;
-    hitIndex_ = -1;
     changed = true;
   }
   if (changed) ImGui::MarkIniSettingsDirty();
@@ -2366,7 +2408,8 @@ void CpuDebugger::drawPanel(float height) {
   const int counts[] = {static_cast<int>(breakpoints_.all().size()) - beams, static_cast<int>(watches_.size()),
                         beams, -1};
   const char *names[] = {"Breakpoints", "Watch", "Beam", "Trace"};
-  const bool flashes[] = {hitIndex_ >= 0 && snapshot_.paused, false, beamHitIndex_ >= 0 && snapshot_.paused, false};
+  const bool flashes[] = {hitId_ && breakpoints_.indexOf(hitId_) >= 0 && snapshot_.paused, false,
+                          beamHitId_ && breakpoints_.indexOf(beamHitId_) >= 0 && snapshot_.paused, false};
   for (int i = 0; i < 4; i++) {
     if (panelTab(names[i], counts[i], tab_ == i && !panelFolded_, flashes[i] && tab_ != i)) {
       if (panelFolded_) panelFolded_ = false;

@@ -85,9 +85,11 @@ void Disk35Drives::releaseThumbnail(Drive &drive) {
 // which releases it before drawing anything.
 void Disk35Drives::clearDrive(Drive &drive) {
   const ImTextureID texture = drive.thumbnail;
+  const uint32_t serial = drive.serial;
   drive = Drive{};
   drive.thumbnail = texture;
   drive.paintStale = true;
+  drive.serial = serial + 1;
 }
 
 void Disk35Drives::paintThumbnail(Drive &drive) {
@@ -111,7 +113,7 @@ void Disk35Drives::reportError(const std::string &message) {
 }
 
 void Disk35Drives::insertImage(int drive, const std::string &filename, const std::vector<uint8_t> &data,
-                               bool remember) {
+                               bool remember, const std::string &path) {
   bool iigs = false;
   const bool ok = emulation_.withMachine([&](host::MachineHost &host) {
     iigs = host.has35Drives();
@@ -128,12 +130,13 @@ void Disk35Drives::insertImage(int drive, const std::string &filename, const std
   Drive &d = drives_[drive];
   clearDrive(d);
   d.filename = filename;
+  if (!path.empty()) d.path = path;
   d.size = data.size();
   const auto [blocks, size] = blocksOf(data);
   if (blocks) d.volume = summariseVolume(blocks, size, 1);
   if (remember) {
-    store_.saveInserted(drive, filename, data);
-    store_.addRecent(drive, filename, data);
+    store_.saveInserted(drive, filename, data, path);
+    store_.addRecent(drive, filename, data, path);
   }
 }
 
@@ -151,7 +154,19 @@ void Disk35Drives::insertFile(int drive, const std::string &path) {
     reportError("Could not read " + path + ".");
     return;
   }
-  insertImage(drive, baseName(path), *data, true);
+  replace(drive, [this, drive, path, data = std::move(*data)] { insertImage(drive, baseName(path), data, true, path); });
+}
+
+void Disk35Drives::insertRecentEntry(int drive, const RecentEntry &entry) {
+  auto image = store_.loadRecent(drive, entry);
+  if (!image) {
+    reportError(entry.path.empty() ? "Could not read the recent disk " + entry.filename + "."
+                                   : entry.filename + " is no longer at " + entry.path + ".");
+    return;
+  }
+  replace(drive, [this, drive, image = std::move(*image)] {
+    insertImage(drive, image.filename, image.data, true, image.path);
+  });
 }
 
 void Disk35Drives::restore() {
@@ -160,7 +175,15 @@ void Disk35Drives::restore() {
   for (int drive = 0; drive < DRIVES; drive++) {
     const bool inserted = emulation_.withMachine([&](host::MachineHost &host) { return host.is35DiskInserted(drive); });
     if (inserted) continue;
-    if (auto image = store_.loadInserted(drive)) insertImage(drive, image->filename, image->data, false);
+    auto image = store_.loadInserted(drive);
+    if (!image) continue;
+    if (image->missing) {
+      reportError(image->filename + " is no longer at " + image->path + ", so 3.5\" drive " +
+                  std::to_string(drive + 1) + " is empty.");
+      store_.clearInserted(drive);
+      continue;
+    }
+    insertImage(drive, image->filename, image->data, false, image->path);
   }
 }
 
@@ -205,17 +228,66 @@ int Disk35Drives::dropTarget() const {
   return 0;
 }
 
+// Exported and marked saved under one hold of the machine, so a write made in
+// between is never counted as kept; the file is written after, outside it.
+bool Disk35Drives::writeBack(int drive) {
+  Drive &d = drives_[drive];
+  if (!d.filename) return true;
+  bool written = false;
+  std::vector<uint8_t> data;
+  emulation_.withMachine([&](host::MachineHost &host) {
+    written = host.is35DiskModified(drive);
+    if (!written || !d.path) return;
+    size_t size = 0;
+    const uint8_t *bytes = host.export35Disk(drive, &size);
+    if (bytes && size) data.assign(bytes, bytes + size);
+    host.mark35DiskSaved(drive);
+  });
+  d.modified = written && !d.path;
+  if (!written) return !d.writeBackFailed;
+  if (!d.path) return false;
+  if (data.empty() || !writeFile(*d.path, data.data(), data.size())) {
+    if (!d.writeBackFailed) reportError("Could not write " + *d.filename + " back to " + *d.path + ".");
+    d.writeBackFailed = true;
+    return false;
+  }
+  d.writeBackFailed = false;
+  return true;
+}
+
+void Disk35Drives::writeBackAll() {
+  for (int drive = 0; drive < DRIVES; drive++) writeBack(drive);
+}
+
+std::vector<std::string> Disk35Drives::unsavedDisks() {
+  std::vector<std::string> names;
+  for (int drive = 0; drive < DRIVES; drive++) {
+    if (!writeBack(drive) && drives_[drive].filename) names.push_back(*drives_[drive].filename);
+  }
+  return names;
+}
+
+void Disk35Drives::replace(int drive, std::function<void()> insert) {
+  if (!drives_[drive].filename || writeBack(drive)) {
+    insert();
+    return;
+  }
+  askEject_ = drive;
+  askThen_ = std::move(insert);
+  openAskEject_ = true;
+}
+
 void Disk35Drives::requestEject(int drive) {
-  const bool changed = emulation_.withMachine([&](host::MachineHost &host) { return host.is35DiskModified(drive); });
-  if (!changed) {
+  if (writeBack(drive)) {
     eject(drive);
     return;
   }
   askEject_ = drive;
+  askThen_ = nullptr;
   openAskEject_ = true;
 }
 
-void Disk35Drives::saveThenEject(int drive) {
+void Disk35Drives::saveThenEject(int drive, std::function<void()> then) {
   std::vector<uint8_t> data;
   emulation_.withMachine([&](host::MachineHost &host) {
     size_t size = 0;
@@ -228,13 +300,16 @@ void Disk35Drives::saveThenEject(int drive) {
   }
   const std::string name = drives_[drive].filename.value_or("disk" + std::to_string(drive + 1) + ".po");
   platform_.saveFile("Save the disk in 3.5\" drive " + std::to_string(drive + 1), name, EXTENSIONS,
-                     [this, drive, data](const std::string &path) {
+                     [this, drive, data, serial = drives_[drive].serial, then](const std::string &path) {
                        if (path.empty()) return; // kept in, as the other drives do
                        if (!writeFile(path, data.data(), data.size())) {
                          reportError("Could not write " + path + ".");
                          return;
                        }
+                       // A disk put in while the panel was open is not this one.
+                       if (drives_[drive].serial != serial) return;
                        eject(drive);
+                       if (then) then();
                      });
 }
 
@@ -254,7 +329,14 @@ void Disk35Drives::takeEjected(int drive) {
     host.clear35Ejected(drive);
   });
   const std::string name = drives_[drive].filename.value_or("disk" + std::to_string(drive + 1) + ".po");
-  if (!data.empty()) store_.addRecent(drive, name, data);
+  const std::optional<std::string> path = drives_[drive].path;
+  // Back to its file when it has one, and in Recent either way.
+  if (!data.empty() && path && !writeFile(*path, data.data(), data.size())) {
+    reportError("Could not write " + name + " back to " + *path + ".");
+    store_.addRecent(drive, name, data);
+  } else if (!data.empty()) {
+    store_.addRecent(drive, name, data, path.value_or(""));
+  }
   clearDrive(drives_[drive]);
   store_.clearInserted(drive);
   notice(name + " was ejected from drive " + std::to_string(drive + 1) + ". It is in Recent.");
@@ -305,6 +387,20 @@ void Disk35Drives::update() {
   for (int i = 0; i < DRIVES; i++) {
     if (ejected[i]) takeEjected(i);
   }
+  // A written disk goes back to its file once its spindle has been stopped
+  // for a second.
+  for (int i = 0; i < DRIVES; i++) {
+    Drive &d = drives_[i];
+    if (!d.path || !d.modified || d.spinning || d.writeBackFailed) {
+      d.idleSince = -1;
+      continue;
+    }
+    if (d.idleSince < 0) d.idleSince = now;
+    if (now - d.idleSince >= 1.0) {
+      writeBack(i);
+      d.idleSince = -1;
+    }
+  }
   // The pictures turn at the speed of the zone the head is in, 394rpm at the
   // outside to 590 at the inside, and coast down when the spindle stops.
   static constexpr double RPM[GCR35::ZONES] = {394, 429, 472, 525, 590};
@@ -323,11 +419,7 @@ void Disk35Drives::drawRecentPopup(int index) {
   } else {
     for (const RecentEntry &entry : recent) {
       if (ImGui::Selectable(entry.filename.c_str())) {
-        if (auto image = store_.loadRecent(index, entry)) {
-          insertImage(index, image->filename, image->data, true);
-        } else {
-          reportError("Could not read the recent disk " + entry.filename + ".");
-        }
+        insertRecentEntry(index, entry);
       }
     }
     ImGui::Separator();
@@ -446,6 +538,7 @@ void Disk35Drives::draw(bool *open) {
   if (open && *open) {
     for (Drive &d : drives_) paintThumbnail(d);
     ui::BeforeWindow("3.5\" Drives");
+    ui::KeepOnMonitor("3.5\" Drives");
     if (ui::BeginWindow("3.5\" Drives", open, ImGuiWindowFlags_AlwaysAutoResize)) {
       dialogs_.note();
       ui::Switch("Inspector", &inspectorShown);
@@ -473,21 +566,25 @@ void Disk35Drives::draw(bool *open) {
   if (ImGui::BeginPopupModal(EJECT_POPUP, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
     const int drive = askEject_;
     const std::string name = drives_[drive].filename.value_or("the disk");
-    ImGui::Text("The disk in 3.5\" drive %d has changed.", drive + 1);
-    ImGui::TextDisabled("Save %s before ejecting it?", name.c_str());
+    ImGui::Text("The disk in 3.5\" drive %d has changes that are not saved.", drive + 1);
+    ImGui::TextDisabled(askThen_ ? "Save %s before it is replaced?" : "Save %s before ejecting it?", name.c_str());
     ImGui::Spacing();
     if (ui::Button("Save…", ImVec2(110, 0), ui::ButtonKind::Primary)) {
       ImGui::CloseCurrentPopup();
-      saveThenEject(drive);
+      saveThenEject(drive, std::move(askThen_));
+      askThen_ = nullptr;
     }
     ImGui::SameLine();
     if (ui::Button("Don't Save", ImVec2(110, 0))) {
       ImGui::CloseCurrentPopup();
       eject(drive);
+      if (askThen_) askThen_();
+      askThen_ = nullptr;
     }
     ImGui::SameLine();
     if (ui::Button("Cancel", ImVec2(110, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
       ImGui::CloseCurrentPopup();
+      askThen_ = nullptr;
     }
     ImGui::EndPopup();
   }

@@ -19,6 +19,7 @@
 #include "imgui.h"
 
 #include <array>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -32,11 +33,14 @@ class Emulation;
 // - Only a IIgs has 3.5" drives, on its IWM; the window is offered only on
 //   one. An 800K or 400K block image, a 2MG holding one, or a 3.5" WOZ goes
 //   in, and saving gives back the format that came in.
+// - A disk from a file writes back to it, as the 5.25" drives' do: once the
+//   drive has stopped for a moment, on eject, before another disk replaces
+//   it, and on quit. One with no file of its own is offered for saving.
 // - A drive remembers its disk and keeps ten recent ones, as the other
-//   drives do, and a changed disk is offered for saving before it is ejected.
+//   drives do.
 // - The machine ejects disks itself (GS/OS's Eject, an installer asking for
-//   the next disk). Such a disk goes into Recent as it then is, so nothing
-//   written to it is lost however it left the drive.
+//   the next disk). Such a disk goes back to its file, or into Recent as it
+//   then is, so nothing written to it is lost however it left the drive.
 // - The remembered disks belong to the IIgs: switching to another machine
 //   leaves them, and they come back with it.
 class Disk35Drives {
@@ -66,6 +70,10 @@ public:
   void insertFile(int drive, const std::string &path);
   void chooseDisk(int drive);
   void ejectDrive(int drive) { requestEject(drive); }
+  // As the 5.25" drives': write back every disk with a file, and name those
+  // whose changes would be lost.
+  void writeBackAll();
+  std::vector<std::string> unsavedDisks();
   int dropTarget() const;
   int driveAt(ImVec2 point) const;
   std::optional<ImVec2> dragOver;
@@ -75,6 +83,10 @@ public:
 private:
   struct Drive {
     std::optional<std::string> filename;
+    std::optional<std::string> path; // the user's file, written back to
+    bool writeBackFailed = false;
+    uint32_t serial = 0; // which insertion, for a Save panel answered late
+    double idleSince = -1;
     size_t size = 0;
     VolumeSummary volume;  // as inserted
     bool spinning = false;
@@ -97,9 +109,13 @@ private:
     uint32_t overviewSerial = 0; // moves each time the overview is read
   };
 
-  void insertImage(int drive, const std::string &filename, const std::vector<uint8_t> &data, bool remember);
+  void insertImage(int drive, const std::string &filename, const std::vector<uint8_t> &data, bool remember,
+                   const std::string &path = "");
+  void insertRecentEntry(int drive, const RecentEntry &entry);
+  void replace(int drive, std::function<void()> insert);
+  bool writeBack(int drive);
   void requestEject(int drive);
-  void saveThenEject(int drive);
+  void saveThenEject(int drive, std::function<void()> then);
   void eject(int drive);
   void takeEjected(int drive);
   void notice(const std::string &message);
@@ -125,6 +141,8 @@ private:
   bool openError_ = false;
   int askEject_ = 0;
   bool openAskEject_ = false;
+  // What waits on the question: another disk going in.
+  std::function<void()> askThen_;
   ui::DialogAnchor dialogs_;
   int inspected_ = 0;
   DiskInspector inspector_;

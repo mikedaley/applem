@@ -124,6 +124,28 @@ std::vector<Completion> complete(const std::string &source, std::string_view bef
 // The word being typed at the end of `before`, as complete() reads it.
 std::string_view wordBefore(std::string_view before);
 
+// What Run does about the program in the editor and the one in memory. Run
+// used to write the editor's program whenever the window had not read or
+// written one since it opened, which after every launch replaced a program
+// the user had just LOADed with whatever the editor held from last time. It
+// now writes only what the user has plainly been working on, and asks when
+// the two differ and nothing says which is meant.
+struct RunFacts {
+  bool editorEmpty = false;
+  bool synced = false;         // the editor was read from or written to memory
+  bool editedSinceSync = false;
+  bool memoryChangedSinceSync = false;
+  bool memoryEmpty = false;    // no program in memory at all
+  bool memoryMatchesEditor = false; // memory holds the editor's program, tokenised
+};
+enum class RunChoice { RunMemory, WriteThenRun, Ask };
+RunChoice chooseRun(const RunFacts &facts);
+
+// The editor's text for a byte it cannot show, a control character in a
+// pasted or opened listing: the same token in braces the core's listing
+// writes (basic_control_text.hpp), so it goes back into memory as the byte.
+std::string controlText(unsigned char c);
+
 // What an Applesoft error code says, as the ROM prints it.
 std::string errorMessage(uint8_t code);
 

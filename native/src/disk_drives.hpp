@@ -21,6 +21,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <optional>
 #include <string>
@@ -38,12 +39,18 @@ class Emulation;
 // (disk-drives-window.js, disk-operations.js, disk-manager/index.js,
 // disk-surface-renderer.js), with the same rules:
 //
-// - What is persisted is the image as it was inserted, and the recent list
-//   keeps ten per drive. A blank disk is neither persisted nor recent.
-// - Ejecting asks to save only when the disk really changed: the core
-//   saying it was written to is not enough, because software rewrites
-//   sectors with the same bytes all the time, so the image is fingerprinted
-//   at insert and again at eject.
+// - A disk from a file writes back to that file, in that file's format, as
+//   every Mac emulator does: once the drive has been idle for a moment, on
+//   eject, before another disk replaces it, and when the app quits or the
+//   machine changes. Starting again reads the file, writes and all. The
+//   recent list keeps ten per drive, by path.
+// - A disk with no file of its own (blank, from the library, or one a save
+//   state brought) asks to be saved when it is ejected or replaced, but only
+//   when it really changed: the core saying it was written to is not enough,
+//   because software rewrites sectors with the same bytes all the time, so
+//   the image is fingerprinted at insert and again then. So does a disk
+//   whose file could not take what was written (a WOZ-only change to a .dsk,
+//   or a file that could not be written).
 // - Saving offers DOS order, ProDOS order and WOZ, defaulting to the format
 //   the disk came in as, with the ones the disk cannot be written as shown
 //   but disabled.
@@ -79,6 +86,7 @@ public:
 
   // A file dropped on the app, or chosen from a panel.
   static bool isFloppyImage(const std::string &path);
+  // A .nib is not offered: the core reads sector and WOZ images only.
   void insertFile(int drive, const std::string &path);
   // Where a dropped disk goes: the first empty drive, else drive 1.
   int dropTarget() const;
@@ -86,6 +94,12 @@ public:
   int driveAt(ImVec2 point) const;
   // Where a drag of files is, for lighting the card it would land on.
   std::optional<ImVec2> dragOver;
+
+  // Every disk with a file written back now, for a quit or a machine change.
+  void writeBackAll();
+  // The disks whose changes would be lost: no file to go back to, or a file
+  // that could not take them. Named for a question before quitting.
+  std::vector<std::string> unsavedDisks();
 
   // For the menus.
   void chooseDisk(int drive);
@@ -108,7 +122,18 @@ public:
 private:
   struct Drive {
     std::optional<std::string> filename;
-    std::optional<uint32_t> baseline; // fingerprint at insert
+    std::optional<uint32_t> baseline; // fingerprint at insert, or at the last write back
+    // The user's file it came from, which what the machine writes goes back to.
+    std::optional<std::string> path;
+    // A write back that could not be made, said once and asked about at eject.
+    bool writeBackFailed = false;
+    // Which insertion this is, so a Save panel answered late acts on the disk
+    // it was opened for and not on one put in meanwhile.
+    uint32_t serial = 0;
+    // The core says it has been written since the last write back.
+    bool modified = false;
+    bool writeProtected = false;
+    double idleSince = -1;
 
     // Polled each frame.
     bool hasDisk = false;
@@ -143,18 +168,30 @@ private:
 
   struct PendingSave {
     int drive = 0;
+    uint32_t serial = 0;
     int format = 0;
     std::array<bool, 3> available{};
     char name[256] = {};
     bool open = false;
+    // What was asked for that needed the drive empty: another disk going in.
+    // Runs after the disk is saved or let go, not if the question is cancelled.
+    std::function<void()> then;
   };
 
   void insertImage(int drive, const std::string &filename, const std::vector<uint8_t> &data,
-                   bool remember);
+                   bool remember, const std::string &path = "");
   void insertBlank(int drive);
+  void insertRecentEntry(int drive, const RecentEntry &entry);
+  // Another disk into a drive: what the machine wrote to the one there is
+  // written back, or asked about, first.
+  void replace(int drive, std::function<void()> insert);
   void requestEject(int drive);
   void eject(int drive);
-  void beginSave(int drive);
+  // Write the disk back to its file if the machine has changed it. True when
+  // nothing the machine wrote is left unkept.
+  bool writeBack(int drive);
+  bool hasUnsavedChanges(int drive);
+  void beginSave(int drive, std::function<void()> then = nullptr);
   void finishSave(const PendingSave &save, const std::vector<uint8_t> &data);
   std::optional<uint32_t> currentFingerprint(int drive);
   void resetVisuals(Drive &drive);

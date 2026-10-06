@@ -93,6 +93,17 @@ Two Mac details matter:
   state, because a key event carries its flags whether or not a modifier key
   event preceded it.
 
+- **Keys go to the machine in the order they were pressed**, read from
+  ImGui's `InputEventsTrail` rather than from each key's state, and **no key
+  goes down until the machine has run a frame with the one before it**
+  (`App::sendPendingKeys`, against `Emulation::refills`). A //e has one
+  latch, and two keys landing at the same emulated instant left only the
+  second; a rolled "th" lost its t.
+- **Letters and punctuation follow the keyboard layout.** ImGui names keys
+  by their place on a US keyboard; a browser's keycode for these follows
+  what the key types, so `App::hostKeyFor` asks the layout
+  (`UCKeyTranslate`) and sends that, and an AZERTY A is an A.
+
 Option is Open and Closed Apple on the 8-bit machines; on a IIgs Cmd is Open
 Apple (View > Cmd as Open Apple, remembered per machine). Ctrl+F12 is
 Ctrl+Reset. ImGui's keyboard navigation is off, because with it Option alone
@@ -238,21 +249,46 @@ summary, a whole track, the ring geometry and the painting's transparency.
 
 The drive's rules are the browser's:
 
-- **A drive remembers the image as it was inserted**, in
-  `Media/floppy/` under Application Support, and puts it back at startup;
-  what the machine writes afterwards is not kept. Each drive keeps ten
-  recent images, newest first, one per name, with the bytes copied in. A
-  blank disk (an unformatted WOZ) is neither remembered nor recent.
-- **Ejecting asks to save only when the disk really changed.** The core
-  saying it was written to is not enough, since software rewrites sectors
-  with the same bytes; the image is fingerprinted at insert and again at
-  eject. The save offers DOS order, ProDOS order and WOZ, defaulting to the
-  disk's own format, with the impossible ones shown but disabled. Unlike the
-  browser, Cancel (in the question or the save panel) keeps the disk in the
-  drive rather than ejecting it unsaved.
+Here the native app parts from the browser, which can only ever hold a copy:
+
+- **A disk from a file writes back to that file**, in the file's own format
+  (`.dsk`/`.do` DOS order, `.po` ProDOS order, `.woz` WOZ; a 3.5" disk and a
+  block image in the format they came in), as every Mac emulator does. It is
+  written once the drive has been idle for a second (two quiet seconds for a
+  SmartPort), on eject, before another disk replaces it, before a machine
+  switch, a IIgs memory change, Apply & Reset or a state load, and on quit.
+  The image is exported and marked saved (`MachineHost::markDiskSaved` and
+  its 3.5" and block twins) under one hold of the machine, so a write made in
+  between is never counted as kept; the file is written after, outside it.
+  The drive's Lock button covers the write-protect notch, which the drive
+  itself honours, so a locked disk is never changed and never written back.
+- **A drive remembers its disk by path**, in `Media/<kind>/unit-N.path`
+  under Application Support, and reads the file again at startup, so the
+  disk comes back as it was left; a file that has moved is said, not
+  silently dropped. A disk with no file of its own (a blank one, one from
+  the app's library) is remembered by a copy of its bytes. Each drive keeps
+  ten recent disks, newest first, one per file: a path, read again when it
+  is chosen, or a copy for a disk with none.
+- **A disk with no file to go back to asks to be saved** when it is ejected
+  or replaced, but only when it really changed. The core saying it was
+  written to is not enough, since software rewrites sectors with the same
+  bytes; the image is fingerprinted at insert and again then. So does a disk
+  whose file could not take what was written (a WOZ-only change to a `.dsk`,
+  or a file that could not be written). The save offers DOS order, ProDOS
+  order and WOZ, defaulting to the disk's own format, with the impossible
+  ones shown but disabled. Cancel (in the question or the save panel) keeps
+  the disk in the drive. A Save panel answered after a different disk went
+  in leaves that disk alone (each insertion has a serial).
+- **Quitting asks only when something would be lost.** `App::mayQuit`
+  (behind `applicationShouldTerminate` and the main window's
+  `windowShouldClose`) writes back every disk it can and names the rest; Quit
+  Anyway quits.
+- **A disk a save state brought is the state's**, not the file's: it is not
+  written back, because it would put an older disk over the user's.
 - **A machine switch empties the drives and forgets them**, as the switch
-  confirmation says; the browser kept them in storage, so they reappeared
-  on the next reload.
+  confirmation says, after writing them back. A IIgs memory change keeps
+  them: the host carries every disk across the rebuild
+  (`MachineHost::setIIgsFastRam`).
 - **The seek click** is the browser's synthesis, rendered once with its
   6kHz low pass and mixed into the output by the audio callback through a
   counter, without locking. It plays when an active drive crosses a whole
@@ -763,6 +799,17 @@ The app is meant to feel like a Mac app rather than an ImGui tool:
   notes its centre every frame it is drawn, and its confirmations and
   errors are placed there; one asked for while the window is shut (an eject
   from the File menu) opens over the main window.
+- **Every window and dialog off the dock is a window of its own**
+  (`ConfigViewportsNoAutoMerge`, set each frame), except in full screen.
+  ImGui merges a window that fits over the main one into it, and a dialog
+  merged there was drawn under the tool windows stacked above, where it
+  could be neither seen nor answered. A separate window would not join the
+  full screen space, so in full screen they merge.
+- **A window that keeps something of a machine** (breakpoints given to it,
+  a callback on its card) compares `MachineHost::generation()`, not the
+  machine's address: a machine destroyed and rebuilt in one call often comes
+  back at the same address. The sound windows ask the chips for their mutes
+  each frame instead, which also catches a card refitted in place.
 - **Windows stay windows unless View > Window Docking is on** (off by
   default, remembered as `WindowDocking`). Docking itself stays on, because
   the screen is docked to fill the main window; instead each window calls

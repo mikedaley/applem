@@ -27,6 +27,7 @@ target_link_libraries(imgui PUBLIC
     "-framework MetalKit"
     "-framework QuartzCore"
     "-framework GameController"
+    "-framework Carbon"
 )
 
 set(NATIVE_SOURCES
@@ -170,17 +171,20 @@ target_link_libraries(test_native_debugger PRIVATE a2e_core)
 add_test(NAME test_native_debugger COMMAND test_native_debugger
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
-# The BASIC editor's language: colours, statements, Format, Renum, completion.
+# The BASIC editor's language: colours, statements, Format, Renum, completion,
+# and the text the editor takes in (which is why ImGui is linked, unused
+# until a frame is drawn).
 add_executable(test_native_basic
     tests/test_native_basic.cpp
     src/basic_language.cpp
+    src/code_editor.cpp
 )
 target_include_directories(test_native_basic PRIVATE
     ${CMAKE_SOURCE_DIR}/tests/catch2
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 target_compile_options(test_native_basic PRIVATE -Wall -Wextra -Wno-unused-parameter)
-target_link_libraries(test_native_basic PRIVATE a2e_core)
+target_link_libraries(test_native_basic PRIVATE a2e_core imgui)
 add_test(NAME test_native_basic COMMAND test_native_basic
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 

@@ -24,7 +24,11 @@ namespace a2e::native {
 // hex without a dollar sign, as the monitor reads them. And a debugger's,
 // with words for commands, in the manner of VICE and MAME: step, bp, r and
 // the rest, whose arguments are anything DebugSymbols resolves ($2000, a
-// name like COUT) or the condition language evaluates.
+// name like COUT) or the condition language evaluates. Every number the
+// console reads is hex unless it says otherwise (#10 is decimal), inside an
+// expression as well as alone, so w 300 10 and w 300 10+1 agree; only a
+// breakpoint's condition keeps decimal, because the debugger and the browser
+// share it.
 //
 // Nothing here touches a machine, the symbols or the evaluator: addresses
 // and expressions are kept as the user wrote them for whatever runs the
@@ -49,7 +53,7 @@ struct ConsoleCommand {
     Evaluate,  // print the value of `text`
     BreakAdd,  // `breakpoint`, with its addresses in `from`/`to`
     BreakList,
-    BreakDelete,  // number `count`, or `all`
+    BreakDelete,  // number `count` (the breakpoint's id, as bl shows it), or `all`
     BreakEnable,  // number `count`, or `all`
     BreakDisable, // number `count`, or `all`
     Symbol,   // what `text` is: a name's address, or an address's name

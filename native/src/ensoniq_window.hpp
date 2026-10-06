@@ -80,8 +80,6 @@ private:
   MachinePoll updatePoll_;
   MachinePoll takePoll_;
   bool present_ = false;
-  // The chip the mutes were last applied to, to tell a new one.
-  const void *chip_ = nullptr;
 
   std::array<Oscillator, 32> oscillators_{};
   std::vector<uint8_t> ram_;

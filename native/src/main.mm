@@ -10,8 +10,10 @@
  *  Mike Daley <michael_daley@icloud.com>
  */
 
+#import <Carbon/Carbon.h>
 #import <Cocoa/Cocoa.h>
 #import <GameController/GameController.h>
+#import <ImageIO/ImageIO.h>
 #import <Metal/Metal.h>
 #import <MetalKit/MetalKit.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
@@ -159,6 +161,54 @@ void reportHoveredViewport() {
   io.AddMouseViewportEvent(hovered);
 }
 
+// The Mac's virtual key code for each key whose meaning follows the layout:
+// ImGui names them by their place on a US keyboard, and so do these.
+int virtualKeyFor(ImGuiKey key) {
+  static const std::pair<ImGuiKey, int> table[] = {
+      {ImGuiKey_A, kVK_ANSI_A}, {ImGuiKey_B, kVK_ANSI_B}, {ImGuiKey_C, kVK_ANSI_C}, {ImGuiKey_D, kVK_ANSI_D},
+      {ImGuiKey_E, kVK_ANSI_E}, {ImGuiKey_F, kVK_ANSI_F}, {ImGuiKey_G, kVK_ANSI_G}, {ImGuiKey_H, kVK_ANSI_H},
+      {ImGuiKey_I, kVK_ANSI_I}, {ImGuiKey_J, kVK_ANSI_J}, {ImGuiKey_K, kVK_ANSI_K}, {ImGuiKey_L, kVK_ANSI_L},
+      {ImGuiKey_M, kVK_ANSI_M}, {ImGuiKey_N, kVK_ANSI_N}, {ImGuiKey_O, kVK_ANSI_O}, {ImGuiKey_P, kVK_ANSI_P},
+      {ImGuiKey_Q, kVK_ANSI_Q}, {ImGuiKey_R, kVK_ANSI_R}, {ImGuiKey_S, kVK_ANSI_S}, {ImGuiKey_T, kVK_ANSI_T},
+      {ImGuiKey_U, kVK_ANSI_U}, {ImGuiKey_V, kVK_ANSI_V}, {ImGuiKey_W, kVK_ANSI_W}, {ImGuiKey_X, kVK_ANSI_X},
+      {ImGuiKey_Y, kVK_ANSI_Y}, {ImGuiKey_Z, kVK_ANSI_Z},
+      {ImGuiKey_Apostrophe, kVK_ANSI_Quote}, {ImGuiKey_Comma, kVK_ANSI_Comma}, {ImGuiKey_Minus, kVK_ANSI_Minus},
+      {ImGuiKey_Period, kVK_ANSI_Period}, {ImGuiKey_Slash, kVK_ANSI_Slash}, {ImGuiKey_Semicolon, kVK_ANSI_Semicolon},
+      {ImGuiKey_Equal, kVK_ANSI_Equal}, {ImGuiKey_LeftBracket, kVK_ANSI_LeftBracket},
+      {ImGuiKey_Backslash, kVK_ANSI_Backslash}, {ImGuiKey_RightBracket, kVK_ANSI_RightBracket},
+      {ImGuiKey_GraveAccent, kVK_ANSI_Grave},
+  };
+  for (const auto &[imgui, mac] : table) {
+    if (imgui == key) return mac;
+  }
+  return -1;
+}
+
+// What the key types with no modifier on the layout chosen in the menu bar,
+// asked of the layout itself, so AZERTY, QWERTZ and Dvorak type their own
+// letters. 0 for a key with no single character, or a layout with no
+// Unicode table (an input method), which leaves the key where it is.
+char32_t layoutCharacter(ImGuiKey key) {
+  const int virtualKey = virtualKeyFor(key);
+  if (virtualKey < 0) return 0;
+  TISInputSourceRef source = TISCopyCurrentKeyboardLayoutInputSource();
+  if (!source) return 0;
+  char32_t result = 0;
+  if (auto data = static_cast<CFDataRef>(TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData))) {
+    const auto *layout = reinterpret_cast<const UCKeyboardLayout *>(CFDataGetBytePtr(data));
+    UInt32 deadKeys = 0;
+    UniChar chars[4];
+    UniCharCount length = 0;
+    if (UCKeyTranslate(layout, static_cast<UInt16>(virtualKey), kUCKeyActionDown, 0, LMGetKbdType(),
+                       kUCKeyTranslateNoDeadKeysBit, &deadKeys, 4, &length, chars) == noErr &&
+        length == 1) {
+      result = chars[0];
+    }
+  }
+  CFRelease(source);
+  return result;
+}
+
 // Call once, after the Cocoa backend is initialised.
 void acceptDropsOnViewports() {
   ImGuiPlatformIO &io = ImGui::GetPlatformIO();
@@ -293,6 +343,8 @@ void watchMouse() {
 @property(nonatomic, strong) id<MTLDevice> device;
 @property(nonatomic, strong) id<MTLCommandQueue> commandQueue;
 - (void)shutdown;
+- (BOOL)mayQuit;
+- (void)openPaths:(const std::vector<std::string> &)paths;
 - (void)releaseKeys;
 - (BOOL)commandKeysToWindow;
 - (void)attachToolbarTo:(NSWindow *)window;
@@ -342,11 +394,37 @@ void watchMouse() {
   platform.capsLockOn = [] {
     return (NSEvent.modifierFlags & NSEventModifierFlagCapsLock) != 0;
   };
+  platform.layoutCharacter = [](ImGuiKey key) { return layoutCharacter(key); };
+  platform.savePng = [](const std::string &path, const std::vector<uint8_t> &rgba, int width, int height) {
+    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CGContextRef context = CGBitmapContextCreate(const_cast<uint8_t *>(rgba.data()), width, height, 8,
+                                                 static_cast<size_t>(width) * 4, space,
+                                                 kCGImageAlphaNoneSkipLast | kCGBitmapByteOrderDefault);
+    CGColorSpaceRelease(space);
+    if (!context) return false;
+    CGImageRef image = CGBitmapContextCreateImage(context);
+    CGContextRelease(context);
+    if (!image) return false;
+    NSURL *url = [NSURL fileURLWithPath:@(path.c_str())];
+    CGImageDestinationRef destination =
+        CGImageDestinationCreateWithURL((__bridge CFURLRef)url, (__bridge CFStringRef)UTTypePNG.identifier, 1, nullptr);
+    bool ok = false;
+    if (destination) {
+      CGImageDestinationAddImage(destination, image, nullptr);
+      ok = CGImageDestinationFinalize(destination);
+      CFRelease(destination);
+    }
+    CGImageRelease(image);
+    return ok;
+  };
   __weak AppViewController *weakSelf = self;
   platform.setWindowTitle = [weakSelf](const std::string &title) {
     weakSelf.view.window.title = [NSString stringWithUTF8String:title.c_str()];
   };
   platform.toggleFullScreen = [weakSelf] { [weakSelf.view.window toggleFullScreen:nil]; };
+  platform.isFullScreen = [weakSelf] {
+    return (weakSelf.view.window.styleMask & NSWindowStyleMaskFullScreen) != 0;
+  };
   platform.setMainContentSize = [weakSelf](float width, float height) {
     NSWindow *window = weakSelf.view.window;
     if (!window || (window.styleMask & NSWindowStyleMaskFullScreen)) return;
@@ -448,6 +526,13 @@ void watchMouse() {
       pad.buttons[13] = gamepad.dpad.down.isPressed;
       pad.buttons[14] = gamepad.dpad.left.isPressed;
       pad.buttons[15] = gamepad.dpad.right.isPressed;
+      // In the background GameController stops reporting, and what it last
+      // said stays: a stick held as the user switched apps stayed held while
+      // the machine ran on. The pad is still there, centred and let go.
+      if (!NSApp.isActive) {
+        pad.axes = {};
+        pad.buttons = {};
+      }
       pads.push_back(pad);
     }
     return pads;
@@ -539,6 +624,7 @@ void watchMouse() {
 
 
 - (void)attachToolbarTo:(NSWindow *)window {
+  _menu.primaryWindow = window;
   [_toolbar attachToWindow:window];
 }
 
@@ -578,6 +664,14 @@ void watchMouse() {
   if (_app) _app->releaseKeys();
 }
 
+- (BOOL)mayQuit {
+  return _app->mayQuit();
+}
+
+- (void)openPaths:(const std::vector<std::string> &)paths {
+  _app->openFiles(paths);
+}
+
 - (void)shutdown {
   if (!_app) return;
   g_dropApp = nullptr;
@@ -599,10 +693,45 @@ void watchMouse() {
 @property(nonatomic, strong) AppViewController *controller;
 @end
 
-@implementation AppDelegate
+@implementation AppDelegate {
+  std::vector<std::string> _openedEarly;
+}
+
+// Nothing is restored by AppKit itself (the app keeps its own settings), and
+// saying so securely stops macOS warning about it at every launch.
+- (BOOL)applicationSupportsSecureRestorableState:(NSApplication *)app {
+  return YES;
+}
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {
   return YES;
+}
+
+// A quit waits while a disk has changes that would be lost: the app asks, and
+// Quit Anyway quits again.
+- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender {
+  return [self.controller mayQuit] ? NSTerminateNow : NSTerminateCancel;
+}
+
+// Disk images and save states opened from the Finder. They can arrive before
+// the window exists, when the app is launched by opening one.
+- (void)application:(NSApplication *)application openURLs:(NSArray<NSURL *> *)urls {
+  std::vector<std::string> paths;
+  for (NSURL *url in urls) {
+    if (url.isFileURL) paths.push_back(url.path.UTF8String);
+  }
+  if (paths.empty()) return;
+  if (self.controller) {
+    [self.controller openPaths:paths];
+  } else {
+    _openedEarly.insert(_openedEarly.end(), paths.begin(), paths.end());
+  }
+  [self.window makeKeyAndOrderFront:nil];
+}
+
+- (BOOL)windowShouldClose:(NSWindow *)window {
+  if (window != self.window) return YES;
+  return [self.controller mayQuit];
 }
 
 // Closing the main window closes everything and quits. The windows ImGui
@@ -639,6 +768,10 @@ void watchMouse() {
   [self.controller attachToolbarTo:self.window];
   [self.window makeKeyAndOrderFront:nil];
   [NSApp activateIgnoringOtherApps:YES];
+  if (!_openedEarly.empty()) {
+    [self.controller openPaths:_openedEarly];
+    _openedEarly.clear();
+  }
 
   watchMouse();
 

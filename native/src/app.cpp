@@ -33,6 +33,8 @@ constexpr const char *FULL_PAGE_WINDOW = "##FullPage";
 constexpr const char *DOCKSPACE_ID = "ApplEmDockSpace";
 constexpr const char *SWITCH_POPUP = "Switch machine?";
 constexpr const char *BATTERY_POPUP = "Reset battery RAM?";
+constexpr const char *MEMORY_POPUP = "Change memory?";
+constexpr const char *QUIT_POPUP = "Quit ApplEm?";
 
 // What the IIgs may be fitted with, as the browser build offers it
 // (src/js/machine/iigs-memory.js).
@@ -88,12 +90,15 @@ App::App(std::string settingsDirectory, Platform platform)
   };
   joystick_.setGamepadSource(platform_.gamepads);
   // Refitting can rebuild the SmartPort, and its images with it.
+  slots_.setApplyingCallback([this] { writeBackMedia(); });
   slots_.setAppliedCallback([this] { hardDrives_->syncWithMachine(); });
 
   SaveStates::Hooks hooks;
   hooks.machine = [this] { return profile_; };
   hooks.switchTo = [this](MachineId id) { return switchMachine(id); };
+  hooks.loading = [this] { writeBackMedia(); };
   hooks.loaded = [this] {
+    slots_.adoptMachineLayout();
     drives_->syncWithMachine();
     hardDrives_->syncWithMachine();
     disk35_->syncWithMachine();
@@ -103,9 +108,58 @@ App::App(std::string settingsDirectory, Platform platform)
 
 App::~App() { shutdown(); }
 
+// Asked before the app quits or its main window closes. Every disk with a
+// file of its own is written back first; one whose changes would still be
+// lost (no file to go back to, or a file that could not take them) is named
+// in a question, and the quit waits for the answer.
+bool App::mayQuit() {
+  if (!started_ || quitConfirmed_) return true;
+  quitUnsaved_ = unsavedMedia();
+  if (quitUnsaved_.empty()) return true;
+  openQuitQuestion_ = true;
+  return false;
+}
+
+std::vector<std::string> App::unsavedMedia() {
+  std::vector<std::string> names = drives_->unsavedDisks();
+  for (std::string &name : disk35_->unsavedDisks()) names.push_back(std::move(name));
+  for (std::string &name : hardDrives_->unsavedImages()) names.push_back(std::move(name));
+  return names;
+}
+
+void App::writeBackMedia() {
+  drives_->writeBackAll();
+  disk35_->writeBackAll();
+  hardDrives_->writeBackAll();
+}
+
+void App::drawQuitQuestion() {
+  if (openQuitQuestion_ && !ImGui::IsPopupOpen(QUIT_POPUP)) ImGui::OpenPopup(QUIT_POPUP);
+  openQuitQuestion_ = false;
+  ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+  if (!ImGui::BeginPopupModal(QUIT_POPUP, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
+  ImGui::TextUnformatted(quitUnsaved_.size() == 1 ? "This disk has changes that are not saved:"
+                                                  : "These disks have changes that are not saved:");
+  for (const std::string &name : quitUnsaved_) ImGui::BulletText("%s", name.c_str());
+  ImGui::TextDisabled("Eject a disk to save it. Quitting now loses its changes.");
+  ImGui::Spacing();
+  if (ui::Button("Quit Anyway", ImVec2(120, 0))) {
+    quitConfirmed_ = true;
+    quitRequested_ = true;
+    ImGui::CloseCurrentPopup();
+  }
+  ImGui::SameLine();
+  if (ui::Button("Cancel", ImVec2(120, 0), ui::ButtonKind::Primary) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+    ImGui::CloseCurrentPopup();
+  }
+  ImGui::EndPopup();
+}
+
 void App::shutdown() {
   if (!started_) return;
   releaseKeys();
+  // Anything a quit that was not asked about still has to keep.
+  writeBackMedia();
   states_->autosaveNow();
   saveBatteryRamIfChanged(-1);
   emulation_.stop();
@@ -450,7 +504,17 @@ void App::startEmulation() {
 }
 
 void App::frame() {
-  if (!started_) startEmulation();
+  if (!started_) {
+    startEmulation();
+    if (!pendingOpen_.empty()) openFiles(std::exchange(pendingOpen_, {}));
+  }
+  // Every window and dialog off the dock is a window of its own. Merged into
+  // the main window, which ImGui does to any that fits over it, a dialog was
+  // drawn under the tool windows stacked above, where it could be neither
+  // seen nor answered, and a tool window left the system's window list. In
+  // full screen they do merge: a separate window would not join the full
+  // screen space, and would be left behind on the desktop.
+  ImGui::GetIO().ConfigViewportsNoAutoMerge = liveResize_ || !isFullScreen();
   runMenuActions();
   textInputActive_ = ImGui::GetIO().WantTextInput;
 
@@ -499,6 +563,8 @@ void App::frame() {
     if (showDemo_) ImGui::ShowDemoWindow(&showDemo_);
     drawSwitchConfirmation();
     drawBatteryResetConfirmation();
+    drawMemoryConfirmation();
+    drawQuitQuestion();
     handleAppShortcuts();
     routeKeyboard();
     buildMenus();
@@ -516,6 +582,8 @@ void App::frame() {
   if (showDemo_) ImGui::ShowDemoWindow(&showDemo_);
   drawSwitchConfirmation();
   drawBatteryResetConfirmation();
+  drawMemoryConfirmation();
+  drawQuitQuestion();
 
   handleAppShortcuts();
   routeKeyboard();
@@ -659,6 +727,9 @@ void App::buildMenus() {
     fileItems.push_back(submenu("Eject Hard Disk Image", ejects, hardDrives_->hasImage(0) || hardDrives_->hasImage(1)));
   }
   fileItems.push_back(MenuItem::separatorItem());
+  fileItems.push_back(item(a, "file.screenshot", "Save Screenshot\u2026", [this] { saveScreenshot(); }, "s",
+                           MOD_COMMAND | MOD_OPTION));
+  fileItems.push_back(MenuItem::separatorItem());
   fileItems.push_back(item(a, "window.close", "Close Window", [this] { closeFocusedWindow(); }, "w", MOD_COMMAND,
                            false, focusedToolWindow() != nullptr));
   MenuItem file = submenu("File", fileItems);
@@ -763,24 +834,8 @@ MenuItem App::machineMenu() {
     for (const MemorySize &size : IIGS_MEMORY_SIZES) {
       const int kb = size.kb;
       memory.push_back(item(a, "machine.iigsmemory." + std::to_string(kb), size.label, [this, kb] {
-                              if (settings_.iigsMemoryKB == kb) return;
-                              // Changing it rebuilds the IIgs, as switching
-                              // machines does.
-                              settings_.iigsMemoryKB = kb;
-                              ImGui::MarkIniSettingsDirty();
-                              releaseKeys();
-                              saveBatteryRamIfChanged(-1);
-                              emulation_.setIIgsFastRam(static_cast<size_t>(kb) * 1024);
-                              display_.machineRebuilt();
-                              slots_.apply();
-                              restoreBatteryRam();
-                              joystick_.machineRebuilt();
-                              if (profile_) {
-                                debugger_.setMachine(*profile_);
-                                console_.setMachine(*profile_);
-                                memory_.setMachine(*profile_);
-                                switches_.setMachine();
-                              }
+                              // It restarts the machine, so it asks first.
+                              if (settings_.iigsMemoryKB != kb) pendingMemoryKB_ = kb;
                             }, "", 0, settings_.iigsMemoryKB == kb));
     }
     items.push_back(submenu("IIgs Memory", memory));
@@ -878,7 +933,8 @@ MenuItem App::viewMenu() {
                          fullPage_ = !fullPage_;
                          enterFullPage_ = fullPage_;
                        }, "Escape", MOD_CONTROL, fullPage_));
-  items.push_back(item(a, "toggleFullScreen", "Enter Full Screen", [] {}, "f", MOD_CONTROL | MOD_COMMAND));
+  items.push_back(item(a, "toggleFullScreen", isFullScreen() ? "Exit Full Screen" : "Enter Full Screen", [] {}, "f",
+                       MOD_CONTROL | MOD_COMMAND));
   return submenu("View", items);
 }
 
@@ -911,8 +967,10 @@ std::optional<MenuItem> App::debugMenu() {
                            ImGui::MarkIniSettingsDirty();
                          }, "", 0, settings_.showMockingboard));
   }
-  // Applesoft, on the 8-bit machines.
-  if (basic_.available()) {
+  // Applesoft, on the 8-bit machines. Asked of the machine rather than of
+  // the window, which only finds out while it is open: on a fresh start it
+  // was closed, so it never found out, and the item never appeared.
+  if (basicAvailable()) {
     items.insert(items.begin() + 2, item(a, "debug.basic", "Applesoft BASIC", [this] {
                                            settings_.showBasic = !settings_.showBasic;
                                            ImGui::MarkIniSettingsDirty();
@@ -1040,6 +1098,26 @@ void App::closeFocusedWindow() {
   }
 }
 
+// The picture as the window shows it, monitor and all, as a PNG. Read back
+// from the renderer now, so what is saved is what was on the screen when the
+// item was chosen rather than when the panel closes.
+void App::saveScreenshot() {
+  std::vector<uint8_t> rgba;
+  int width = 0;
+  int height = 0;
+  if (!platform_.screen || !platform_.screen->readPixels(rgba, width, height) || rgba.empty()) {
+    dropNotice("There is no picture to save", true);
+    return;
+  }
+  if (!platform_.saveFile || !platform_.savePng) return;
+  const std::string name = std::string(profile_ ? profile_->shortName : "Apple II") + " Screenshot.png";
+  platform_.saveFile("Save Screenshot", name, {"png"},
+                     [this, rgba = std::move(rgba), width, height](const std::string &path) {
+                       if (path.empty()) return;
+                       if (!platform_.savePng(path, rgba, width, height)) dropNotice("Could not save the screenshot", true);
+                     });
+}
+
 // The text screen onto the clipboard, as the browser's text selection copies
 // it, forty or eighty columns.
 void App::copyScreenText() {
@@ -1105,8 +1183,67 @@ void App::drawBatteryResetConfirmation() {
   ImGui::EndPopup();
 }
 
+// More or less memory in a IIgs. The machine is built again, as switching
+// machines does, but the disks are in drives rather than in the machine: the
+// host carries them across, and every window that shows them reads them again
+// rather than being told the drives were emptied.
+void App::drawMemoryConfirmation() {
+  if (pendingMemoryKB_ && !ImGui::IsPopupOpen(MEMORY_POPUP)) ImGui::OpenPopup(MEMORY_POPUP);
+  ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+  if (!ImGui::BeginPopupModal(MEMORY_POPUP, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
+  const int kb = pendingMemoryKB_.value_or(settings_.iigsMemoryKB);
+  const char *label = "";
+  for (const MemorySize &size : IIGS_MEMORY_SIZES) {
+    if (size.kb == kb) label = size.label;
+  }
+  ImGui::Text("Give the IIgs %s of memory?", label);
+  ImGui::TextDisabled("The machine restarts. Disks stay in their drives; anything in memory is lost.");
+  ImGui::Spacing();
+  if (ui::Button("Restart", ImVec2(120, 0), ui::ButtonKind::Primary)) {
+    setIIgsMemory(kb);
+    pendingMemoryKB_.reset();
+    ImGui::CloseCurrentPopup();
+  }
+  ImGui::SameLine();
+  if (ui::Button("Cancel", ImVec2(120, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+    pendingMemoryKB_.reset();
+    ImGui::CloseCurrentPopup();
+  }
+  ImGui::EndPopup();
+}
+
+void App::setIIgsMemory(int kb) {
+  settings_.iigsMemoryKB = kb;
+  ImGui::MarkIniSettingsDirty();
+  releaseKeys();
+  writeBackMedia();
+  saveBatteryRamIfChanged(-1);
+  states_->autosaveNow();
+  emulation_.setIIgsFastRam(static_cast<size_t>(kb) * 1024);
+  display_.machineRebuilt();
+  slots_.setMachine(*profile_);
+  slots_.apply();
+  restoreBatteryRam();
+  joystick_.machineRebuilt();
+  debugger_.setMachine(*profile_);
+  console_.setMachine(*profile_);
+  memory_.setMachine(*profile_);
+  switches_.setMachine();
+  drives_->syncWithMachine();
+  hardDrives_->syncWithMachine();
+  disk35_->syncWithMachine();
+  noSignalStale_ = true;
+  // The last machine's picture must not linger in the phosphor.
+  if (platform_.screen) platform_.screen->clearPersistence();
+  if (emulation_.powered()) {
+    emulation_.withMachine([](host::MachineHost &host) { host.reset(); });
+  }
+}
+
 bool App::switchMachine(MachineId id) {
   releaseKeys();
+  // The disks go with the machine; what was written to them goes to their files first.
+  writeBackMedia();
   saveBatteryRamIfChanged(-1);
   states_->autosaveNow();
   if (!emulation_.setMachine(id)) return false;
@@ -1129,6 +1266,8 @@ bool App::switchMachine(MachineId id) {
   hardDrives_->machineChanged();
   disk35_->machineChanged();
   noSignalStale_ = true;
+  // The last machine's picture must not linger in the phosphor.
+  if (platform_.screen) platform_.screen->clearPersistence();
   ImGui::MarkIniSettingsDirty();
   // The new machine starts as if switched on, as the old one was.
   if (emulation_.powered()) {
@@ -1221,7 +1360,11 @@ void App::drawStatusBar() {
 
       // What the keys are doing.
       if (screenHadKeyboard_) {
-        ImGui::TextColored(secondary, "%s", commandIsOpenApple() ? "⌘ is Open Apple" : "⌥ is Open Apple");
+        // A II Plus has no Apple keys: Option is its game port's buttons.
+        const char *keys = profile_ && !profile_->caps.hasOpenAppleKeys ? "⌥ are the game port buttons"
+                           : commandIsOpenApple()                       ? "⌘ is Open Apple"
+                                                                        : "⌥ is Open Apple";
+        ImGui::TextColored(secondary, "%s", keys);
         ImGui::SameLine(0, 14);
       }
       if (joystick_.cursorKeys) {
@@ -1256,7 +1399,45 @@ void App::drawStatusBar() {
       }
       ImGui::PushFont(ui::monoFont(), 0.0f);
       const float width = ImGui::CalcTextSize(clock).x;
+      ImGui::PopFont();
       const float right = ImGui::GetWindowContentRegionMax().x - ImGui::GetStyle().FramePadding.x;
+
+      // The volume, left of the clock: the menu's four steps are not enough
+      // to set a level by, and a click on the speaker mutes, as a Mac's own
+      // volume control does.
+      constexpr float VOLUME_WIDTH = 120.0f;
+      const char *muteLabel = settings_.muted ? "Muted" : "Volume";
+      const float labelWidth = ImGui::CalcTextSize("Volume").x;
+      const float volumeX = right - width - 22 - VOLUME_WIDTH - 8 - labelWidth;
+      if (ImGui::GetCursorPosX() < volumeX) {
+        ImGui::SetCursorPosX(volumeX);
+        ImGui::PushID("volume");
+        ImGui::TextColored(settings_.muted ? ImGui::GetStyleColorVec4(ImGuiCol_CheckMark) : secondary, "%s", muteLabel);
+        if (ImGui::IsItemClicked()) {
+          settings_.muted = !settings_.muted;
+          emulation_.setMuted(settings_.muted);
+          ImGui::MarkIniSettingsDirty();
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(settings_.muted ? "Click to hear the machine" : "Click to mute");
+        ImGui::SameLine(0, 8);
+        float percent = std::round(settings_.volume * 100.0f);
+        ImGui::SetNextItemWidth(VOLUME_WIDTH);
+        if (ui::SliderFloat("##level", &percent, 0.0f, 100.0f, "%.0f%%")) {
+          // In steps of five, so the menu's 25, 50 and 75 can be landed on:
+          // a point of travel is about two percent.
+          settings_.volume = std::clamp(std::round(percent / 5.0f) * 5.0f, 0.0f, 100.0f) / 100.0f;
+          emulation_.setVolume(settings_.volume);
+          if (settings_.muted) {
+            settings_.muted = false;
+            emulation_.setMuted(false);
+          }
+          ImGui::MarkIniSettingsDirty();
+        }
+        ImGui::PopID();
+        ImGui::SameLine(0, 22);
+      }
+
+      ImGui::PushFont(ui::monoFont(), 0.0f);
       if (ImGui::GetCursorPosX() < right - width) ImGui::SetCursorPosX(right - width);
       ImGui::TextColored(emulation_.powered() ? ImGui::GetStyleColorVec4(ImGuiCol_Text) : secondary, "%s", clock);
       ImGui::PopFont();
@@ -1329,7 +1510,9 @@ void App::drawDiskDrives() {
   drawMockingboard();
   drawEnsoniq();
   firstPosition(120, 50);
-  basic_.draw(&settings_.showBasic);
+  // Kept open across a IIgs, which has no Applesoft window, for the next
+  // machine that does.
+  if (basicAvailable()) basic_.draw(&settings_.showBasic);
   drawEqualizer();
   firstPosition(60, 40);
   debugger_.draw(&settings_.showCpuDebugger);
@@ -1399,6 +1582,23 @@ void App::dropNotice(const std::string &text, bool error) {
   dropNotice_ = text;
   dropNoticeError_ = error;
   dropNoticeUntil_ = ImGui::GetTime() + 3.0;
+}
+
+void App::openFiles(const std::vector<std::string> &paths) {
+  if (!started_) {
+    pendingOpen_.insert(pendingOpen_.end(), paths.begin(), paths.end());
+    return;
+  }
+  for (const std::string &path : paths) {
+    std::string extension = std::filesystem::path(path).extension().string();
+    for (char &c : extension) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (extension == ".a2state") {
+      settings_.showSaveStates = true;
+      states_->loadFile(path);
+    } else {
+      filesDropped({path});
+    }
+  }
 }
 
 void App::filesDropped(const std::vector<std::string> &paths, std::optional<ImVec2> at) {
@@ -1496,6 +1696,8 @@ void App::updateScreenSource() {
   if (powered != wasPowered_) {
     wasPowered_ = powered;
     noSignalStale_ = true;
+    // The last picture must not linger in the phosphor.
+    if (platform_.screen) platform_.screen->clearPersistence();
   }
 
   // Drain the queue every frame, shown or not, so the emulation thread never
@@ -1720,10 +1922,6 @@ bool App::mainContentSizeWithin(float maxWidth, float maxHeight, float &width, f
 void App::beginLiveResize(bool widthLeads) {
   liveResize_ = true;
   widthLeads_ = widthLeads;
-  // A floating window the main window grows over would be merged into it,
-  // and then carried along when the window's top or left edge moves. Held
-  // apart, each keeps its place on the screen; they merge again after.
-  ImGui::GetIO().ConfigViewportsNoAutoMerge = true;
   // ImGui sees every mouse event the app gets, the press on the window's
   // frame included, and a floating window near that point takes it for a
   // drag of itself and follows the pointer round the resize. The mouse is
@@ -1737,7 +1935,6 @@ void App::beginLiveResize(bool widthLeads) {
 
 void App::endLiveResize() {
   liveResize_ = false;
-  ImGui::GetIO().ConfigViewportsNoAutoMerge = false;
   // A captured mouse is the machine's, resize or not.
   if (!mouseCaptured_) ImGui::GetIO().ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
   // The drag kept the shape; what it left is the new fit.
@@ -1781,6 +1978,13 @@ void App::drawScreenWindow() {
     ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, FLT_MAX), keepScreenShape, &shape);
   }
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+  // Docked, the screen has no tab bar at all. Hidden is not enough: ImGui
+  // draws a small triangle in a hidden tab bar's corner to show it again,
+  // which sat on the picture's top left as a blue mark whenever the screen
+  // had the keyboard.
+  ImGuiWindowClass screenClass;
+  screenClass.DockNodeFlagsOverrideSet = ImGuiDockNodeFlags_NoTabBar;
+  ImGui::SetNextWindowClass(&screenClass);
   const bool visible = ui::BeginWindow(
       SCREEN_WINDOW, &settings_.showScreen,
       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
@@ -1870,40 +2074,64 @@ void App::routeKeyboard() {
   const bool command = commandIsOpenApple();
   const bool capsLock = platform_.capsLockOn && platform_.capsLockOn();
 
-  // This frame's key changes, posted together and only when there are any:
-  // the machine is not waited for, and not touched at all on a frame with
-  // nothing to say.
-  struct Change {
-    bool down;
-    CoreKeyEvent event;
-  };
-  std::vector<Change> changes;
-  for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_NamedKey_END; k++) {
-    const ImGuiKey key = static_cast<ImGuiKey>(k);
-    const std::optional<HostKey> hostKey = browserKeyFor(key, swap);
+  // This frame's key changes, in the order they happened. ImGui keeps the
+  // events it applied this frame in order; reading the keys' states instead
+  // walked them in ImGui's own key order, so "ba" typed inside one frame
+  // reached a IIgs as "ab".
+  std::set<int> pressedNow;
+  for (const ImGuiInputEvent &e : g.InputEventsTrail) {
+    if (e.Type != ImGuiInputEventType_Key || !ImGui::IsNamedKey(e.Key.Key)) continue;
+    const ImGuiKey key = e.Key.Key;
+    const int k = key;
+    const std::optional<HostKey> hostKey = hostKeyFor(key, swap);
     if (!hostKey) continue;
     // Caps Lock is a state the core is told with every key, not a key.
     if (hostKey->keyCode == 20) continue;
     // Ctrl+F12 is the app's Ctrl+Reset.
     if (key == ImGuiKey_F12 && held.control) continue;
-
-    // Modifier keys do not repeat on a Mac, so they are never sent twice.
-    const bool repeat = !isModifier(hostKey->keyCode);
-    if (ImGui::IsKeyPressed(key, repeat)) {
+    if (e.Key.Down) {
+      if (keysDown_.count(k)) continue;
       if (auto event = coreKeyEvent(*hostKey, held, command, false)) {
-        changes.push_back({true, *event});
+        pendingKeys_.push_back({true, *event});
         keysDown_.insert(k);
+        pressedNow.insert(k);
       }
-    }
-    if (ImGui::IsKeyReleased(key) && keysDown_.erase(k)) {
-      if (auto event = coreKeyEvent(*hostKey, held, command, true)) {
-        changes.push_back({false, *event});
-      }
+    } else if (keysDown_.erase(k)) {
+      if (auto event = coreKeyEvent(*hostKey, held, command, true)) pendingKeys_.push_back({false, *event});
     }
   }
-  if (changes.empty()) return;
-  emulation_.post([changes = std::move(changes), capsLock](host::MachineHost &host) {
-    for (const Change &c : changes) {
+  // A key held from before repeats on ImGui's timing. Modifier keys do not
+  // repeat on a Mac, so they are never sent twice.
+  for (int k : keysDown_) {
+    const ImGuiKey key = static_cast<ImGuiKey>(k);
+    if (pressedNow.count(k) || !ImGui::IsKeyPressed(key, true) || ImGui::IsKeyPressed(key, false)) continue;
+    const std::optional<HostKey> hostKey = hostKeyFor(key, swap);
+    if (!hostKey || isModifier(hostKey->keyCode)) continue;
+    if (auto event = coreKeyEvent(*hostKey, held, command, false)) pendingKeys_.push_back({true, *event});
+  }
+  sendPendingKeys(capsLock);
+}
+
+// Keys go to the machine in order, and no key-down goes until the machine has
+// run a frame with the one before it. A //e has one latch: two keys landing
+// at the same emulated instant left only the second, which is what a fast
+// typist's rolled "th" did whenever both fell inside one frame. A frame is
+// far shorter than the gap between two keystrokes, so nothing waits that a
+// person could notice. Key-ups ride along with whatever is going.
+void App::sendPendingKeys(bool capsLock) {
+  if (pendingKeys_.empty() || keyInFlight_.load()) return;
+  if (emulation_.refills() <= keyLandedAt_.load()) return;
+  std::vector<KeyChange> batch;
+  while (!pendingKeys_.empty()) {
+    const bool down = pendingKeys_.front().down;
+    batch.push_back(pendingKeys_.front());
+    pendingKeys_.pop_front();
+    if (down) break;
+  }
+  const bool hasDown = batch.back().down;
+  if (hasDown) keyInFlight_ = true;
+  emulation_.post([this, batch = std::move(batch), capsLock, hasDown](host::MachineHost &host) {
+    for (const KeyChange &c : batch) {
       const CoreKeyEvent &e = c.event;
       if (c.down) {
         host.handleRawKeyDown(e.keyCode, e.shift, e.ctrl, e.alt, e.meta, capsLock, e.location);
@@ -1911,7 +2139,23 @@ void App::routeKeyboard() {
         host.handleRawKeyUp(e.keyCode, e.shift, e.ctrl, e.alt, e.meta, e.location);
       }
     }
+    if (hasDown) {
+      // Landed now: the next one waits for a refill that starts after this.
+      keyLandedAt_ = emulation_.refills();
+      keyInFlight_ = false;
+    }
   });
+}
+
+// The browser keycode for a key, with letters and punctuation as the user's
+// layout types them. Used for a key's release as well as its press, so the
+// core's tracking of held keys always hears the same code twice.
+std::optional<HostKey> App::hostKeyFor(ImGuiKey key, bool swap) const {
+  std::optional<HostKey> hostKey = browserKeyFor(key, swap);
+  if (hostKey && followsLayout(key) && platform_.layoutCharacter) {
+    if (const auto code = browserKeyForCharacter(platform_.layoutCharacter(key))) hostKey->keyCode = *code;
+  }
+  return hostKey;
 }
 
 void App::setMouseCaptured(bool captured) {
@@ -2021,7 +2265,7 @@ void App::releaseKeys() {
   const bool swap = ImGui::GetIO().ConfigMacOSXBehaviors;
   emulation_.withMachine([&](host::MachineHost &host) {
     for (int k : keysDown_) {
-      const std::optional<HostKey> hostKey = browserKeyFor(static_cast<ImGuiKey>(k), swap);
+      const std::optional<HostKey> hostKey = hostKeyFor(static_cast<ImGuiKey>(k), swap);
       if (!hostKey) continue;
       if (auto event = coreKeyEvent(*hostKey, HeldModifiers{}, command, true)) {
         host.handleRawKeyUp(event->keyCode, false, false, false, false,
@@ -2031,6 +2275,7 @@ void App::releaseKeys() {
     host.releaseModifiers();
   });
   keysDown_.clear();
+  pendingKeys_.clear();
 }
 
 } // namespace a2e::native

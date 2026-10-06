@@ -27,6 +27,8 @@
 #include "basic_window.hpp"
 #include "platform.hpp"
 
+#include <atomic>
+#include <deque>
 #include <functional>
 #include <map>
 #include <optional>
@@ -103,6 +105,8 @@ public:
 
   // Whether the user asked to quit from inside the UI.
   bool quitRequested() const { return quitRequested_; }
+  // Whether the app may quit now; if not, it is asking the user why not.
+  bool mayQuit();
 
   // The path ImGui keeps its layout in. It must outlive the ImGui context,
   // which is why the App owns the string.
@@ -119,6 +123,10 @@ public:
   // coordinates: a disk dropped on a drive's card goes into that drive, and
   // anywhere else into the first empty one.
   void filesDropped(const std::vector<std::string> &paths, std::optional<ImVec2> at = std::nullopt);
+  // Files opened from the Finder: double-clicked, Open With, or dropped on
+  // the Dock icon. A save state is loaded; a disk goes where a drop on the
+  // picture would put it. Kept until the machine has started if need be.
+  void openFiles(const std::vector<std::string> &paths);
   // Where a drag of files is over one of the app's windows, and what it
   // carries, or nothing once it has left, so the card or the screen it would
   // land on can light up. Whether any of the files is a disk image.
@@ -195,6 +203,8 @@ private:
   void drawEqualizer();
   void drawSwitchConfirmation();
   void drawBatteryResetConfirmation();
+  void drawMemoryConfirmation();
+  void setIIgsMemory(int kb);
 
   void routeKeyboard();
   // The mouse, taken for the machine (Platform::captureMouse): a click on the
@@ -245,6 +255,8 @@ private:
 
   // The machine profile currently built, for drawing; refreshed on a switch.
   const MachineProfile *profile_ = nullptr;
+  bool isFullScreen() const { return platform_.isFullScreen && platform_.isFullScreen(); }
+  bool basicAvailable() const { return profile_ && profile_->family == MachineFamily::AppleII; }
 
   bool showDemo_ = false;
   // Full Page: the picture fills the main window and everything else goes,
@@ -264,6 +276,7 @@ private:
   void dropNotice(const std::string &text, bool error);
   std::optional<ImVec2> dragOver_;
   DropPlan dragPlan_;
+  std::vector<std::string> pendingOpen_; // files opened before the machine started
   // What the last drop did, shown over the picture for a moment.
   std::string dropNotice_;
   bool dropNoticeError_ = false;
@@ -292,6 +305,12 @@ private:
   bool wasPowered_ = false;
   double batteryCheckedAt_ = 0;
   bool quitRequested_ = false;
+  bool quitConfirmed_ = false;   // Quit Anyway was chosen
+  bool openQuitQuestion_ = false;
+  std::vector<std::string> quitUnsaved_;
+  std::vector<std::string> unsavedMedia();
+  void writeBackMedia();
+  void drawQuitQuestion();
   bool layoutChecked_ = false;
 
   // Whether the screen had the keyboard last frame, and the keys it sent down
@@ -312,6 +331,18 @@ private:
   // What is left of a movement smaller than a whole unit, carried over.
   float mouseCarryX_ = 0, mouseCarryY_ = 0;
   std::set<int> keysDown_; // ImGuiKey values
+  // Key changes waiting for the machine to have run since the last key-down
+  // (sendPendingKeys); the emulation thread says when that one landed.
+  struct KeyChange {
+    bool down;
+    CoreKeyEvent event;
+  };
+  std::deque<KeyChange> pendingKeys_;
+  std::atomic<bool> keyInFlight_{false};
+  std::atomic<uint64_t> keyLandedAt_{0};
+  void sendPendingKeys(bool capsLock);
+  void saveScreenshot();
+  std::optional<HostKey> hostKeyFor(ImGuiKey key, bool swap) const;
 
   MenuBar menuBar_;
   ToolbarState toolbar_;
@@ -322,6 +353,7 @@ private:
   // A machine switch waiting for the user to confirm it.
   std::optional<MachineId> pendingMachine_;
   bool pendingBatteryReset_ = false; // Reset Battery RAM, awaiting its confirmation
+  std::optional<int> pendingMemoryKB_; // a IIgs memory size, awaiting its confirmation
 };
 
 } // namespace a2e::native

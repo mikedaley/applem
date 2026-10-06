@@ -9,6 +9,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
+#include <climits>
 #include <cstdlib>
 #include <cstring>
 #include <optional>
@@ -26,11 +28,12 @@ const std::vector<ConsoleCommandHelp> COMMANDS = {
     {"w", "write", "w <address> <byte>...", "Write bytes into memory"},
     {"f", "fill", "f <from>.<to> <byte>", "Fill a range of memory with one byte"},
     {"l", "list u", "l [address] [lines]", "Disassemble, from the PC if no address is given"},
-    {"g", "go c continue", "g [address]", "Run, from an address if one is given"},
+    {"g", "go c continue", "g [address]",
+     "Run; from an address as the monitor's G does, back here when it returns"},
     {"s", "step t", "s [count]", "Step one instruction, or several"},
     {"n", "next over", "n", "Step over a subroutine call"},
     {"finish", "out", "finish", "Run until the current subroutine returns"},
-    {"pause", "break", "pause", "Stop the machine"},
+    {"pause", "stop", "pause", "Stop the machine"},
     {"until", "to", "until <address>", "Run until the PC reaches an address"},
     {"r", "reg regs registers", "r [a=<value> pc=<address> ...]", "Show the registers, or set them"},
     {"?", "print p eval", "? <expression>", "Print an expression's value: PEEK($24)+1, A, X*2"},
@@ -40,7 +43,7 @@ const std::vector<ConsoleCommandHelp> COMMANDS = {
      "Break when a soft switch changes, or comes to a value"},
     {"bp beam", "", "bp beam vbl|hbl|line <n>|col <n>|<line>,<col> [if <condition>]",
      "Break when the beam reaches a line, a column, or blanking"},
-    {"bl", "breaks", "bl", "List the breakpoints, numbered"},
+    {"bl", "breaks", "bl", "List the breakpoints, by number; a number stays with its breakpoint"},
     {"bd", "delete del", "bd <n>|all", "Delete a breakpoint"},
     {"be", "enable", "be <n>|all", "Enable a breakpoint"},
     {"bx", "disable", "bx <n>|all", "Disable a breakpoint"},
@@ -244,11 +247,14 @@ std::string conditionAfter(const std::vector<std::string> &w, size_t &end) {
   return {};
 }
 
+// A decimal count or number. One too large for an int is not a number at
+// all, rather than whatever it wraps to: bd 4294967297 is not bd 1.
 std::optional<int> number(const std::string &text) {
   if (text.empty()) return std::nullopt;
+  errno = 0;
   char *end = nullptr;
-  const long v = std::strtol(text.c_str(), &end, 10);
-  if (*end) return std::nullopt;
+  const long long v = std::strtoll(text.c_str(), &end, 10);
+  if (*end || errno == ERANGE || v > INT_MAX || v < INT_MIN) return std::nullopt;
   return static_cast<int>(v);
 }
 
@@ -383,7 +389,7 @@ ConsoleCommand parseIndex(Kind kind, const std::vector<std::string> &w) {
     return c;
   }
   const auto n = number(w[1]);
-  if (!n || *n < 1) return error("A breakpoint is numbered from 1, as bl lists them");
+  if (!n || *n < 1) return error("No breakpoint " + w[1] + "; bl lists them");
   c.count = *n;
   return c;
 }
