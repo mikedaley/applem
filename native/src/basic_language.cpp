@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <regex>
 #include <set>
+#include <utility>
 
 namespace a2e::native::basic {
 
@@ -225,15 +226,42 @@ std::vector<Entry> parseEntries(const std::string &source) {
 
 } // namespace
 
+namespace {
+
+// The digits a line starts with, after any spaces, as [from, to).
+std::pair<size_t, size_t> leadingDigits(std::string_view line) {
+  size_t from = 0;
+  while (from < line.size() && line[from] == ' ') from++;
+  size_t to = from;
+  while (to < line.size() && isDigit(line[to])) to++;
+  return {from, to};
+}
+
+// Their value, or -1 past MAX_LINE_NUMBER however many digits there are.
+// Counted digit by digit rather than with std::stoi, which throws on a
+// number too long for an int.
+int leadingValue(std::string_view line, size_t from, size_t to) {
+  int value = 0;
+  for (size_t i = from; i < to; i++) {
+    value = value * 10 + (line[i] - '0');
+    if (value > MAX_LINE_NUMBER) return -1;
+  }
+  return value;
+}
+
+} // namespace
+
 std::optional<int> lineNumber(std::string_view line) {
-  size_t i = 0;
-  while (i < line.size() && line[i] == ' ') i++;
-  const size_t from = i;
-  while (i < line.size() && isDigit(line[i])) i++;
-  if (i == from || i - from > 5) return std::nullopt;
-  const int n = std::stoi(std::string(line.substr(from, i - from)));
-  if (n > 63999) return std::nullopt;
+  const auto [from, to] = leadingDigits(line);
+  if (from == to) return std::nullopt;
+  const int n = leadingValue(line, from, to);
+  if (n < 0) return std::nullopt;
   return n;
+}
+
+bool lineNumberFits(std::string_view line) {
+  const auto [from, to] = leadingDigits(line);
+  return from == to || leadingValue(line, from, to) >= 0;
 }
 
 std::vector<Span> highlight(std::string_view line) {
@@ -252,7 +280,7 @@ std::vector<Span> highlight(std::string_view line) {
   add(0, pos, Kind::Plain);
   size_t digits = pos;
   while (digits < line.size() && isDigit(line[digits])) digits++;
-  add(pos, digits - pos, Kind::LineNumber);
+  add(pos, digits - pos, lineNumberFits(line) ? Kind::LineNumber : Kind::Error);
   pos = digits;
 
   while (pos < line.size()) {

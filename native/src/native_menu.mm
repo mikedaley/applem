@@ -6,6 +6,7 @@
  */
 
 #include "native_menu.hpp"
+#include "build_stamp.hpp"
 
 using a2e::native::MenuBar;
 using a2e::native::MenuItem;
@@ -114,6 +115,18 @@ NSEventModifierFlags modifierMask(unsigned modifiers) {
                                       initWithString:@"www.retrotech71.co.uk"
                                           attributes:@{NSFontAttributeName : font,
                                                        NSLinkAttributeName : [NSURL URLWithString:@"https://www.retrotech71.co.uk"],
+                                                       NSParagraphStyleAttributeName : centred}]];
+  // When this copy was built, in the user's own date and time format, so
+  // one test build can be told from the next.
+  NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+  formatter.dateStyle = NSDateFormatterMediumStyle;
+  formatter.timeStyle = NSDateFormatterShortStyle;
+  NSDate *built = [NSDate dateWithTimeIntervalSince1970:static_cast<NSTimeInterval>(a2e::native::BUILD_TIME)];
+  NSString *stamp = [NSString stringWithFormat:@"\nBuilt %@", [formatter stringFromDate:built]];
+  [credits appendAttributedString:[[NSAttributedString alloc]
+                                      initWithString:stamp
+                                          attributes:@{NSFontAttributeName : font,
+                                                       NSForegroundColorAttributeName : NSColor.secondaryLabelColor,
                                                        NSParagraphStyleAttributeName : centred}]];
   [NSApp orderFrontStandardAboutPanelWithOptions:@{NSAboutPanelOptionCredits : credits}];
   [NSApp activateIgnoringOtherApps:YES];

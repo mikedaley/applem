@@ -25,6 +25,7 @@
 #include "soft_switch_window.hpp"
 #include "console_window.hpp"
 #include "basic_window.hpp"
+#include "develop.hpp"
 #include "platform.hpp"
 
 #include <atomic>
@@ -67,6 +68,9 @@ struct Settings {
   bool showMemoryViewer = false;
   bool showSoftSwitches = false;
   bool showConsole = false;
+  bool showBuild = false;
+  std::string devProject; // the project last open, reopened at launch
+  bool devWatch = false;
   int mockingboardMutes = 0; // a bit a channel, PSG 1's A B C then PSG 2's
   bool showEnsoniq = false;
   bool showBasic = false;
@@ -175,6 +179,7 @@ private:
   MenuItem machineMenu();
   MenuItem viewMenu();
   std::optional<MenuItem> debugMenu();
+  MenuItem developMenu();
   MenuItem windowMenu();
   MenuItem helpMenu();
   // The tool window that has the keyboard, by its show flag, for File >
@@ -239,6 +244,7 @@ private:
   std::unique_ptr<Disk35Drives> disk35_;
   ExpansionSlots slots_{emulation_};
   std::unique_ptr<SaveStates> states_;
+  std::unique_ptr<Develop> develop_;
   Joystick joystick_{emulation_};
   MockingboardWindow mockingboard_{emulation_};
   EnsoniqWindow ensoniq_{emulation_};

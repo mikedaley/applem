@@ -227,3 +227,21 @@ TEST_CASE("The editor takes every line ending and keeps control characters", "[b
   REQUIRE(controlText('A').empty());
   REQUIRE(controlText(0x1B) == "{ctrl-[}");
 }
+
+TEST_CASE("A line number past 63999 does not fit, however it is written", "[basic]") {
+  // Applesoft numbers lines from 0 to 63999 (Applesoft II BASIC Programming
+  // Reference Manual); past that the line is a ?SYNTAX ERROR.
+  REQUIRE(lineNumberFits("63999 PRINT"));
+  REQUIRE(lineNumberFits("0 PRINT"));
+  REQUIRE(lineNumberFits("PRINT 1")); // no number at all is not a bad one
+  REQUIRE(lineNumberFits("  000010 PRINT"));
+  REQUIRE_FALSE(lineNumberFits("64000 PRINT"));
+  REQUIRE_FALSE(lineNumberFits("12345678901234567890 PRINT"));
+  REQUIRE(lineNumber("000010 PRINT") == std::optional<int>(10));
+  REQUIRE_FALSE(lineNumber("64000 PRINT"));
+
+  // Coloured as an error, so a pasted one stands out.
+  const std::vector<Span> spans = highlight("64000 PRINT");
+  REQUIRE(spans.front().kind == Kind::Error);
+  REQUIRE(highlight("100 PRINT").front().kind == Kind::LineNumber);
+}

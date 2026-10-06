@@ -694,6 +694,58 @@ The rows in view and a few either side are read once a frame under one
 lock, and the map a few times a second; a closed viewer reads nothing and
 turns the access counting off.
 
+## Developing with ca65
+
+The user's own editor, Makefile and cl65, with ApplEm as where a build lands
+(`develop.*`, and the logic with no ImGui in it in `dev_project.*`, tested by
+`test_native_dev`). A project is a small JSON file ending `.applem` beside
+the Makefile:
+
+    {
+      "build":   "make",
+      "output":  "build/game",
+      "symbols": "build/game.dbg",
+      "machine": "apple2e"
+    }
+
+Only `output` is needed. `start` is `auto`, `memory` or `disk`; `load` and
+`entry` place a raw binary nothing else places; `disk` names the ProDOS
+system disk to take PRODOS and BASIC.SYSTEM from; `name` is the program's
+name on that disk. The Develop menu opens one (or the Finder does: `.applem`
+is the app's own document type), and the last one opened comes back at
+launch.
+
+- **Build and Run (Command-B)** runs `build` in the user's login shell, off
+  the UI thread, with Homebrew's folders on PATH, so it finds what a terminal
+  finds. Its errors, in cc65's `file(line): Error:` and the later
+  `file:line:` form, are a list; a click opens the file in the app that edits
+  it. On success what was built is started.
+- **Watch for Changes** runs the output whenever a build anywhere writes it,
+  once it has stopped changing: the editor's own build task, or make in a
+  terminal.
+- **What the build made** is read as AppleSingle (cl65's default for the
+  Apple II, carrying the ProDOS type and load address), a raw binary placed by
+  the `.dbg`'s segments or the project's `load`, or a DOS 3.3 binary's
+  header. The `.dbg` also goes into the debugger's symbols each run.
+- **From memory** (a raw binary, by default): `MachineHost::startProgram`
+  puts it in main RAM and enters it through a trampoline at `$02F8` (JSR
+  entry, JMP `$E000`), so a program ending in RTS comes back to Applesoft's
+  prompt. On the 8-bit machines the trampoline is the soft entry vector at
+  `$3F2`, marked valid, and the machine is reset, so the firmware sets the
+  screen and keyboard up first; a IIgs's firmware takes a reset during its
+  startup scan as a reason to scan again, so on a IIgs the processor is put
+  at the trampoline directly, in emulation mode.
+- **From disk** (AppleSingle, by default: cl65's C programs call ProDOS): a
+  ProDOS volume is made for it each run (`dev::makeBootVolume`), the system
+  disk's boot blocks and PRODOS, then the program itself if it is a SYSTEM
+  file, or BASIC.SYSTEM with the program named in its startup buffer (the
+  system program startup protocol) and a STARTUP that runs it. A system
+  disk's own first SYSTEM file is usually a menu, ProDOS 2.4's Bitsy Bye,
+  which is why the volume is made rather than copied. It goes to
+  `.applem/` in the project, into the SmartPort's first device (an 800K
+  volume) or the first floppy drive on a machine with none, and the machine
+  starts from it.
+
 ## IIgs battery RAM
 
 The 256 bytes are kept in `iigs-battery-ram.bin`, written when the core

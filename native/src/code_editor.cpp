@@ -424,6 +424,15 @@ void CodeEditor::handleKeys(const Hooks &hooks, bool &edited) {
       if (c == 0x2018 || c == 0x2019) c = '\'';
       if (c == 0x201C || c == 0x201D) c = '"';
       if (c < 32 || c >= 127) continue;
+      if (hooks.acceptsLine) {
+        // The caret's line as typing would leave it, over any selection.
+        const Position from = ordered(true);
+        const Position to = ordered(false);
+        const std::string line = lines_[static_cast<size_t>(from.line)].substr(0, static_cast<size_t>(from.column)) +
+                                 static_cast<char>(c) +
+                                 lines_[static_cast<size_t>(to.line)].substr(static_cast<size_t>(to.column));
+        if (!hooks.acceptsLine(line)) continue;
+      }
       typed += static_cast<char>(c);
       insert(std::string(1, static_cast<char>(c)));
       edited = true;

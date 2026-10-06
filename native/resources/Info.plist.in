@@ -79,6 +79,18 @@
 				<string>uk.co.retrotech71.applem.a2state</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>ApplEm Project</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>uk.co.retrotech71.applem.project</string>
+			</array>
+		</dict>
 	</array>
 	<key>UTImportedTypeDeclarations</key>
 	<array>
@@ -183,6 +195,23 @@
 				<key>public.filename-extension</key>
 				<array>
 					<string>a2state</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>uk.co.retrotech71.applem.project</string>
+			<key>UTTypeDescription</key>
+			<string>ApplEm Project</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.json</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>applem</string>
 				</array>
 			</dict>
 		</dict>

@@ -93,6 +93,19 @@ App::App(std::string settingsDirectory, Platform platform)
   slots_.setApplyingCallback([this] { writeBackMedia(); });
   slots_.setAppliedCallback([this] { hardDrives_->syncWithMachine(); });
 
+  // A program built with the user's own tools, run here.
+  Develop::Hooks develop;
+  develop.machineKey = [this] { return profile_ ? std::string(profile_->key) : std::string(); };
+  develop.useMachine = [this](const std::string &key) {
+    const MachineProfile *wanted = findMachineProfile(key.c_str());
+    return wanted && switchMachine(wanted->id);
+  };
+  develop.importSymbols = [this](const std::string &dbg) { return debugger_.importSymbols(dbg); };
+  develop.hasSmartPort = [this] { return hardDrives_->available(); };
+  develop.insertHardDrive = [this](const std::string &path) { hardDrives_->insertFile(0, path); };
+  develop.insertFloppy = [this](const std::string &path) { drives_->insertFile(0, path); };
+  develop_ = std::make_unique<Develop>(emulation_, platform_, std::move(develop));
+
   SaveStates::Hooks hooks;
   hooks.machine = [this] { return profile_; };
   hooks.switchTo = [this](MachineId id) { return switchMachine(id); };
@@ -214,6 +227,9 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "ShowMemoryViewer=%d", &value) == 1) s.showMemoryViewer = value;
     else if (std::sscanf(line, "ShowSoftSwitches=%d", &value) == 1) s.showSoftSwitches = value;
     else if (std::sscanf(line, "ShowConsole=%d", &value) == 1) s.showConsole = value;
+    else if (std::sscanf(line, "ShowBuild=%d", &value) == 1) s.showBuild = value;
+    else if (std::sscanf(line, "DevWatch=%d", &value) == 1) s.devWatch = value;
+    else if (std::strncmp(line, "DevProject=", 11) == 0) s.devProject = line + 11;
     else if (std::sscanf(line, "MockingboardMutes=%d", &value) == 1) s.mockingboardMutes = value & 0x3F;
     else if (std::sscanf(line, "MockingboardPhaseLock=%d", &value) == 1) s.mockingboardPhaseLock = value;
     else if (std::sscanf(line, "MockingboardMono=%d", &value) == 1) s.mockingboardMono = value;
@@ -270,6 +286,9 @@ void App::registerSettingsHandler() {
     out->appendf("ShowMemoryViewer=%d\n", s.showMemoryViewer ? 1 : 0);
     out->appendf("ShowSoftSwitches=%d\n", s.showSoftSwitches ? 1 : 0);
     out->appendf("ShowConsole=%d\n", s.showConsole ? 1 : 0);
+    out->appendf("ShowBuild=%d\n", s.showBuild ? 1 : 0);
+    out->appendf("DevWatch=%d\n", s.devWatch ? 1 : 0);
+    if (!s.devProject.empty()) out->appendf("DevProject=%s\n", s.devProject.c_str());
     out->appendf("MockingboardMutes=%d\n", s.mockingboardMutes);
     out->appendf("MockingboardPhaseLock=%d\n", s.mockingboardPhaseLock ? 1 : 0);
     out->appendf("MockingboardMono=%d\n", s.mockingboardMono ? 1 : 0);
@@ -483,6 +502,8 @@ void App::startEmulation() {
   disk35_->update();
   disk35_->restore();
   states_->autosave = settings_.autosave;
+  develop_->watch = settings_.devWatch;
+  if (!settings_.devProject.empty()) develop_->openProject(settings_.devProject);
   if (platform_.setAppearance) platform_.setAppearance(settings_.appearance);
   joystick_.device = settings_.gamePort;
   joystick_.cursorKeys = settings_.cursorKeys;
@@ -528,6 +549,13 @@ void App::frame() {
   mockingboard_.update();
   ensoniq_.update();
   basic_.update(settings_.showBasic);
+  develop_->update(ImGui::GetTime());
+  if (develop_->wantsWindow()) settings_.showBuild = true;
+  // A project opened from the panel or the Finder is the one reopened next time.
+  if (develop_->hasProject() && develop_->projectPath() != settings_.devProject) {
+    settings_.devProject = develop_->projectPath();
+    ImGui::MarkIniSettingsDirty();
+  }
   // The breakpoints into the core when any window has changed them, before
   // the debugger looks at why the machine stopped.
   if (breakpoints_.needsApply()) {
@@ -745,6 +773,7 @@ void App::buildMenus() {
 
   menuBar_ = {application, file, edit, machineMenu(), viewMenu()};
   if (std::optional<MenuItem> debug = debugMenu()) menuBar_.push_back(*debug);
+  menuBar_.push_back(developMenu());
   menuBar_.push_back(windowMenu());
   menuBar_.push_back(helpMenu());
 
@@ -1017,6 +1046,39 @@ std::optional<MenuItem> App::debugMenu() {
   return submenu("Debug", items);
 }
 
+// Building the user's own program and running it here (Develop).
+MenuItem App::developMenu() {
+  auto &a = menuActions_;
+  const bool project = develop_->hasProject();
+  const bool idle = project && !develop_->building();
+  std::vector<MenuItem> items = {
+      item(a, "develop.open", "Open Project\u2026", [this] { develop_->chooseProject(); }, "o",
+           MOD_COMMAND | MOD_SHIFT),
+      MenuItem::separatorItem(),
+      item(a, "develop.build", "Build and Run", [this] {
+             settings_.showBuild = true;
+             develop_->buildAndRun();
+           }, "b", MOD_COMMAND, false, idle),
+      item(a, "develop.run", "Run Again", [this] { develop_->runAgain(); }, "b", MOD_COMMAND | MOD_SHIFT, false, idle),
+      item(a, "develop.watch", "Watch for Changes", [this] {
+             develop_->watch = !develop_->watch;
+             settings_.devWatch = develop_->watch;
+             ImGui::MarkIniSettingsDirty();
+           }, "", 0, develop_->watch, project),
+      MenuItem::separatorItem(),
+      item(a, "develop.window", "Build Window", [this] {
+             settings_.showBuild = !settings_.showBuild;
+             ImGui::MarkIniSettingsDirty();
+           }, "", 0, settings_.showBuild),
+      item(a, "develop.close", "Close Project", [this] {
+             develop_->closeProject();
+             settings_.devProject.clear();
+             ImGui::MarkIniSettingsDirty();
+           }, "", 0, false, project),
+  };
+  return submenu("Develop", items);
+}
+
 // The app's windows, added to the system's Window menu: each shows or hides
 // its window, and is ticked while it is open.
 MenuItem App::windowMenu() {
@@ -1084,6 +1146,7 @@ bool *App::focusedToolWindow() {
       {"Memory Viewer", &settings_.showMemoryViewer},
       {"Soft Switches", &settings_.showSoftSwitches},
       {"Console", &settings_.showConsole},
+      {"Build", &settings_.showBuild},
   };
   for (const auto &[title, flag] : windows) {
     if (name == title) return *flag ? flag : nullptr;
@@ -1522,6 +1585,7 @@ void App::drawDiskDrives() {
   switches_.draw(&settings_.showSoftSwitches);
   firstPosition(180, 120);
   console_.draw(&settings_.showConsole);
+  develop_->draw(&settings_.showBuild);
   firstPosition(80, 60);
   states_->draw(&settings_.showSaveStates);
   if (states_->autosave != settings_.autosave) {
@@ -1595,6 +1659,11 @@ void App::openFiles(const std::vector<std::string> &paths) {
     if (extension == ".a2state") {
       settings_.showSaveStates = true;
       states_->loadFile(path);
+    } else if (extension == ".applem") {
+      develop_->openProject(path);
+      settings_.devProject = path;
+      settings_.showBuild = true;
+      ImGui::MarkIniSettingsDirty();
     } else {
       filesDropped({path});
     }

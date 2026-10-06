@@ -91,6 +91,9 @@ public:
   // What the memory viewer shares: the names it shows, the breakpoints it
   // marks and adds to, and the listing it opens at an address.
   const DebugSymbols &symbols() const { return symbols_; }
+  // An assembler's symbol file, as the Symbols button imports one: a build's
+  // .dbg each time it is run. Returns how many it found.
+  int importSymbols(const std::string &text);
   const Breakpoints &breakpoints() const { return breakpoints_; }
   // False if one of that kind already starts there.
   bool addBreakpoint(Breakpoint::Kind kind, uint32_t start, uint32_t end);

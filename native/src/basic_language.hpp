@@ -44,6 +44,7 @@ enum class Kind : uint8_t {
   Operator,
   Punctuation,
   Comment, // what follows REM
+  Error,   // a line number Applesoft cannot have
 };
 
 struct Span {
@@ -57,6 +58,14 @@ std::vector<Span> highlight(std::string_view line);
 
 // The line number at the start of a line, if it has one in Applesoft's range.
 std::optional<int> lineNumber(std::string_view line);
+
+// The highest line number Applesoft takes: past it, the line is a ?SYNTAX
+// ERROR (Applesoft II BASIC Programming Reference Manual).
+constexpr int MAX_LINE_NUMBER = 63999;
+
+// Whether a line's number, if it starts with one, is one Applesoft can have.
+// Read by value, so leading zeros are fine and a number of any length is.
+bool lineNumberFits(std::string_view line);
 
 // Where each statement of a line is, as character ranges [start, end) of
 // the text after the line number. They are split exactly where the core

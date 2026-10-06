@@ -36,6 +36,12 @@ constexpr float PAD = 12.0f;
 constexpr float GUTTER = 46.0f;
 constexpr float SIDEBAR_MIN = 220.0f;
 constexpr float EDITOR_MIN = 380.0f;
+// The status line under the editor: its size against the window's text, and
+// the gap above it.
+constexpr float STATUS_SCALE = 0.9f;
+constexpr float STATUS_GAP = 2.0f;
+// Room below it, so it does not sit on the window's bottom edge.
+constexpr float STATUS_MARGIN = 14.0f;
 constexpr double FLASH = 0.6;   // how long a changed value stays lit
 constexpr double PULSE = 0.8;   // a hit breakpoint's flash, repeated
 
@@ -94,6 +100,7 @@ ImU32 colourFor(basic::Kind kind) {
   case Kind::Operator: return p.purple;
   case Kind::Punctuation: return secondary();
   case Kind::Comment: return ui::faintText();
+  case Kind::Error: return p.red;
   case Kind::Plain: return text();
   }
   return text();
@@ -652,6 +659,17 @@ bool BasicWindow::write() {
     message("There is no program to write", true);
     return false;
   }
+  // A line Applesoft cannot number (pasted, or from a file) is not written
+  // quietly without it: the program would run without that line.
+  const std::vector<std::string> &lines = editor_.lines();
+  for (size_t i = 0; i < lines.size(); i++) {
+    if (basic::lineNumberFits(lines[i])) continue;
+    editor_.setCaret(CodeEditor::Position{static_cast<int>(i), 0});
+    editor_.scrollToLine(static_cast<int>(i));
+    message("Line " + std::to_string(i + 1) + " is numbered past 63999, the last line Applesoft can have: nothing was written",
+            true);
+    return false;
+  }
   formatNow(true);
   const std::string source = editor_.text();
   BasicWriteResult result;
@@ -1141,7 +1159,7 @@ void BasicWindow::drawEditor(ImVec2 size) {
       ImU32 c = colourFor(s.kind);
       if (!st.empty() && currentStatement_ < static_cast<int>(st.size())) {
         const basic::Statement &cur = st[static_cast<size_t>(currentStatement_)];
-        if (s.kind != basic::Kind::LineNumber && (s.start + s.length <= cur.start || s.start >= cur.end + 1)) {
+        if (s.kind != basic::Kind::LineNumber && s.kind != basic::Kind::Error && (s.start + s.length <= cur.start || s.start >= cur.end + 1)) {
           c = withAlpha(c, 0.5f);
         }
       }
@@ -1272,6 +1290,13 @@ void BasicWindow::drawEditor(ImVec2 size) {
     if (n && s >= 0) toggleBreakpoint(*n, s);
   };
   hooks.key = [this](ImGuiKey key, bool shift) { return onKey(key, shift); };
+  // A digit that would take a line's number past 63999 is refused as it is
+  // typed, and the window says why.
+  hooks.acceptsLine = [this](const std::string &line) {
+    if (basic::lineNumberFits(line)) return true;
+    message("Applesoft line numbers go from 0 to 63999", true);
+    return false;
+  };
   hooks.typed = [this](const std::string &typed) { onTyped(typed); };
   // A paste is formatted at once, as the browser does, once the editor has
   // finished with this frame's keys.
@@ -1825,7 +1850,7 @@ void BasicWindow::drawSidebar(float width, float height) {
 
 void BasicWindow::drawStatusBar() {
   const CodeEditor::Position c = editor_.caret();
-  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 0.9f);
+  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * STATUS_SCALE);
   if (state_.running && state_.paused && (state_.curlin >> 8) != 0xFF) {
     ImGui::TextDisabled("LINE %u", state_.curlin);
     if (state_.statements > 1) {
@@ -1846,13 +1871,17 @@ void BasicWindow::drawStatusBar() {
   ImGui::SameLine(0, 12);
   ImGui::TextDisabled("%zu char%s", charCount, charCount == 1 ? "" : "s");
   ImGui::PopFont();
+  // The message at the same size as the figures beside it, so the row shares
+  // one baseline, and a little in from the window's edge.
   const double age = ImGui::GetTime() - messageAt_;
   if (!message_.empty() && age < 4.0) {
+    ImGui::PushFont(nullptr, ImGui::GetFontSize() * STATUS_SCALE);
     const float w = ImGui::CalcTextSize(message_.c_str()).x;
     ImGui::SameLine(0, 18);
-    ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - w));
+    ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - w - 4));
     const ImU32 c2 = messageProblem_ ? palette().red : ui::accentText(std::min(1.0f, static_cast<float>(4.0 - age)));
     ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(c2), "%s", message_.c_str());
+    ImGui::PopFont();
   }
 }
 
@@ -1978,8 +2007,16 @@ void BasicWindow::draw(bool *open) {
   ImGui::Dummy(ImVec2(0, 4));
 
   const ImVec2 avail = ImGui::GetContentRegionAvail();
-  // The status line's own height, and the gap above it.
-  const float statusHeight = ImGui::GetTextLineHeightWithSpacing() + 8;
+  // What goes below the editor, exactly: the spacing after the editor's row,
+  // the gap, the spacing after it, and the status line at its own size. A
+  // guess at this left the status line cut off by the window's bottom edge.
+  const float spacing = ImGui::GetStyle().ItemSpacing.y;
+  // The line's height measured in the font it is drawn in: SF Mono's line is
+  // taller than its size, and an estimate from the size still clipped it.
+  ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * STATUS_SCALE);
+  const float statusLine = ImGui::GetTextLineHeight();
+  ImGui::PopFont();
+  const float statusHeight = spacing + STATUS_GAP + spacing + statusLine + STATUS_MARGIN;
   const float height = avail.y - statusHeight;
   const float sidebar = std::clamp(sidebarWidth_, SIDEBAR_MIN, std::max(SIDEBAR_MIN, avail.x - EDITOR_MIN - 10));
   const float editorWidth = avail.x - sidebar - 10;
@@ -1999,7 +2036,7 @@ void BasicWindow::draw(bool *open) {
   }
   ImGui::SameLine(0, 0);
   drawSidebar(sidebar, height);
-  ImGui::Dummy(ImVec2(0, 2));
+  ImGui::Dummy(ImVec2(0, STATUS_GAP));
   drawStatusBar();
 
   drawNewConfirm();

@@ -496,6 +496,12 @@ void CpuDebugger::stopped(const std::string &reason) {
   stoppedAt_ = ImGui::GetTime();
 }
 
+int CpuDebugger::importSymbols(const std::string &text) {
+  const int count = symbols_.importSymbols(text);
+  ImGui::MarkIniSettingsDirty();
+  return count;
+}
+
 // Why the machine stopped, and whether it should have: a breakpoint whose
 // condition is false sends it straight back to running.
 void CpuDebugger::handleStop() {

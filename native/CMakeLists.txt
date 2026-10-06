@@ -46,6 +46,8 @@ set(NATIVE_SOURCES
     src/console_command.cpp
     src/console_window.cpp
     src/debug_breakpoints.cpp
+    src/dev_project.cpp
+    src/develop.cpp
     src/debug_symbols.cpp
     src/display_settings.cpp
     src/drive_sounds.cpp
@@ -89,7 +91,17 @@ if(NOT APPLEM_VERSION)
 endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/js/config/version.js)
 
-add_executable(ApplEmNative MACOSX_BUNDLE ${NATIVE_SOURCES})
+# When the app was built, for the About panel: a source file written on every
+# build (not at configure), since a __DATE__ only moves when its file is
+# recompiled.
+set(BUILD_STAMP ${CMAKE_CURRENT_BINARY_DIR}/build_stamp.cpp)
+add_custom_target(applem_build_stamp
+    COMMAND ${CMAKE_COMMAND} -DOUT=${BUILD_STAMP} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/build_stamp.cmake
+    BYPRODUCTS ${BUILD_STAMP}
+    COMMENT "Stamping the build time")
+
+add_executable(ApplEmNative MACOSX_BUNDLE ${NATIVE_SOURCES} ${BUILD_STAMP})
+add_dependencies(ApplEmNative applem_build_stamp)
 set_target_properties(ApplEmNative PROPERTIES
     OUTPUT_NAME "ApplEm"
     MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/resources/Info.plist.in
@@ -290,4 +302,20 @@ target_compile_options(test_native_media PRIVATE -Wall -Wextra -Wno-unused-param
 target_link_libraries(test_native_media PRIVATE a2e_core imgui
     "-framework AudioToolbox" "-framework CoreAudio")
 add_test(NAME test_native_media COMMAND test_native_media
+         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+# A program built with the user's own tools: the project file, the build's
+# output and errors, the boot volume, and starting it on a machine.
+add_executable(test_native_dev
+    tests/test_native_dev.cpp
+    src/dev_project.cpp
+    src/media_store.cpp
+)
+target_include_directories(test_native_dev PRIVATE
+    ${CMAKE_SOURCE_DIR}/tests/catch2
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_compile_options(test_native_dev PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(test_native_dev PRIVATE a2e_core)
+add_test(NAME test_native_dev COMMAND test_native_dev
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

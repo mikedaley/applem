@@ -490,6 +490,9 @@ void watchMouse() {
   platform.openURL = [](const std::string &url) {
     if (NSURL *target = [NSURL URLWithString:@(url.c_str())]) [NSWorkspace.sharedWorkspace openURL:target];
   };
+  platform.openPath = [](const std::string &path) {
+    [NSWorkspace.sharedWorkspace openURL:[NSURL fileURLWithPath:@(path.c_str())]];
+  };
   platform.resourceDirectory = NSBundle.mainBundle.resourcePath.UTF8String;
   id<MTLDevice> device = _device;
   platform.makeTexture = [device](const uint8_t *rgba, int width, int height) -> ImTextureID {

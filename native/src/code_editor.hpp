@@ -57,6 +57,10 @@ public:
     std::function<void(Position)> optionClicked;
     // Offered every key press first: true when the owner has dealt with it.
     std::function<bool(ImGuiKey key, bool shift)> key;
+    // Asked before a typed character changes a line, with the line as it
+    // would be: false refuses the character. A language whose lines have
+    // rules (Applesoft's numbers stop at 63999) keeps them as they are typed.
+    std::function<bool(const std::string &line)> acceptsLine;
     // After the text changed by typing, with what was typed.
     std::function<void(const std::string &typed)> typed;
     // After a paste (Command-V) changed the text.

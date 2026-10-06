@@ -93,6 +93,8 @@ struct Platform {
 
   // Open a web page in the user's browser.
   std::function<void(const std::string &url)> openURL;
+  // A file, in the app the system opens it with.
+  std::function<void(const std::string &path)> openPath;
 
   // The bundle's Resources, where the disk library is.
   std::string resourceDirectory;
