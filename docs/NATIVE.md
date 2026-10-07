@@ -1,22 +1,24 @@
 # Native macOS front end
 
-`native/` is a second front end for the same emulator: a Cocoa app drawn
-entirely with Dear ImGui (the docking branch) over Metal, with docking and
-multi-viewport on, so any window can be dragged out of the main one into a
-window of its own. It shares the C++ core and the host layer with the browser
-build and shares no JavaScript.
+`native/` is ApplEm's macOS front end: a Cocoa app drawn entirely with Dear
+ImGui (the docking branch) over Metal, with docking and multi-viewport on, so
+any window can be dragged out of the main one into a window of its own. The
+C++ core and the host layer are the `core/` submodule
+([applem-core](https://github.com/mikedaley/applem-core)), shared with the
+browser build ([web-a2e](https://github.com/mikedaley/web-a2e)).
 
 ## Building
 
 ```bash
-git submodule update --init native/third_party/imgui
-npm run native:build     # build-macos/native/ApplEm.app
-npm run native:run       # build and open it
-build-macos/native/test_native_input
+git submodule update --init   # the core and Dear ImGui
+make                          # build-macos/native/ApplEm.app
+make run                      # build and open it
+make test                     # the app's own tests
 ```
 
-`native:build` configures the top-level CMake with `-DA2E_BUILD_NATIVE=ON`.
-The ROMs are embedded exactly as for the browser build.
+The top-level CMake adds the core (`add_subdirectory(core)`, which builds
+`a2e_core` with its tests off) and then `native/`. The ROMs are embedded by
+the core.
 
 **The app runs on macOS 15 and later.** The top-level `CMakeLists.txt` sets
 `CMAKE_OSX_DEPLOYMENT_TARGET` from `A2E_MACOS_MINIMUM` (15.0) before
@@ -31,9 +33,9 @@ check are checked by hand: the SF Symbols (all from macOS 11 and 12) and the
 CRT shader, compiled at startup with no language version asked for and
 `MTLCompileOptions.mathMode`, which is macOS 15's.
 
-**A release** is `npm run native:release` (`scripts/build-native-mac.sh`):
+**A release** is `make release` (`scripts/build-native-mac.sh`):
 a Release build in its own `build-macos-release/`, stamped with the version
-in `src/js/config/version.js`, signed with the Developer ID certificate
+in `VERSION`, signed with the Developer ID certificate
 found in the keychain (hardened runtime, secure timestamp, no entitlements
 needed), packed into `build-macos-release/dist/ApplEm-Native-<version>.dmg`
 with a link to Applications, notarised, stapled and checked with Gatekeeper.
@@ -137,8 +139,8 @@ text field and beeps.
 
 The picture goes through the browser's CRT chain, ported to Metal:
 `native/shaders/crt.metal` holds the CRT pass, the phosphor persistence pass
-and the glass edge pass from `public/shaders/crt.glsl`, `burnin.glsl` and
-`edge.glsl`. It is compiled when the app starts, from the bundle's copy, so
+and the glass edge pass from web-a2e's `public/shaders/crt.glsl`,
+`burnin.glsl` and `edge.glsl`. It is compiled when the app starts, from the bundle's copy, so
 the build needs no Metal toolchain. `screen_renderer_metal.mm` renders it
 into an offscreen texture at exactly the pixels the Screen window covers, at
 the density of the display that window is on, and ImGui draws that one to
@@ -147,12 +149,14 @@ one.
 **The port is checked against the original, pixel by pixel.**
 `crt_render` boots a //e, draws lo-res, hi-res and the no-signal screen
 through each preset's own decoder and through Metal, and writes the frames
-and parameters; `scripts/compare-crt.mjs` draws the same frames through the
-browser's own `WebGLRenderer` in headless Chrome and compares:
+and parameters; web-a2e's `scripts/compare-crt.mjs` draws the same frames
+through the browser's own `WebGLRenderer` in headless Chrome and compares.
+With web-a2e checked out beside this repository:
 
 ```bash
 cmake --build build-macos --target crt_render
 build-macos/native/crt_render native/shaders/crt.metal /tmp/crt
+cd ../web-a2e
 npm run dev -- --port 3011 --strictPort &
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
     --remote-debugging-port=9233 --user-data-dir=/tmp/crt-chrome \
@@ -325,8 +329,8 @@ Here the native app parts from the browser, which can only ever hold a copy:
   a floppy drive (`App::planDrop`, the browser's `media-kind.js` rule). A drag
   over the screen outlines it and says where the disk will go, a drop says
   where it went, and a drag with no disk image in it is refused: the cursor
-  says so and the outline turns red. The browser's
-  `public/disks` library is bundled and offered under Recent.
+  says so and the outline turns red. The disk library in
+  `native/resources/disks` is bundled and offered under Recent.
 
 ## SmartPort drives and expansion slots
 
@@ -641,8 +645,8 @@ instruction before it. Each line carries:
   Apply replaces it. Breakpoints, watches, beam
 breakpoints, labels, comments, imported symbols and bookmarks are kept in
 the ini under `[ApplEmDebugger][State]`. The Apple II's built-in names are
-generated from `symbols.js` into `apple2_symbols.inc`
-(`npm run generate:native-symbols`, checked by `npm run check`), and
+in `apple2_symbols.inc`, first generated from the browser's `symbols.js` and
+now edited here, and
 `test_native_debugger` pins symbol lookup, address parsing, the
 breakpoint list, and the rules' expressions in both directions and through
 the evaluator.

@@ -1,8 +1,8 @@
 # native/CMakeLists.txt - The native macOS front end
 #
 # Dear ImGui's docking branch, its Cocoa platform backend and its Metal
-# renderer, around the shared core (a2e_core). Built from the top-level
-# CMakeLists.txt with -DA2E_BUILD_NATIVE=ON; `npm run native:build` does that.
+# renderer, around the shared core (a2e_core, from the core/ submodule). Built
+# from the top-level CMakeLists.txt; `make` does that.
 
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui)
 if(NOT EXISTS ${IMGUI_DIR}/imgui.h)
@@ -83,15 +83,13 @@ set(NATIVE_SOURCES
     src/sound/volume_map.cpp
 )
 
-# The app's version is the one the release process bumps, the browser's, so
+# The app's version is the one the release process bumps, in VERSION, so
 # every build says the same as the release it came from.
-file(READ ${CMAKE_SOURCE_DIR}/src/js/config/version.js VERSION_JS)
-string(REGEX MATCH "VERSION = \"([^\"]+)\"" _ "${VERSION_JS}")
-set(APPLEM_VERSION "${CMAKE_MATCH_1}")
+file(STRINGS ${CMAKE_SOURCE_DIR}/VERSION APPLEM_VERSION LIMIT_COUNT 1)
 if(NOT APPLEM_VERSION)
     set(APPLEM_VERSION "${PROJECT_VERSION}")
 endif()
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/js/config/version.js)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/VERSION)
 
 # When the app was built, for the About panel: a source file written on every
 # build (not at configure), since a __DATE__ only moves when its file is
@@ -122,8 +120,8 @@ set_source_files_properties(${CRT_SHADER} PROPERTIES
     MACOSX_PACKAGE_LOCATION Resources
     HEADER_FILE_ONLY TRUE)
 
-# The browser build's disk library, offered under Recent.
-file(GLOB DISK_LIBRARY ${CMAKE_SOURCE_DIR}/public/disks/*)
+# The disk library, offered under Recent.
+file(GLOB DISK_LIBRARY ${CMAKE_CURRENT_SOURCE_DIR}/resources/disks/*)
 foreach(disk ${DISK_LIBRARY})
     target_sources(ApplEmNative PRIVATE ${disk})
     set_source_files_properties(${disk} PROPERTIES
@@ -160,7 +158,7 @@ add_executable(test_native_input
     src/controls/key_mapper.cpp
 )
 target_include_directories(test_native_input PRIVATE
-    ${CMAKE_SOURCE_DIR}/tests/catch2
+    ${CMAKE_SOURCE_DIR}/core/tests/catch2
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 target_compile_options(test_native_input PRIVATE -Wall -Wextra -Wno-unused-parameter)
@@ -178,7 +176,7 @@ add_executable(test_native_debugger
     src/debugger/debug_breakpoints.cpp
 )
 target_include_directories(test_native_debugger PRIVATE
-    ${CMAKE_SOURCE_DIR}/tests/catch2
+    ${CMAKE_SOURCE_DIR}/core/tests/catch2
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 target_compile_options(test_native_debugger PRIVATE -Wall -Wextra -Wno-unused-parameter)
@@ -195,7 +193,7 @@ add_executable(test_native_basic
     src/applesoft/code_editor.cpp
 )
 target_include_directories(test_native_basic PRIVATE
-    ${CMAKE_SOURCE_DIR}/tests/catch2
+    ${CMAKE_SOURCE_DIR}/core/tests/catch2
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 target_compile_options(test_native_basic PRIVATE -Wall -Wextra -Wno-unused-parameter)
@@ -209,7 +207,7 @@ add_executable(test_native_equalizer
     src/sound/equalizer.cpp
 )
 target_include_directories(test_native_equalizer PRIVATE
-    ${CMAKE_SOURCE_DIR}/tests/catch2
+    ${CMAKE_SOURCE_DIR}/core/tests/catch2
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 target_compile_options(test_native_equalizer PRIVATE -Wall -Wextra -Wno-unused-parameter)
@@ -236,7 +234,7 @@ add_executable(test_native_display
     src/display/no_signal_frame.cpp
 )
 target_include_directories(test_native_display PRIVATE
-    ${CMAKE_SOURCE_DIR}/tests/catch2
+    ${CMAKE_SOURCE_DIR}/core/tests/catch2
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 target_compile_options(test_native_display PRIVATE -Wall -Wextra -Wno-unused-parameter)
@@ -265,7 +263,7 @@ add_executable(test_native_console
     src/sound/volume_map.cpp
 )
 target_include_directories(test_native_console PRIVATE
-    ${CMAKE_SOURCE_DIR}/tests/catch2
+    ${CMAKE_SOURCE_DIR}/core/tests/catch2
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 target_compile_options(test_native_console PRIVATE -Wall -Wextra -Wno-unused-parameter
@@ -284,7 +282,7 @@ add_executable(test_native_ui
     src/app/platform_paths.mm
 )
 target_include_directories(test_native_ui PRIVATE
-    ${CMAKE_SOURCE_DIR}/tests/catch2
+    ${CMAKE_SOURCE_DIR}/core/tests/catch2
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 target_compile_options(test_native_ui PRIVATE -Wall -Wextra -Wno-unused-parameter
@@ -315,7 +313,7 @@ add_executable(test_native_media
     src/sound/volume_map.cpp
 )
 target_include_directories(test_native_media PRIVATE
-    ${CMAKE_SOURCE_DIR}/tests/catch2
+    ${CMAKE_SOURCE_DIR}/core/tests/catch2
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 target_compile_options(test_native_media PRIVATE -Wall -Wextra -Wno-unused-parameter
@@ -333,7 +331,7 @@ add_executable(test_native_dev
     src/drives/media_store.cpp
 )
 target_include_directories(test_native_dev PRIVATE
-    ${CMAKE_SOURCE_DIR}/tests/catch2
+    ${CMAKE_SOURCE_DIR}/core/tests/catch2
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 target_compile_options(test_native_dev PRIVATE -Wall -Wextra -Wno-unused-parameter)

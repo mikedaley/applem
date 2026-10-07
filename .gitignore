@@ -1,18 +1,7 @@
 # Build outputs
 build/
-build-native/
-build-macos/
-build-macos-release/
-dist/
+build-*/
 Testing/
-public/a2e.js
-public/a2e.wasm
-
-# Node modules
-node_modules/
-
-# Emscripten SDK
-emsdk/
 
 # IDE
 .vscode/
@@ -21,10 +10,7 @@ emsdk/
 *.swo
 
 # Claude Code
-.claude/*
-!.claude/skills/
-.claude/skills/*
-!.claude/skills/emma/
+.claude/
 
 # OS
 .DS_Store
@@ -32,19 +18,3 @@ Thumbs.db
 
 # Logs
 *.log
-npm-debug.log*
-mcp/a2e-agent/logs/
-t
-
-video-outline.md
-/.agents/skills/skill-creator/
-/.agents/skills/mcp-client/
-/.agents/skills/capture/
-/.agents/skills/summarize/
-
-# Local tool state
-.codex/
-.lean-ctx/
-
-# Deploy target configuration (see .env.deploy.example)
-.env.deploy

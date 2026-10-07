@@ -42,10 +42,10 @@ if [ -z "$IDENTITY" ]; then
 fi
 echo "> Signing identity: $IDENTITY"
 
-# One version for both builds: the one the release process bumps.
-VERSION="$(sed -nE 's/.*VERSION = "([^"]+)".*/\1/p' src/js/config/version.js)"
+# The version the release process bumps.
+VERSION="$(head -n 1 VERSION | tr -d '[:space:]')"
 if [ -z "$VERSION" ]; then
-  echo "x No VERSION in src/js/config/version.js" >&2
+  echo "x No version in VERSION" >&2
   exit 1
 fi
 echo "> Version: $VERSION"
@@ -53,8 +53,8 @@ echo "> Version: $VERSION"
 # A Release build in its own directory, so a release never picks up a
 # development build's settings and the development build is left alone.
 echo "> Building..."
-git submodule update --init native/third_party/imgui
-cmake -S . -B "$BUILD" -DA2E_BUILD_NATIVE=ON -DCMAKE_BUILD_TYPE=Release >/dev/null
+git submodule update --init
+cmake -S . -B "$BUILD" -DCMAKE_BUILD_TYPE=Release >/dev/null
 cmake --build "$BUILD" --target ApplEmNative -j 4
 
 APP="$BUILD/native/ApplEm.app"

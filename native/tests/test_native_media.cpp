@@ -254,7 +254,7 @@ TEST_CASE("Every block has a cell, and the cells cover the volume", "[media][vol
 }
 
 TEST_CASE("The inspector reads a whole disk through the core's overview", "[media][inspector]") {
-  auto data = readFile("public/disks/ProDOS 2.4.3.po");
+  auto data = readFile("native/resources/disks/ProDOS 2.4.3.po");
   REQUIRE(data);
   a2e::DskDiskImage image;
   REQUIRE(image.load(data->data(), data->size(), "ProDOS 2.4.3.po"));
@@ -282,7 +282,7 @@ TEST_CASE("The inspector reads a whole disk through the core's overview", "[medi
 }
 
 TEST_CASE("The inspector reads one track in full", "[media][inspector]") {
-  auto data = readFile("public/disks/ProDOS 2.4.3.po");
+  auto data = readFile("native/resources/disks/ProDOS 2.4.3.po");
   REQUIRE(data);
   a2e::DskDiskImage image;
   REQUIRE(image.load(data->data(), data->size(), "ProDOS 2.4.3.po"));

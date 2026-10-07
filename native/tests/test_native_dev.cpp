@@ -199,9 +199,9 @@ TEST_CASE("A program starts from memory without any DOS", "[dev][machine]") {
 }
 
 TEST_CASE("A volume made for a program boots straight into it", "[dev][machine]") {
-  const auto system = native::readFile("public/disks/ProDOS 2.4.3.po");
+  const auto system = native::readFile("native/resources/disks/ProDOS 2.4.3.po");
   if (!system) {
-    WARN("public/disks/ProDOS 2.4.3.po not found; skipping");
+    WARN("native/resources/disks/ProDOS 2.4.3.po not found; skipping");
     return;
   }
   std::string error;
