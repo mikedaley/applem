@@ -11,7 +11,7 @@
 
 #include "../src/develop/dev_project.hpp"
 #include "../src/drives/media_store.hpp"
-#include "../../src/host/machine_host.hpp"
+#include "host/machine_host.hpp"
 #include "emulator.hpp"
 #include "filesystem/prodos.hpp"
 

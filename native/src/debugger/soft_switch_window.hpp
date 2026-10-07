@@ -10,7 +10,7 @@
 #include "debugger/debug_breakpoints.hpp"
 #include "app/machine_poll.hpp"
 
-#include "../../../src/core/debug/soft_switch_catalog.hpp"
+#include "core/debug/soft_switch_catalog.hpp"
 
 #include <array>
 #include <cstdint>

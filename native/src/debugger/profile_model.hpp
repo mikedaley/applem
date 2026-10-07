@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include "../../../src/core/debug/profiler.hpp"
+#include "core/debug/profiler.hpp"
 
 #include <array>
 #include <cstdint>

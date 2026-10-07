@@ -19,7 +19,7 @@
 #include "../src/drives/disk_inspector_data.hpp"
 #include "../src/drives/disk_platter.hpp"
 #include "disk-image/dsk_disk_image.hpp"
-#include "../../src/host/machine_host.hpp"
+#include "host/machine_host.hpp"
 #include "machine/machine_profile.hpp"
 
 #include <cstring>

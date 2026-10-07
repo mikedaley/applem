@@ -10,7 +10,7 @@
 #include "debugger/console_command.hpp"
 #include "debugger/debug_breakpoints.hpp"
 
-#include "../../../src/host/machine_host.hpp"
+#include "host/machine_host.hpp"
 
 #include <array>
 #include <cstdint>

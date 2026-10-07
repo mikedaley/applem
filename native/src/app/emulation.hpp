@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include "../../../src/host/machine_host.hpp"
+#include "host/machine_host.hpp"
 #include "sound/audio_output.hpp"
 #include "sound/audio_ring.hpp"
 #include "sound/equalizer.hpp"

@@ -26,7 +26,7 @@
 #include "display/no_signal_frame.hpp"
 #include "display/screen_renderer_metal.hpp"
 
-#include "../../src/host/machine_host.hpp"
+#include "host/machine_host.hpp"
 #include "video/video.hpp"
 
 #include <cstdio>

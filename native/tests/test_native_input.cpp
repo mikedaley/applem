@@ -15,7 +15,7 @@
 #include "../src/app/frame_queue.hpp"
 #include "../src/controls/game_port.hpp"
 #include "../src/controls/key_mapper.hpp"
-#include "../../src/host/machine_host.hpp"
+#include "host/machine_host.hpp"
 
 #include <string>
 #include <vector>

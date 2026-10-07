@@ -12,7 +12,7 @@
 #include "debugger/debug_symbols.hpp"
 #include "app/platform.hpp"
 
-#include "../../../src/host/machine_host.hpp"
+#include "host/machine_host.hpp"
 
 #include "imgui.h"
 
