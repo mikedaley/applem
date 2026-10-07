@@ -72,6 +72,20 @@ uint32_t timeColour(uint8_t time) {
   return d < 0 ? mix(NEUTRAL, BLUE, -d) : mix(NEUTRAL, ORANGE, d);
 }
 
+uint32_t tileColour(uint8_t kind, uint8_t time, bool flux, PlatterMode mode) {
+  if (mode == PlatterMode::Timing) {
+    const uint32_t tc = flux ? timeColour(time) : 0;
+    return tc ? tc : NEUTRAL;
+  }
+  if ((kind & inspect::KIND_MASK) == inspect::INVALID && !(kind & inspect::BAD)) return mix(MEDIUM_COLOUR, MUTED, 0.5);
+  return kindColour(kind);
+}
+
+bool wantsDarkText(uint32_t rgb) {
+  const double luma = 0.2126 * ((rgb >> 16) & 0xFF) + 0.7152 * ((rgb >> 8) & 0xFF) + 0.0722 * (rgb & 0xFF);
+  return luma > 140;
+}
+
 void paintPlatter(std::vector<uint8_t> &rgba, int size, const Overview *overview, PlatterMode mode,
                   const PlatterView &view, const PlatterRings *rings) {
   using namespace platter;
@@ -134,23 +148,45 @@ void paintPlatter(std::vector<uint8_t> &rgba, int size, const Overview *overview
           uint8_t kind;
           uint8_t time = 0;
           uint32_t place;
-          bool transition = false;
+          // Once its cells are wide enough to see, a ring read in full is
+          // drawn as the Track strip draws it: each nibble a tile in its
+          // colour with a hairline between it and the next, its flux
+          // reversals short soft ticks across the inner part of the track,
+          // and room in the outer part for its value.
+          bool tiles = false;
+          bool gap = false;
+          double tick = 0;
           if (ring && ring->track.present && !ring->cellKinds.empty()) {
             const uint32_t cells = static_cast<uint32_t>(ring->cellKinds.size());
-            const uint32_t cell = std::min(cells - 1, static_cast<uint32_t>(a * cells));
+            const double at = a * cells;
+            const uint32_t cell = std::min(cells - 1, static_cast<uint32_t>(at));
             kind = ring->cellKinds[cell];
             if (cell < ring->track.cellTime.size()) time = ring->track.cellTime[cell];
             place = cell;
-            // Once a cell is wide enough to see, the ones in it show.
             const double cellPixels = 2 * M_PI * r / cells * half * zoom;
-            transition = cellPixels >= 2.5 && cellBit(ring->track.bits, cell);
+            tiles = cellPixels >= 2.5;
+            if (tiles) {
+              const double within = (at - cell) * cellPixels; // pixels into the cell
+              const double across = position - std::floor(position);
+              gap = cell < ring->nibbleStarts.size() && ring->nibbleStarts[cell] &&
+                    within < std::clamp(cellPixels * 0.1, 1.0, 2.5);
+              if (cellBit(ring->track.bits, cell) && across > TICKS_FROM && across < TICKS_TO) {
+                const double width = std::clamp(cellPixels * 0.12, 1.0, 3.0);
+                const double side = std::clamp(width * 0.5 - std::abs(within - cellPixels * 0.5) + 0.5, 0.0, 1.0);
+                const double ends = std::clamp(std::min(across - TICKS_FROM, TICKS_TO - across) / 0.04, 0.0, 1.0);
+                tick = side * ends;
+              }
+            }
           } else {
             const int b = std::min(buckets - 1, static_cast<int>(a * buckets));
             kind = t.kinds[b];
             time = t.times[b];
             place = static_cast<uint32_t>(b);
           }
-          if (timing) {
+          if (tiles) {
+            rgb = gap ? MEDIUM_COLOUR : tileColour(kind, time, t.flux, mode);
+            if (tick > 0) rgb = mix(rgb, mix(rgb, 0xffffff, 0.8), tick);
+          } else if (timing) {
             const uint32_t tc = t.flux ? timeColour(time) : 0;
             rgb = tc ? tc : mix(MEDIUM_COLOUR, kindColour(kind), 0.22);
           } else if ((kind & inspect::KIND_MASK) == inspect::INVALID && !(kind & inspect::BAD)) {
@@ -158,7 +194,6 @@ void paintPlatter(std::vector<uint8_t> &rgba, int size, const Overview *overview
           } else {
             rgb = kindColour(kind);
           }
-          if (transition) rgb = mix(rgb, 0xffffff, 0.55);
           if (bleed && rgb != MEDIUM_COLOUR) rgb = mix(MEDIUM_COLOUR, rgb, 0.45);
         }
         // A groove between whole tracks, so the rings read as tracks.

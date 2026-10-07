@@ -268,8 +268,14 @@ or the mode changes; a frame draws it as one quad turned by the core's own
 passing under the real one. Zoomed in, the view is painted afresh as it
 moves (at half resolution while dragged), and once no more than 48 rings
 show, each is read in full (`makeRing`, a few a frame under the lock) and
-drawn from its own cells: flux transitions once a cell is wide enough to
-see, and the nibbles' values along the ring once there is room. `test_native_media` pins the parsing, the
+drawn from its own cells. Once a cell is wide enough to see, a ring is
+drawn as the Track strip draws a track: each nibble a tile in its colour
+(`tileColour`: its kind, or in Timing its cells' time, neutral for a track
+with no timing) with a hairline before it, its flux reversals short soft
+ticks across the inner part of the ring, and its value in the outer part
+(`platter::LABEL_ACROSS`, `TICKS_FROM`, `TICKS_TO`), dark or light for its
+tile. A transition used to light its whole cell, which turned a run of sync
+into bars and gaps that the values sat on top of. `test_native_media` pins the parsing, the
 summary, a whole track, the ring geometry and the painting's transparency.
 
 The drive's rules are the browser's:

@@ -44,6 +44,19 @@ enum class PlatterMode { Structure, Timing };
 uint32_t kindColour(uint8_t kind);
 // A flux cell: blue written fast, orange slow, neutral on time; 0 for none.
 uint32_t timeColour(uint8_t time);
+// A nibble's tile on a ring read in full: its kind's colour, or in Timing
+// its cells' time, and neutral for a track with no timing, whose cells are
+// all nominal.
+uint32_t tileColour(uint8_t kind, uint8_t time, bool flux, PlatterMode mode);
+// Whether text on a colour wants to be dark.
+bool wantsDarkText(uint32_t rgb);
+// Where across a ring read in full, from its outer edge, the nibbles'
+// values sit, and the band its flux reversals are drawn in under them.
+namespace platter {
+constexpr float LABEL_ACROSS = 0.3f;
+constexpr float TICKS_FROM = 0.56f;
+constexpr float TICKS_TO = 0.88f;
+} // namespace platter
 constexpr uint32_t MEDIUM_COLOUR = 0x1a1308;
 constexpr uint32_t HUB_COLOUR = 0xd8d4c8;
 

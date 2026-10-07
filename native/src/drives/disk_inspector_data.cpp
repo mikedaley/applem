@@ -102,8 +102,10 @@ Ring makeRing(TrackDetail track) {
   Ring ring;
   const uint32_t cells = track.analysis.bit_count;
   ring.cellKinds.assign(cells, inspect::NONE);
+  ring.nibbleStarts.assign(cells, 0);
   for (const inspect::Nibble &n : track.analysis.nibbles) {
     for (uint32_t c = 0; c < n.cells; c++) ring.cellKinds[(n.start_bit + c) % cells] = n.kind;
+    if (cells) ring.nibbleStarts[n.start_bit % cells] = 1;
   }
   ring.track = std::move(track);
   return ring;

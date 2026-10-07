@@ -290,15 +290,17 @@ void DiskInspector::drawPlatter(ImVec2 origin, float size) {
   };
   if (detail_.quarterTrack >= 0) outline(detail_.quarterTrack, accent(0.95f));
 
-  // The nibbles' values along each ring, once there is room to write them.
-  if (zoomed && ringPixels >= 11) {
-    ImGui::PushFont(ui::monoFont(), std::min(15.0f, ringPixels * 0.62f));
+  // The nibbles' values along each ring, once there is room to write them:
+  // in the outer part of the track, clear of the flux reversals under them,
+  // dark or light for the tile they are on.
+  if (zoomed && ringPixels * platter::TICKS_FROM * 0.62f >= 7) {
+    ImGui::PushFont(ui::monoFont(), std::min(15.0f, ringPixels * platter::TICKS_FROM * 0.62f));
     const float hexWidth = ImGui::CalcTextSize("FF").x;
     for (int qt : wantedRings_) {
       auto it = rings_.find(qt);
       if (it == rings_.end() || !it->second.track.present) continue;
       const auto &a = it->second.track.analysis;
-      const double rMid = platter::radiusOf(qt);
+      const double rMid = platter::BAND_OUTER - (qt + platter::LABEL_ACROSS) * platter::RING_WIDTH;
       const double arcPerCell = 2 * M_PI * rMid * scale / a.bit_count;
       if (arcPerCell * 8 < hexWidth + 4) continue;
       for (const inspect::Nibble &n : a.nibbles) {
@@ -308,8 +310,9 @@ void DiskInspector::drawPlatter(ImVec2 origin, float size) {
         if (at.x < viewMin.x - 20 || at.x > viewMax.x + 20 || at.y < viewMin.y - 20 || at.y > viewMax.y + 20) continue;
         char hex[4];
         std::snprintf(hex, sizeof(hex), "%02X", n.value);
-        const bool quiet = (n.kind & inspect::KIND_MASK) == inspect::SYNC || (n.kind & inspect::KIND_MASK) == inspect::INVALID;
-        centredText(draw, at, quiet ? IM_COL32(255, 255, 255, 170) : IM_COL32(0, 0, 0, 200), hex);
+        const uint8_t time = n.start_bit < it->second.track.cellTime.size() ? it->second.track.cellTime[n.start_bit] : 0;
+        const uint32_t tile = tileColour(n.kind, time, it->second.track.flux, mode_);
+        centredText(draw, at, wantsDarkText(tile) ? IM_COL32(0, 0, 0, 210) : IM_COL32(255, 255, 255, 210), hex);
       }
     }
     ImGui::PopFont();

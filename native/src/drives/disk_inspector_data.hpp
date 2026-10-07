@@ -83,10 +83,12 @@ inline bool cellBit(const std::vector<uint8_t> &bits, uint32_t cell) {
 }
 
 // A quarter track read in full for the zoomed platter: the track, and the
-// kind of every cell, so a pixel can find its own in one lookup.
+// kind of every cell and whether a nibble starts at it, so a pixel can find
+// its own in one lookup.
 struct Ring {
   TrackDetail track;
   std::vector<uint8_t> cellKinds;
+  std::vector<uint8_t> nibbleStarts;
 };
 Ring makeRing(TrackDetail track);
 
