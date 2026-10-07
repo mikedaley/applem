@@ -139,7 +139,7 @@ ImU32 withAlpha(ImU32 colour, float alpha) {
   return (colour & ~IM_COL32_A_MASK) | (static_cast<ImU32>(a) << IM_COL32_A_SHIFT);
 }
 
-void dashedRect(ImDrawList *draw, ImVec2 a, ImVec2 b, ImU32 colour) {
+void dashedOutline(ImDrawList *draw, const ImVec2 *points, int count, ImU32 colour) {
   auto line = [&](ImVec2 p, ImVec2 q) {
     const float length = std::hypot(q.x - p.x, q.y - p.y);
     const ImVec2 d((q.x - p.x) / length, (q.y - p.y) / length);
@@ -148,26 +148,143 @@ void dashedRect(ImDrawList *draw, ImVec2 a, ImVec2 b, ImU32 colour) {
       draw->AddLine(ImVec2(p.x + d.x * t, p.y + d.y * t), ImVec2(p.x + d.x * u, p.y + d.y * u), colour, 1.2f);
     }
   };
-  line(a, ImVec2(b.x, a.y));
-  line(ImVec2(b.x, a.y), b);
-  line(b, ImVec2(a.x, b.y));
-  line(ImVec2(a.x, b.y), a);
+  for (int i = 0; i < count; i++) line(points[i], points[(i + 1) % count]);
 }
 
-// A slot's edge connector, from the side: a black body along the bottom of
-// the row, under the right-hand end of the card where its tab goes, and its
-// fifty pins, twenty-five a side, coming out under it as two staggered rows,
-// at the same pitch as a card's fingers.
-void connector(ImDrawList *draw, float tabLeft, float tabRight, float y) {
-  const float pitch = (tabRight - tabLeft) / PINS_PER_SIDE;
-  draw->AddRectFilled(ImVec2(tabLeft - 6, y + 2), ImVec2(tabRight + 6, y + 12), IM_COL32(0x10, 0x10, 0x10, 255), 2.0f);
-  draw->AddRectFilled(ImVec2(tabLeft - 9, y + 8), ImVec2(tabRight + 9, y + 12), IM_COL32(0x08, 0x08, 0x08, 255), 1.0f);
-  for (int pin = 0; pin < PINS_PER_SIDE; pin++) {
-    const float x = tabLeft + pitch * (pin + 0.5f);
-    // Component side, then solder side, a quarter pitch either way.
-    draw->AddLine(ImVec2(x - pitch * 0.25f, y + 12), ImVec2(x - pitch * 0.25f, y + 15), IM_COL32(0xd0, 0xd0, 0xd0, 170), 1.0f);
-    draw->AddLine(ImVec2(x + pitch * 0.25f, y + 12), ImVec2(x + pitch * 0.25f, y + 17), IM_COL32(0xa8, 0xa8, 0xa8, 150), 1.0f);
+void dashedRect(ImDrawList *draw, ImVec2 a, ImVec2 b, ImU32 colour) {
+  const ImVec2 corners[4] = {a, ImVec2(b.x, a.y), b, ImVec2(a.x, b.y)};
+  dashedOutline(draw, corners, 4, colour);
+}
+
+// The cards are seen from in front of the machine and above it, at this
+// elevation and from this far away, in points: standing in their slots,
+// their faces are foreshortened, and their tops, nearer the eye, are a
+// little larger than their bottoms. The board itself is drawn as it is seen.
+constexpr float VIEW_ELEVATION = IM_PI / 4;
+constexpr float EYE_DISTANCE = 700;
+constexpr float CARD_HEIGHT = 66;   // a card's face, before it is foreshortened
+constexpr float SLOT_MOUTH = 56;    // from a row's top, where a card goes into its connector
+constexpr float CARD_RISE = 4;      // how far a card's bottom edge stands above the mouth
+constexpr float PCB_THICKNESS = 3;
+// The light is behind the eye's left shoulder: a card's shadow falls on the
+// board behind it and to its right.
+constexpr float SHADOW_REACH = 1.15f;
+constexpr float SHADOW_SLANT = 0.22f;
+
+// Stands up what is drawn flat in front of a slot: a point a height above
+// the slot's mouth goes to where that point of an upright card is seen,
+// spreading from the card's middle as it comes nearer the eye.
+struct Stand {
+  float centre;
+  float mouth;
+  ImVec2 operator()(ImVec2 p) const {
+    const float h = mouth - p.y;
+    const float k = EYE_DISTANCE / (EYE_DISTANCE - h * std::sin(VIEW_ELEVATION));
+    return ImVec2(centre + (p.x - centre) * k, mouth - h * std::cos(VIEW_ELEVATION) * k);
   }
+  // Where a point of the card throws its shadow on the board.
+  ImVec2 shadow(ImVec2 p) const {
+    const float h = mouth - p.y;
+    return ImVec2(p.x + h * SHADOW_SLANT, mouth - h * SHADOW_REACH * std::sin(VIEW_ELEVATION));
+  }
+};
+
+// Draws what `paint` draws flat, as the component side of a card facing the
+// eye, and then stands it up in its slot.
+template <typename Paint> void standUp(ImDrawList *draw, const Stand &stand, Paint &&paint) {
+  const int first = draw->VtxBuffer.Size;
+  paint();
+  for (int i = first; i < draw->VtxBuffer.Size; i++) draw->VtxBuffer[i].pos = stand(draw->VtxBuffer[i].pos);
+}
+
+// A slot's edge connector, seen from in front and above, as the moulded
+// black housing of a 50-contact connector is: its top a lip either side of
+// the channel a card stands in, a window over each contact along both lips,
+// the far wall of the channel and its spring contacts lit from above, and
+// the housing's front face falling away to the board. Its pins go through
+// the board and are not seen. The back is drawn before a card and the front
+// after it, so the card's fingers go down into the channel.
+constexpr ImU32 HOUSING_TOP = IM_COL32(0x30, 0x2e, 0x2d, 255);
+constexpr float HOUSING_END = 8;   // past the end contacts
+constexpr float CHANNEL_END = 3;
+
+void connectorBack(ImDrawList *draw, float tabLeft, float tabRight, float mouth) {
+  const float pitch = (tabRight - tabLeft) / PINS_PER_SIDE;
+  const float left = tabLeft - HOUSING_END;
+  const float right = tabRight + HOUSING_END;
+  // Its shadow on the board, soft, and deepest in front of it.
+  for (int i = 0; i < 4; i++) {
+    const float spread = 1.0f + i * 1.6f;
+    draw->AddRectFilled(ImVec2(left - spread, mouth - 5 - spread * 0.5f), ImVec2(right + spread, mouth + 11 + spread * 2),
+                        IM_COL32(0, 0, 0, 22), 3.0f + spread);
+  }
+  // The top, its far edge catching the light.
+  draw->AddRectFilled(ImVec2(left, mouth - 5), ImVec2(right, mouth + 4.5f), HOUSING_TOP, 2.5f, ImDrawFlags_RoundCornersTop);
+  draw->AddLine(ImVec2(left + 2, mouth - 4.6f), ImVec2(right - 2, mouth - 4.6f), IM_COL32(255, 255, 255, 30), 1.0f);
+  // The far lip's contact windows.
+  for (int pin = 0; pin < PINS_PER_SIDE; pin++) {
+    const float x = tabLeft + pitch * (pin + 0.5f) - pitch * 0.25f;
+    draw->AddRectFilled(ImVec2(x - pitch * 0.2f, mouth - 3.8f), ImVec2(x + pitch * 0.2f, mouth - 2.8f), IM_COL32(0x12, 0x11, 0x11, 255));
+  }
+  // The channel: its floor in the dark, and its far wall, with the
+  // component side's contacts standing on it, lit at their tops where they
+  // bend over to meet a card.
+  draw->AddRectFilled(ImVec2(tabLeft - CHANNEL_END, mouth - 2.2f), ImVec2(tabRight + CHANNEL_END, mouth + 1.6f),
+                      IM_COL32(0x03, 0x03, 0x03, 255), 1.0f);
+  draw->AddRectFilled(ImVec2(tabLeft - CHANNEL_END, mouth - 2.2f), ImVec2(tabRight + CHANNEL_END, mouth - 0.3f),
+                      IM_COL32(0x1a, 0x19, 0x18, 255));
+  for (int pin = 0; pin < PINS_PER_SIDE; pin++) {
+    const float x = tabLeft + pitch * (pin + 0.5f) - pitch * 0.25f;
+    draw->AddRectFilledMultiColor(ImVec2(x - pitch * 0.17f, mouth - 2.1f), ImVec2(x + pitch * 0.17f, mouth + 0.4f),
+                                  IM_COL32(0xf4, 0xd6, 0x80, 255), IM_COL32(0xf4, 0xd6, 0x80, 255),
+                                  IM_COL32(0x6a, 0x52, 0x1c, 255), IM_COL32(0x6a, 0x52, 0x1c, 255));
+  }
+}
+
+void connectorFront(ImDrawList *draw, float tabLeft, float tabRight, float mouth) {
+  const float pitch = (tabRight - tabLeft) / PINS_PER_SIDE;
+  const float left = tabLeft - HOUSING_END;
+  const float right = tabRight + HOUSING_END;
+  const float face = mouth + 4.5f;
+  const float foot = mouth + 11;
+  // The near lip, over a card's tab, and its windows over the solder side's
+  // contacts, a half pitch along from the far lip's.
+  draw->AddRectFilled(ImVec2(tabLeft - CHANNEL_END, mouth + 1.6f), ImVec2(tabRight + CHANNEL_END, face), HOUSING_TOP);
+  for (int pin = 0; pin < PINS_PER_SIDE; pin++) {
+    const float x = tabLeft + pitch * (pin + 0.5f) + pitch * 0.25f;
+    draw->AddRectFilled(ImVec2(x - pitch * 0.2f, mouth + 2.5f), ImVec2(x + pitch * 0.2f, mouth + 3.6f), IM_COL32(0x12, 0x11, 0x11, 255));
+  }
+  // The edge between the top and the face, catching the light, and the face
+  // darkening down to the board.
+  draw->AddRectFilledMultiColor(ImVec2(left, face), ImVec2(right, foot), IM_COL32(0x1c, 0x1b, 0x1a, 255),
+                                IM_COL32(0x1c, 0x1b, 0x1a, 255), IM_COL32(0x08, 0x08, 0x08, 255), IM_COL32(0x08, 0x08, 0x08, 255));
+  draw->AddLine(ImVec2(left + 1, face), ImVec2(right - 1, face), IM_COL32(255, 255, 255, 55), 1.0f);
+  // Its ends, a little lighter on the left, where the light comes from.
+  draw->AddLine(ImVec2(left + 0.5f, face), ImVec2(left + 0.5f, foot), IM_COL32(255, 255, 255, 18), 1.0f);
+  draw->AddLine(ImVec2(right - 0.5f, face), ImVec2(right - 0.5f, foot), IM_COL32(0, 0, 0, 90), 1.0f);
+  draw->AddLine(ImVec2(left, foot), ImVec2(right, foot), IM_COL32(0, 0, 0, 140), 1.0f);
+}
+
+// A card's shadow on the board, and the top edge of its board, which the eye
+// sees from above: drawn round a card standing in its slot.
+void cardDepth(ImDrawList *draw, const Stand &stand, ImVec2 at, ImVec2 size, bool locked) {
+  const ImVec2 end(at.x + size.x, at.y + size.y);
+  const float cut = 12;
+  const ImVec2 outline[5] = {ImVec2(at.x + cut, at.y), ImVec2(end.x, at.y), ImVec2(end.x, end.y),
+                             ImVec2(at.x, end.y), ImVec2(at.x, at.y + cut)};
+  ImVec2 shadow[5];
+  for (int i = 0; i < 5; i++) shadow[i] = stand.shadow(outline[i]);
+  draw->AddConvexPolyFilled(shadow, 5, IM_COL32(0, 0, 0, 70));
+
+  // The top edge and the chamfer, going back from the face.
+  const float back = PCB_THICKNESS * std::sin(VIEW_ELEVATION);
+  const ImU32 edge = locked ? IM_COL32(0x6a, 0x84, 0x72, 255) : IM_COL32(0x5e, 0xa4, 0x70, 255);
+  const ImVec2 corner = stand(ImVec2(at.x, at.y + cut));
+  const ImVec2 left = stand(ImVec2(at.x + cut, at.y));
+  const ImVec2 right = stand(ImVec2(end.x, at.y));
+  const ImVec2 strip[4] = {corner, left, ImVec2(left.x, left.y - back), ImVec2(corner.x, corner.y - back)};
+  draw->AddConvexPolyFilled(strip, 4, edge);
+  draw->AddRectFilled(ImVec2(left.x, left.y - back), ImVec2(right.x, right.y + 0.5f), edge);
 }
 
 // What is on each card, as the real one has it, left to right under the
@@ -227,8 +344,8 @@ ImU32 mixWithWhite(unsigned c, float t) {
   return IM_COL32(ch(16), ch(8), ch(0), 255);
 }
 
-// A card in its slot, as an Apple II card looks from its component side in
-// the machine: a green board standing on the gold tab at the right-hand end
+// A card, drawn flat, as an Apple II card looks from its component side in
+// the machine, for standUp to stand in its slot: a green board standing on the gold tab at the right-hand end
 // of its bottom edge, a chamfered corner at the other end of the top, the
 // chips and parts it really carries running from the left, a paper label in
 // the card's colour with its name, and its board number in silkscreen.
@@ -255,9 +372,6 @@ void card(ImDrawList *draw, ImVec2 at, ImVec2 size, const std::string &id, unsig
   // The board: square over the connector, the top corner away from it cut.
   const ImVec2 outline[5] = {ImVec2(at.x + cut, at.y), ImVec2(end.x, at.y), ImVec2(end.x, end.y),
                              ImVec2(at.x, end.y), ImVec2(at.x, at.y + cut)};
-  ImVec2 shadow[5];
-  for (int i = 0; i < 5; i++) shadow[i] = ImVec2(outline[i].x + 2, outline[i].y + 3);
-  draw->AddConvexPolyFilled(shadow, 5, IM_COL32(0, 0, 0, 80));
   draw->AddConvexPolyFilled(outline, 5, board);
   // Traces under the solder mask, and its gloss.
   for (float y = at.y + 7; y < end.y - 4; y += 6) {
@@ -344,8 +458,12 @@ void card(ImDrawList *draw, ImVec2 at, ImVec2 size, const std::string &id, unsig
     case Part::BigChip: {
       const float h = part.kind == Part::BigChip ? 17.0f : 13.0f;
       const ImVec2 c(left, middle - h * 0.5f);
+      // Its shadow on the card under it, and its top, which the eye sees
+      // from above, with the pins along it.
+      draw->AddRectFilled(ImVec2(c.x + 1, c.y + h), ImVec2(c.x + w + 1, c.y + h + 3), IM_COL32(0, 0, 0, 70), 1.0f);
+      draw->AddRectFilled(ImVec2(c.x, c.y - 3), ImVec2(c.x + w, c.y + 1), IM_COL32(0x34, 0x34, 0x38, 255), 1.0f);
       for (float px = c.x + 2; px < c.x + w - 1; px += 3.2f) {
-        draw->AddLine(ImVec2(px, c.y - 2), ImVec2(px, c.y), IM_COL32(210, 210, 210, 200));
+        draw->AddLine(ImVec2(px, c.y - 3), ImVec2(px, c.y - 1), IM_COL32(210, 210, 210, 200));
         draw->AddLine(ImVec2(px, c.y + h), ImVec2(px, c.y + h + 2), IM_COL32(210, 210, 210, 200));
       }
       draw->AddRectFilled(c, ImVec2(c.x + w, c.y + h), IM_COL32(0x16, 0x16, 0x18, 255), 1.0f);
@@ -353,9 +471,10 @@ void card(ImDrawList *draw, ImVec2 at, ImVec2 size, const std::string &id, unsig
       draw->PathArcTo(ImVec2(c.x, c.y + h * 0.5f), 2.2f, -IM_PI * 0.5f, IM_PI * 0.5f, 8);
       draw->PathFillConvex(IM_COL32(0x40, 0x40, 0x44, 255));
       const ImVec2 legend = ImGui::CalcTextSize(part.legend);
-      draw->PushClipRect(c, ImVec2(c.x + w, c.y + h), true);
-      draw->AddText(ImVec2(c.x + (w - legend.x) * 0.5f + 1, c.y + (h - legend.y) * 0.5f), IM_COL32(255, 255, 255, 170), part.legend);
-      draw->PopClipRect();
+      // Clipped as it is drawn: a clip rectangle would not stand up with it.
+      const ImVec4 clip(c.x, c.y, c.x + w, c.y + h);
+      draw->AddText(ImGui::GetFont(), ImGui::GetFontSize(), ImVec2(c.x + (w - legend.x) * 0.5f + 1, c.y + (h - legend.y) * 0.5f),
+                    IM_COL32(255, 255, 255, 170), part.legend, nullptr, 0, &clip);
       break;
     }
     case Part::Crystal: {
@@ -459,22 +578,39 @@ void ExpansionSlots::draw(bool *open) {
   for (int slot = machine_->firstSlot; slot <= machine_->lastSlot; slot++) {
     ImGui::PushID(slot);
     const float rowTop = board.y + 28 + (slot - machine_->firstSlot) * ROW_HEIGHT;
-    const float cardHeight = ROW_HEIGHT - 24;
-    const ImVec2 cardAt(board.x + CARD_X, rowTop + 2);
+    // A card is drawn flat in front of its slot and stood up in it: where
+    // it is drawn, and where it is seen, from its top corners to the mouth.
+    const float mouth = rowTop + SLOT_MOUTH;
+    const ImVec2 cardAt(board.x + CARD_X, mouth - CARD_RISE - CARD_HEIGHT);
+    const ImVec2 cardSize(CARD_WIDTH, CARD_HEIGHT);
+    const ImVec2 cardEnd(cardAt.x + CARD_WIDTH, cardAt.y + CARD_HEIGHT);
+    const Stand stand{cardAt.x + CARD_WIDTH * 0.5f, mouth};
+    const ImVec2 seenAt = stand(cardAt);
+    const ImVec2 seenEnd(stand(ImVec2(cardEnd.x, cardAt.y)).x, mouth);
+    const float tabLeft = cardAt.x + CARD_WIDTH * (1 - TAB_SHARE);
+    const float tabRight = cardAt.x + CARD_WIDTH - TAB_INSET;
+    // A card's shadow and the top of its board, the back of the slot's
+    // connector, the card standing in it, and the connector's front.
+    auto standCard = [&](bool locked, auto &&paint) {
+      cardDepth(draw, stand, cardAt, cardSize, locked);
+      connectorBack(draw, tabLeft, tabRight, mouth);
+      standUp(draw, stand, paint);
+      connectorFront(draw, tabLeft, tabRight, mouth);
+    };
+    auto outline = [&] { draw->AddRect(ImVec2(cardAt.x - 2, cardAt.y - 2), ImVec2(cardEnd.x + 2, cardEnd.y + 2),
+                                       IM_COL32(255, 255, 255, 200), 5.0f, 0, 1.5f); };
 
-    // The slot's number in silkscreen, and its connector.
+    // The slot's number in silkscreen.
     ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * 1.25f);
     const std::string number = std::to_string(slot);
     draw->AddText(ImVec2(board.x + 36 - ImGui::CalcTextSize(number.c_str()).x * 0.5f,
-                         rowTop + (cardHeight - ImGui::GetTextLineHeight()) * 0.5f + 2),
+                         (seenAt.y + mouth - ImGui::GetTextLineHeight()) * 0.5f),
                   SILK, number.c_str());
     ImGui::PopFont();
-    // The slot's connector along the bottom of the row, under where a card's
-    // tab goes, whether or not there is a card in it.
-    connector(draw, cardAt.x + CARD_WIDTH * (1 - TAB_SHARE), cardAt.x + CARD_WIDTH - TAB_INSET, cardAt.y + cardHeight + 2);
 
-    // Beside the card: what the slot is for, and where it answers.
-    const float infoX = cardAt.x + CARD_WIDTH + 14;
+    // Beside the card, clear of its shadow: what the slot is for, and where
+    // it answers.
+    const float infoX = seenEnd.x + 26;
     draw->AddText(ImVec2(infoX, rowTop + 2), SILK, slotNote(*machine_, slot).c_str());
     char where[32];
     std::snprintf(where, sizeof(where), "$C0%X0  $C%X00", 8 + slot, slot);
@@ -490,8 +626,8 @@ void ExpansionSlots::draw(bool *open) {
       if (iigs) {
         if (const auto device = builtInDevice(*machine_, slot)) fixedId = builtInParts(*device);
       }
-      card(draw, cardAt, ImVec2(CARD_WIDTH, cardHeight), fixedId, 0x8b949e, fixedCardLabel(*machine_, slot).c_str(), true);
-      if (ui::IsHoveringRect(cardAt, ImVec2(cardAt.x + CARD_WIDTH, cardAt.y + cardHeight)) &&
+      standCard(true, [&] { card(draw, cardAt, cardSize, fixedId, 0x8b949e, fixedCardLabel(*machine_, slot).c_str(), true); });
+      if (ui::IsHoveringRect(seenAt, seenEnd) &&
           ImGui::IsWindowHovered()) {
         ImGui::SetTooltip("Part of the machine: it cannot be taken out.");
       }
@@ -499,8 +635,8 @@ void ExpansionSlots::draw(bool *open) {
       std::string &current = working_[slot];
       const CardInfo *info = findCard(current);
       // The card, or the shape of one: click it to choose.
-      ImGui::SetCursorScreenPos(cardAt);
-      const bool clicked = ImGui::InvisibleButton("##slot", ImVec2(CARD_WIDTH, cardHeight));
+      ImGui::SetCursorScreenPos(seenAt);
+      const bool clicked = ImGui::InvisibleButton("##slot", ImVec2(seenEnd.x - seenAt.x, seenEnd.y - seenAt.y));
       const bool hovered = ImGui::IsItemHovered();
       if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
       // On a IIgs a slot the machine's own device answers holds that device,
@@ -514,11 +650,11 @@ void ExpansionSlots::draw(bool *open) {
                                            return host.isSlotInternal(slot);
                                          }));
       if (answering) {
-        card(draw, cardAt, ImVec2(CARD_WIDTH, cardHeight), builtInParts(*builtIn), 0x8b949e,
-             (*builtIn + " (Built-in)").c_str(), true);
+        standCard(true, [&] {
+          card(draw, cardAt, cardSize, builtInParts(*builtIn), 0x8b949e, (*builtIn + " (Built-in)").c_str(), true);
+          if (hovered) outline();
+        });
         if (hovered) {
-          draw->AddRect(ImVec2(cardAt.x - 2, cardAt.y - 2), ImVec2(cardAt.x + CARD_WIDTH + 2, cardAt.y + cardHeight + 2),
-                        IM_COL32(255, 255, 255, 200), 5.0f, 0, 1.5f);
           ImGui::SetTooltip("Part of the machine, and answering for this slot. Click to choose a card for its "
                             "socket; it answers once the slot is set to Your Card.");
         }
@@ -527,21 +663,31 @@ void ExpansionSlots::draw(bool *open) {
           ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
           const std::string idle = std::string("IDLE: ") + info->name;
           const ImVec2 size = ImGui::CalcTextSize(idle.c_str());
-          const ImVec2 chip(cardAt.x + CARD_WIDTH - size.x - 24, cardAt.y - 6);
+          const ImVec2 chip(seenEnd.x - size.x - 24, seenAt.y - 6);
           draw->AddRectFilled(chip, ImVec2(chip.x + size.x + 10, chip.y + size.y + 4), rgb(info->color), 6.0f);
           draw->AddText(ImVec2(chip.x + 5, chip.y + 2), ui::textOn(rgb(info->color)), idle.c_str());
           ImGui::PopFont();
         }
       } else if (info) {
-        card(draw, cardAt, ImVec2(CARD_WIDTH, cardHeight), info->id, info->color, info->name, false);
-        if (hovered) draw->AddRect(ImVec2(cardAt.x - 2, cardAt.y - 2), ImVec2(cardAt.x + CARD_WIDTH + 2, cardAt.y + cardHeight + 2),
-                                   IM_COL32(255, 255, 255, 200), 5.0f, 0, 1.5f);
+        standCard(false, [&] {
+          card(draw, cardAt, cardSize, info->id, info->color, info->name, false);
+          if (hovered) outline();
+        });
       } else {
-        dashedRect(draw, cardAt, ImVec2(cardAt.x + CARD_WIDTH, cardAt.y + cardHeight),
-                   hovered ? IM_COL32(255, 255, 255, 220) : withAlpha(SILK, 0.35f));
-        const char *empty = hovered ? "+  Add a card" : "Empty";
-        draw->AddText(ImVec2(cardAt.x + 12, cardAt.y + (cardHeight - ImGui::GetTextLineHeight()) * 0.5f),
-                      hovered ? IM_COL32(255, 255, 255, 230) : withAlpha(SILK, 0.5f), empty);
+        // The outline of a card where one would stand, clear so the board
+        // shows through it, and the whole of the empty connector over it,
+        // its channel open and its contacts showing.
+        standUp(draw, stand, [&] {
+          const float cut = 12;
+          const ImVec2 shape[5] = {ImVec2(cardAt.x + cut, cardAt.y), ImVec2(cardEnd.x, cardAt.y), cardEnd,
+                                   ImVec2(cardAt.x, cardEnd.y), ImVec2(cardAt.x, cardAt.y + cut)};
+          dashedOutline(draw, shape, 5, hovered ? IM_COL32(255, 255, 255, 220) : withAlpha(SILK, 0.35f));
+          const char *empty = hovered ? "+  Add a card" : "Empty";
+          draw->AddText(ImVec2(cardAt.x + 12, cardAt.y + (CARD_HEIGHT - ImGui::GetTextLineHeight()) * 0.5f),
+                        hovered ? IM_COL32(255, 255, 255, 230) : withAlpha(SILK, 0.5f), empty);
+        });
+        connectorBack(draw, tabLeft, tabRight, mouth);
+        connectorFront(draw, tabLeft, tabRight, mouth);
       }
       // Changed and not yet fitted.
       auto was = applied_.find(slot);
@@ -549,14 +695,14 @@ void ExpansionSlots::draw(bool *open) {
         ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
         const char *pending = "ON RESET";
         const ImVec2 size = ImGui::CalcTextSize(pending);
-        const ImVec2 chip(cardAt.x + CARD_WIDTH - size.x - 14, cardAt.y - 6);
+        const ImVec2 chip(seenEnd.x - size.x - 14, seenAt.y - 6);
         draw->AddRectFilled(chip, ImVec2(chip.x + size.x + 10, chip.y + size.y + 4), IM_COL32(0xfd, 0xb8, 0x27, 255), 6.0f);
         draw->AddText(ImVec2(chip.x + 5, chip.y + 2), IM_COL32(30, 24, 10, 255), pending);
         ImGui::PopFont();
       }
 
       if (clicked) ImGui::OpenPopup("##choose");
-      ImGui::SetNextWindowPos(ImVec2(cardAt.x, cardAt.y + cardHeight + 4));
+      ImGui::SetNextWindowPos(ImVec2(seenAt.x, mouth + 14));
       if (ImGui::BeginPopup("##choose")) {
         ImGui::TextDisabled("Slot %d  ·  %s", slot, slotNote(*machine_, slot).c_str());
         ImGui::Separator();

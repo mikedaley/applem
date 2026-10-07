@@ -357,17 +357,27 @@ volume's figures for reading again, at most once a second. The callback is
 set once per card, since a refit or a machine switch builds a new one.
 
 View > Expansion Slots (`expansion_slots.*`, `slot_layout.*`) has the
-browser's rules drawn as the machine's logic board: each slot its number
-in silkscreen and its connector along the bottom of the row, the card in it
-drawn as an Apple II card looks from its component side in the machine, a
-green board standing on the gold-fingered tab at the right-hand end of its
-bottom edge, the top corner away from it chamfered, the chips and parts the
+browser's rules drawn as the machine's logic board, seen from in front and
+45° above: each slot its number in silkscreen and its 50-contact edge
+connector along the bottom of the row (the moulded housing with its open
+channel, the spring contacts on the channel's far wall, a window over each
+contact along both lips, and its shadow on the board; its pins go through
+the board and are not seen), the card in it drawn flat as an Apple II card
+looks from its component side and then stood up in the connector by moving
+the vertices it drew (`Stand`, `standUp`): its face foreshortened, its top,
+nearer the eye, a little wider, the top edge of its board showing, its
+chips showing their tops, and its shadow thrown on the board behind it. The
+connector's back is drawn before a card and its front after, so a card's
+fingers go down into the channel; nothing on a card may use a clip
+rectangle, which would not stand up with it, so a chip's legend is clipped
+on the CPU. The card is a green board standing on the gold-fingered tab at
+the right-hand end of its bottom edge, the top corner away from it chamfered, the chips and parts the
 real card carries spread across it (the Mockingboard's AY-3-8910s, the Disk II's PROMs and drive
 headers, the Super Serial Card's DIP switches), a paper label in the card's
 colour with its name and its board number in silkscreen; beside it the
 slot's use and its I/O and ROM addresses. A click on a slot offers its cards from its
 `SLOT_UI` table, each card fitted once; a fixed slot's card is grey and
-padlocked; an empty slot is a dashed outline; a slot changed and not yet
+padlocked; an empty slot is a card's dashed outline, clear, standing where a card would and still the place to click, with the whole empty connector drawn over it; a slot changed and not yet
 fitted is marked ON RESET until Apply & Reset. The No-Slot Clock is a
 DS1215 on the board with its switch, and on a IIgs each slot has its
 built-in-or-card switch, which takes effect at once. A IIgs slot answered
