@@ -71,7 +71,12 @@ what you're looking for in the Help menu's search field.
 - Notes for programmers who already know the Apple II well are marked
   **For the experienced**. You can skip them on a first read.
 
-The programs used in the tutorials are in the repository's
-[`examples`](../../examples) folder: `hello-asm` and `hello-c` for the Build
-tutorials, `profiler-demo` for the Profiler, and `cube.bas` for the BASIC
-editor.
+## The examples
+
+The programs used in the tutorials are in the
+[`examples`](../../examples) folder of ApplEm's repository on GitHub:
+`hello-asm` and `hello-c` for the Build tutorials, `profiler-demo` for the
+Profiler, and `gem.bas` for the BASIC editor. To get them all, open the
+[repository's page](https://github.com/mikedaley/applem), click **Code** and
+choose **Download ZIP**; the `examples` folder is inside. To get one file,
+open it on GitHub and click the **Download raw file** button above it.

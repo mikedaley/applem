@@ -6,7 +6,7 @@ the machine and run it, then stop it at a line, step through it statement by
 statement and watch its variables change. Open it with **Debug › Applesoft
 BASIC** (⇧⌘B). It works on the II Plus, //e and //c; the IIgs doesn't offer it.
 
-![The BASIC window running cube.bas, with Trace and Heat on](images/basic-running.png)
+![The BASIC window running gem.bas, with Trace and Heat on](images/basic-running.png)
 
 ## A first program
 
@@ -26,11 +26,12 @@ ApplEm puts the program into the machine's memory and types `RUN`. The
 output appears on the screen, and the **VARIABLES** list on the right shows
 `I` counting up.
 
-To try a bigger program, click **Open…** and choose
-[`examples/cube.bas`](../../examples/cube.bas), a rotating 3D cube in
-hi-res, then press ⌘R.
+To try a bigger program, download
+[`gem.bas`](../../examples/gem.bas), a wireframe gem turning in hi-res, from
+the [examples](README.md#the-examples) on GitHub. Click **Open…**, choose it, then press
+⌘R.
 
-![cube.bas running](images/screen-cube.png)
+![gem.bas running](images/screen-gem.png)
 
 ## The toolbar
 
@@ -123,10 +124,10 @@ Applesoft would read it. That is a warning, not a mistake in the colouring.
 - Or type a line number, or `line:statement`, in the **BREAKPOINTS** field
   and click **+**.
 
-![Stopped at a breakpoint on line 2120](images/basic-breakpoint.png)
+![Stopped at a breakpoint on line 360](images/basic-breakpoint.png)
 
 When the program stops, the line is highlighted and the pill shows
-**Breakpoint at 2120**. **Continue**, **Step** and **Step Line** carry on
+**Breakpoint at 360**. **Continue**, **Step** and **Step Line** carry on
 from there.
 
 Each breakpoint in the **BREAKPOINTS** list has a checkbox to turn it on and

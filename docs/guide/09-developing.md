@@ -67,8 +67,8 @@ When you press **⌘B** (**Develop › Build and Run**), ApplEm:
 ## Tutorial 1: Hello world in assembly
 
 This tutorial uses the project in
-[`examples/hello-asm`](../../examples/hello-asm). To follow along from
-nothing, make a new folder and create the three files below in it.
+[`examples/hello-asm`](../../examples/hello-asm), one of the
+[examples](README.md#the-examples) on GitHub. To follow along from nothing, make a new folder and create the three files below in it.
 
 **`hello.s`**, the program:
 
