@@ -61,8 +61,18 @@ public:
   // Before quitting or replacing the machine it is written there and then;
   // the timer's is written in the background.
   void autosaveNow(bool background = false);
+  // At quit, after the disks have gone back to their files: the machine as it
+  // is, for the next launch to carry on from.
+  void rememberForNextLaunch();
+  // At launch, once the machine is on: the machine the last quit left, if it
+  // was this one. The record goes either way, so a launch after a crash does
+  // not go back to an older machine. Not when one of `mediaFiles` has been
+  // written since: the state's copy of that disk is older than the file, and
+  // it would be written back over it.
+  bool resumeLastSession(const std::vector<std::string> &mediaFiles);
 
   bool autosave = false;
+  bool resumeOnLaunch = true;
 
 private:
   struct Row {

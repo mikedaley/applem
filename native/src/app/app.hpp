@@ -60,6 +60,7 @@ struct Settings {
   bool showExpansionSlots = false;
   bool showSaveStates = false;
   bool autosave = false;
+  bool resumeOnLaunch = true; // the machine the last quit left, carried on from
   int speed = 1; // 1, 2, 4 or 8 times the machine's clock
   bool showJoystick = false;
   bool showMockingboard = false;

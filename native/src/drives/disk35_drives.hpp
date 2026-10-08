@@ -74,6 +74,14 @@ public:
   // whose changes would be lost.
   void writeBackAll();
   std::vector<std::string> unsavedDisks();
+  // The files the disks in them came from and go back to.
+  std::vector<std::string> files() const {
+    std::vector<std::string> paths;
+    for (int i = 0; i < DRIVES; i++) {
+      if (drives_[i].path) paths.push_back(*drives_[i].path);
+    }
+    return paths;
+  }
   int dropTarget() const;
   int driveAt(ImVec2 point) const;
   std::optional<ImVec2> dragOver;

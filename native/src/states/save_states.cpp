@@ -155,6 +155,24 @@ void SaveStates::autosaveNow(bool background) {
   saveTo(StateStore::autosaveId(key), background);
 }
 
+void SaveStates::rememberForNextLaunch() {
+  if (!resumeOnLaunch || !emulation_.powered() || !hooks_.machine()) {
+    store_.clear(StateStore::resumeId());
+    return;
+  }
+  saveTo(StateStore::resumeId());
+}
+
+bool SaveStates::resumeLastSession(const std::vector<std::string> &mediaFiles) {
+  const std::string id = StateStore::resumeId();
+  const std::optional<StateRecord> record = store_.info(id);
+  std::optional<std::vector<uint8_t>> data = record ? store_.load(id) : std::nullopt;
+  store_.clear(id);
+  const MachineProfile *machine = hooks_.machine();
+  if (!resumeOnLaunch || !data || !machine || !mayResume(*record, machine->key, mediaFiles)) return false;
+  return importNow(*data, "the last session");
+}
+
 void SaveStates::update(double now) {
   finishBackgroundSave(false);
   if (!autosave || !emulation_.powered()) {
@@ -588,6 +606,8 @@ void SaveStates::draw(bool *open) {
       dialogs_.note();
       const float width = CARD_WIDTH * 3 + COLUMN_GAP * 2;
       drawAutosave(width);
+      ImGui::Dummy(ImVec2(0, 2));
+      ui::Switch("Carry on where you left off when ApplEm opens", &resumeOnLaunch);
       ImGui::Dummy(ImVec2(0, 6));
 
       // Five slots and a way in from a file, three to a row.

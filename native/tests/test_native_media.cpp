@@ -451,3 +451,23 @@ TEST_CASE("Save states are kept by id and say who wrote them", "[states]") {
   store.clear(StateStore::slotId(1));
   REQUIRE_FALSE(store.info(StateStore::slotId(1)));
 }
+
+TEST_CASE("The machine a quit left is carried on from only by that machine, over disks as it left them",
+          "[states]") {
+  TempDir dir;
+  const fs::path disk = dir.path / "Disk.dsk";
+  writeFile(disk.string(), bytes(1).data(), 64);
+  // The quit wrote the disk back, then the state.
+  fs::last_write_time(disk, fs::file_time_type::clock::now() - std::chrono::minutes(1));
+  StateStore store(dir.path.string());
+  REQUIRE(store.save(StateStore::resumeId(), "apple2e", bytes(42), {}));
+  const StateRecord record = *store.info(StateStore::resumeId());
+
+  REQUIRE(mayResume(record, "apple2e", {disk.string()}));
+  REQUIRE(mayResume(record, "apple2e", {(dir.path / "Gone.dsk").string()}));
+  REQUIRE_FALSE(mayResume(record, "apple2gs", {}));
+  // The disk written since, by something else: the file is newer than the
+  // state's copy, which must not go back over it.
+  fs::last_write_time(disk, fs::file_time_type::clock::now() + std::chrono::minutes(1));
+  REQUIRE_FALSE(mayResume(record, "apple2e", {disk.string()}));
+}

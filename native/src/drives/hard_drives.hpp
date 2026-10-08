@@ -82,6 +82,14 @@ public:
   // whose changes would be lost.
   void writeBackAll();
   std::vector<std::string> unsavedImages();
+  // The files the images in them came from and go back to.
+  std::vector<std::string> files() const {
+    std::vector<std::string> paths;
+    for (int i = 0; i < DEVICES; i++) {
+      if (devices_[i].path) paths.push_back(*devices_[i].path);
+    }
+    return paths;
+  }
   int dropTarget() const;
   // The device whose card is at a point, as last drawn, or -1.
   int deviceAt(ImVec2 point) const;

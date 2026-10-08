@@ -180,6 +180,7 @@ void App::shutdown() {
   // Anything a quit that was not asked about still has to keep.
   writeBackMedia();
   states_->autosaveNow();
+  states_->rememberForNextLaunch();
   saveBatteryRamIfChanged(-1);
   emulation_.stop();
   started_ = false;
@@ -220,6 +221,7 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "ShowExpansionSlots=%d", &value) == 1) s.showExpansionSlots = value;
     else if (std::sscanf(line, "ShowSaveStates=%d", &value) == 1) s.showSaveStates = value;
     else if (std::sscanf(line, "Autosave=%d", &value) == 1) s.autosave = value;
+    else if (std::sscanf(line, "ResumeOnLaunch=%d", &value) == 1) s.resumeOnLaunch = value;
     else if (std::sscanf(line, "Speed=%d", &value) == 1) s.speed = value;
     else if (std::sscanf(line, "Appearance=%d", &value) == 1) s.appearance = std::clamp(value, 0, 2);
     else if (std::sscanf(line, "WindowDocking=%d", &value) == 1) s.windowDocking = value;
@@ -281,6 +283,7 @@ void App::registerSettingsHandler() {
     out->appendf("ShowExpansionSlots=%d\n", s.showExpansionSlots ? 1 : 0);
     out->appendf("ShowSaveStates=%d\n", s.showSaveStates ? 1 : 0);
     out->appendf("Autosave=%d\n", app->states_ && app->states_->autosave ? 1 : 0);
+    out->appendf("ResumeOnLaunch=%d\n", s.resumeOnLaunch ? 1 : 0);
     out->appendf("Speed=%d\n", s.speed);
     out->appendf("Appearance=%d\n", s.appearance);
     out->appendf("WindowDocking=%d\n", s.windowDocking ? 1 : 0);
@@ -512,6 +515,7 @@ void App::startEmulation() {
   disk35_->update();
   disk35_->restore();
   states_->autosave = settings_.autosave;
+  states_->resumeOnLaunch = settings_.resumeOnLaunch;
   develop_->watch = settings_.devWatch;
   if (!settings_.devProject.empty()) develop_->openProject(settings_.devProject);
   if (platform_.setAppearance) platform_.setAppearance(settings_.appearance);
@@ -531,6 +535,12 @@ void App::startEmulation() {
   memory_.setMachine(*wanted);
   applySpeed();
   emulation_.setPowered(true);
+  // Then the machine as the last quit left it, over the one just started: the
+  // same cards and disks, so what it held is what the files hold.
+  std::vector<std::string> mediaFiles = drives_->files();
+  for (std::string &file : hardDrives_->files()) mediaFiles.push_back(std::move(file));
+  for (std::string &file : disk35_->files()) mediaFiles.push_back(std::move(file));
+  states_->resumeLastSession(mediaFiles);
   started_ = true;
   updateWindowTitle();
 }
@@ -1621,6 +1631,10 @@ void App::drawDiskDrives() {
   states_->draw(&settings_.showSaveStates);
   if (states_->autosave != settings_.autosave) {
     settings_.autosave = states_->autosave;
+    ImGui::MarkIniSettingsDirty();
+  }
+  if (states_->resumeOnLaunch != settings_.resumeOnLaunch) {
+    settings_.resumeOnLaunch = states_->resumeOnLaunch;
     ImGui::MarkIniSettingsDirty();
   }
   bool showSlots = settings_.showExpansionSlots && profile_ && profile_->caps.hasExpansionSlots;

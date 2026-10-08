@@ -422,6 +422,19 @@ one per machine, written every five seconds while the machine runs when
 turned on (off by default, as in the browser), and before quitting or
 switching machine.
 
+**The app carries on where it was quit**, unless the switch under the
+autosave ("Carry on where you left off when ApplEm opens", `ResumeOnLaunch`,
+on by default) is off. `App::shutdown` writes the disks back, then the
+machine to one `resume` record naming it (`SaveStates::rememberForNextLaunch`);
+`startEmulation` builds the machine as usual (cards, disks from their files,
+power) and then loads that record over it (`resumeLastSession`). The record
+is deleted when read, whether it was used or not, so a launch after a crash
+starts afresh rather than going back to an older machine whose disks the
+files have since moved past. It is not used if it is another machine's, or
+if any disk or hard drive file the machine holds was written after it was
+saved (`mayResume`): the state's copy of that disk is older, and would be
+written back over the file.
+
 A state starts with the browser's twelve-byte header (magic `A2ES`,
 version, machine id). One from another machine asks first, switches to
 that machine, then loads, because a state is a whole machine and restores

@@ -71,6 +71,21 @@ std::string StateStore::path(const std::string &id, const char *extension) const
   return (fs::path(directory_) / (id + extension)).string();
 }
 
+bool mayResume(const StateRecord &record, const std::string &machine, const std::vector<std::string> &mediaFiles) {
+  if (record.machine != machine) return false;
+  for (const std::string &file : mediaFiles) {
+    std::error_code error;
+    const auto written = fs::last_write_time(file, error);
+    if (error) continue;
+    // The file's clock is not the system's; this libc++ has no clock_cast.
+    const auto when = std::chrono::system_clock::now() + (written - fs::file_time_type::clock::now());
+    if (std::chrono::duration_cast<std::chrono::milliseconds>(when.time_since_epoch()).count() > record.savedAt) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool StateStore::save(const std::string &id, const std::string &machine,
                       const std::vector<uint8_t> &state, const std::vector<uint8_t> &thumbnail) {
   if (!writeFile(path(id, ".a2state"), state.data(), state.size())) return false;

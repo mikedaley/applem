@@ -44,6 +44,12 @@ struct StateRecord {
 // The five slots are shared by every machine and each says which machine
 // filled it; the autosave is one per machine, because a state restores only
 // into the machine that wrote it.
+// Whether the machine a quit left (`record`) may be carried on from in
+// `machine`: it was written by that machine, and none of `mediaFiles` has been
+// written since, as the state's copy of that disk would be older than the file
+// and would be written back over it.
+bool mayResume(const StateRecord &record, const std::string &machine, const std::vector<std::string> &mediaFiles);
+
 class StateStore {
 public:
   static constexpr int SLOTS = 5;
@@ -55,6 +61,9 @@ public:
   // The autosave a session started with, kept aside before the session's own
   // first autosave replaces it: the one written at the last quit.
   static std::string lastSessionId(const std::string &machine) { return "last-session-" + machine; }
+  // The machine as the app was quit, carried on from at the next launch and
+  // gone once it has been: one record, naming the machine that wrote it.
+  static std::string resumeId() { return "resume"; }
 
   bool save(const std::string &id, const std::string &machine, const std::vector<uint8_t> &state,
             const std::vector<uint8_t> &thumbnail);

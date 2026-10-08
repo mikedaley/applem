@@ -100,6 +100,14 @@ public:
   // The disks whose changes would be lost: no file to go back to, or a file
   // that could not take them. Named for a question before quitting.
   std::vector<std::string> unsavedDisks();
+  // The files the disks in them came from and go back to.
+  std::vector<std::string> files() const {
+    std::vector<std::string> paths;
+    for (int i = 0; i < DRIVES; i++) {
+      if (drives_[i].path) paths.push_back(*drives_[i].path);
+    }
+    return paths;
+  }
 
   // For the menus.
   void chooseDisk(int drive);
