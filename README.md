@@ -34,9 +34,15 @@ first: it fetches the core and Dear ImGui.
 - **A CRT picture** from the signal: the core decodes the machine's dot
   stream, and a Metal shader draws the monitor.
 - **Disk drives**, 5.25" and 3.5", and SmartPort hard drives. A disk opened
-  from a file is written back to that file.
+  from a file is written back to that file, and the Disk Inspector shows a
+  track down to its nibbles and flux.
+- **Expansion slots** drawn as cards standing in their connectors; click a
+  slot to choose its card.
+- **Sound**: the speaker, the Mockingboard and the IIgs's Ensoniq, mixed so
+  that nothing clips.
 - **Debugging**: CPU debugger, memory viewer, soft switches, breakpoints of
-  every kind, and a profiler that records where a program spends its time.
+  every kind, and a profiler that records where a program spends its time,
+  with a timeline of frames to zoom and pan.
 - **Develop with ca65.** A project is a small `.applem` file beside a
   Makefile. Build and Run (Command-B) builds it and starts what it made,
   with its symbols in the debugger. `examples/profiler-demo` is one to try.
