@@ -1281,7 +1281,7 @@ void MemoryViewer::drawToolbar() {
   const bool go = ImGui::InputTextWithHint("##goto", "Go to address or name", gotoText_, sizeof gotoText_,
                                            ImGuiInputTextFlags_EnterReturnsTrue);
   if (gotoBad_) ImGui::PopStyleColor();
-  if (ImGui::IsItemHovered()) ImGui::SetTooltip("$0400, 9600, HIMEM, COUT%s", wide_ ? ", E1/2000" : "");
+  if (ImGui::IsItemHovered()) ImGui::SetTooltip("$0400, 9600, MEMSIZ, COUT%s", wide_ ? ", E1/2000" : "");
   if (go) {
     if (auto at = debugger_.symbols().resolve(gotoText_, addressMask())) {
       // A name or a 16-bit address on a IIgs means the bank being shown.
@@ -1318,10 +1318,11 @@ void MemoryViewer::drawToolbar() {
   if (follow_ == Follow::Expression) {
     ImGui::SameLine(0, ITEM_GAP);
     ImGui::SetNextItemWidth(170);
-    if (ImGui::InputTextWithHint("##followexpr", "PEEK($06)+PEEK($07)*256", followText_, sizeof followText_)) {
+    if (ImGui::InputTextWithHint("##followexpr", "DEEK($06)", followText_, sizeof followText_)) {
       ImGui::MarkIniSettingsDirty();
     }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Any watch expression: registers, PEEK, arithmetic");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Any watch expression: registers, PEEK, DEEK, arithmetic.\n"
+                                                    "Arithmetic is worked left to right: PEEK($07)*256+PEEK($06)");
   }
 
   // How it is shown.

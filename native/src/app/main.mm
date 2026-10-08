@@ -220,6 +220,56 @@ void acceptDropsOnViewports() {
 } // namespace
 
 // The Metal view, the main window's.
+// A file opened at a line, in the app the Finder would open it with. macOS has
+// no general way to name the line, so each editor that documents one is told
+// it its own way: a URL scheme (VS Code, TextMate, BBEdit) or the command line
+// tool inside its bundle (Sublime Text, Zed, and Xcode's xed). Anything else
+// gets the file alone.
+static void openAtLine(const std::string &path, int line) {
+  NSWorkspace *workspace = NSWorkspace.sharedWorkspace;
+  NSURL *file = [NSURL fileURLWithPath:@(path.c_str())];
+  NSURL *editor = [workspace URLForApplicationToOpenURL:file];
+  NSString *identifier = editor ? [NSBundle bundleWithURL:editor].bundleIdentifier : nil;
+  NSString *where = [NSString stringWithFormat:@"%@:%d", file.path, line];
+  auto openScheme = [&](NSString *scheme, NSString *host, NSArray<NSURLQueryItem *> *query) {
+    NSURLComponents *url = [[NSURLComponents alloc] init];
+    url.scheme = scheme;
+    url.host = host;
+    if (query) url.queryItems = query;
+    else url.path = where;
+    return url.URL && [workspace openURL:url.URL];
+  };
+  auto runTool = [&](NSURL *tool, NSArray<NSString *> *arguments) {
+    if (![NSFileManager.defaultManager isExecutableFileAtPath:tool.path]) return false;
+    return [NSTask launchedTaskWithExecutableURL:tool arguments:arguments error:nil terminationHandler:nil] != nil;
+  };
+  NSString *lineText = [NSString stringWithFormat:@"%d", line];
+  bool opened = false;
+  if ([identifier isEqualToString:@"com.microsoft.VSCode"]) {
+    opened = openScheme(@"vscode", @"file", nil);
+  } else if ([identifier isEqualToString:@"com.microsoft.VSCodeInsiders"]) {
+    opened = openScheme(@"vscode-insiders", @"file", nil);
+  } else if ([identifier isEqualToString:@"com.macromates.TextMate"]) {
+    opened = openScheme(@"txmt", @"open",
+                        @[ [NSURLQueryItem queryItemWithName:@"url" value:file.absoluteString],
+                           [NSURLQueryItem queryItemWithName:@"line" value:lineText] ]);
+  } else if ([identifier isEqualToString:@"com.barebones.bbedit"]) {
+    opened = openScheme(@"x-bbedit", @"open",
+                        @[ [NSURLQueryItem queryItemWithName:@"url" value:file.absoluteString],
+                           [NSURLQueryItem queryItemWithName:@"line" value:lineText] ]);
+  } else if ([identifier hasPrefix:@"com.sublimetext."]) {
+    opened = runTool([editor URLByAppendingPathComponent:@"Contents/SharedSupport/bin/subl"], @[ where ]);
+  } else if ([identifier hasPrefix:@"dev.zed.Zed"]) {
+    opened = runTool([editor URLByAppendingPathComponent:@"Contents/MacOS/cli"], @[ where ]);
+  } else if ([identifier isEqualToString:@"com.apple.dt.Xcode"]) {
+    // The xed inside that Xcode: /usr/bin/xed fails when the command line
+    // tools, not Xcode, are the active developer directory.
+    opened = runTool([editor URLByAppendingPathComponent:@"Contents/Developer/usr/bin/xed"],
+                     @[ @"--line", lineText, file.path ]);
+  }
+  if (!opened) [workspace openURL:file];
+}
+
 @interface ApplEmView : MTKView
 @end
 
@@ -493,6 +543,7 @@ void watchMouse() {
   platform.openPath = [](const std::string &path) {
     [NSWorkspace.sharedWorkspace openURL:[NSURL fileURLWithPath:@(path.c_str())]];
   };
+  platform.openPathAtLine = [](const std::string &path, int line) { openAtLine(path, line); };
   platform.resourceDirectory = NSBundle.mainBundle.resourcePath.UTF8String;
   id<MTLDevice> device = _device;
   platform.makeTexture = [device](const uint8_t *rgba, int width, int height) -> ImTextureID {

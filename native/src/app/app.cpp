@@ -1083,14 +1083,16 @@ MenuItem App::developMenu() {
   const bool project = develop_->hasProject();
   const bool idle = project && !develop_->building();
   std::vector<MenuItem> items = {
+      // Option, not Shift: Shift-Command-O is Insert in Drive 2, and
+      // Shift-Command-B is Applesoft BASIC.
       item(a, "develop.open", "Open Project\u2026", [this] { develop_->chooseProject(); }, "o",
-           MOD_COMMAND | MOD_SHIFT),
+           MOD_COMMAND | MOD_OPTION),
       MenuItem::separatorItem(),
       item(a, "develop.build", "Build and Run", [this] {
              settings_.showBuild = true;
              develop_->buildAndRun();
            }, "b", MOD_COMMAND, false, idle),
-      item(a, "develop.run", "Run Again", [this] { develop_->runAgain(); }, "b", MOD_COMMAND | MOD_SHIFT, false, idle),
+      item(a, "develop.run", "Run Again", [this] { develop_->runAgain(); }, "b", MOD_COMMAND | MOD_OPTION, false, idle),
       item(a, "develop.watch", "Watch for Changes", [this] {
              develop_->watch = !develop_->watch;
              settings_.devWatch = develop_->watch;

@@ -95,6 +95,9 @@ struct Platform {
   std::function<void(const std::string &url)> openURL;
   // A file, in the app the system opens it with.
   std::function<void(const std::string &path)> openPath;
+  // A source file opened at a line, in whatever edits it, where that editor
+  // has a way to be told the line; otherwise just opened.
+  std::function<void(const std::string &path, int line)> openPathAtLine;
 
   // The bundle's Resources, where the disk library is.
   std::string resourceDirectory;

@@ -217,13 +217,20 @@ void Develop::startFromMemory(const dev::Program &program) {
   const bool ok = emulation_.withMachine([&](host::MachineHost &host) {
     return host.startProgram(program.bytes.data(), program.bytes.size(), program.load, program.entry);
   });
-  char text[160];
+  char text[224];
   if (ok) {
     std::snprintf(text, sizeof text, "Running %s: %zu bytes at $%04X, from $%04X.", project_->name.c_str(),
                   program.bytes.size(), program.load, program.entry);
     state_ = State::Ran;
   } else {
-    std::snprintf(text, sizeof text, "%s does not fit below $C000.", project_->name.c_str());
+    // Past $BFFF was refused when the program was read, so what is left is
+    // the few bytes that call it.
+    constexpr uint16_t from = host::MachineHost::PROGRAM_TRAMPOLINE;
+    constexpr uint16_t to = from + host::MachineHost::PROGRAM_TRAMPOLINE_SIZE - 1;
+    std::snprintf(text, sizeof text,
+                  "%s loads over $%04X-$%04X, where ApplEm puts the code that calls it: load it elsewhere, or "
+                  "start it from disk.",
+                  project_->name.c_str(), from, to);
   }
   report(text, !ok);
 }
@@ -751,7 +758,10 @@ void Develop::drawIssues(float width) {
       ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
       ImGui::SetTooltip("Open %s (line %d)", issue.file.c_str(), issue.line);
     }
-    if (clicked && platform_.openPath) platform_.openPath(issue.file);
+    if (clicked) {
+      if (platform_.openPathAtLine) platform_.openPathAtLine(issue.file, issue.line);
+      else if (platform_.openPath) platform_.openPath(issue.file);
+    }
     ImGui::Dummy(ImVec2(0, 2));
   }
   ImGui::Dummy(ImVec2(0, 4));

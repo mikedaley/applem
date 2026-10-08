@@ -2182,7 +2182,8 @@ void CpuDebugger::drawBreakpoints() {
         ImGui::SetTooltip("Stops only when %s", describe(*tree).c_str());
       } else {
         ImGui::SetTooltip("Stops only when this is true: registers A X Y SP PC, flags,\n"
-                          "PEEK($addr), DEEK($addr), == != < > <= >= && || and $hex");
+                          "PEEK($addr), DEEK($addr), + - * / (left to right, no precedence),\n"
+                          "== != < > <= >= && || and brackets. $41 is hex, 65 is decimal");
       }
     }
     ImGui::SameLine(0, 6);
@@ -2218,7 +2219,7 @@ void CpuDebugger::drawWatches() {
   ImDrawList *draw = ImGui::GetWindowDrawList();
   const Palette p = palette();
   ImGui::SetNextItemWidth(std::clamp(ImGui::GetContentRegionAvail().x - 78.0f, 120.0f, 420.0f));
-  bool add = ImGui::InputTextWithHint("##watch", "A, X, PEEK($24), DEEK($36), PEEK($C000) & $7F", newWatch_,
+  bool add = ImGui::InputTextWithHint("##watch", "A, X, PEEK($24), DEEK($36), PEEK($C000) >= $80", newWatch_,
                                       sizeof newWatch_, ImGuiInputTextFlags_EnterReturnsTrue);
   ImGui::SameLine(0, 8);
   add = ui::Button("Add", ImVec2(70, 0), ui::ButtonKind::Primary) || add;
