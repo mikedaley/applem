@@ -1,0 +1,6 @@
+{
+  "build":   "make",
+  "output":  "build/hello",
+  "symbols": "build/hello.dbg",
+  "machine": "apple2e"
+}

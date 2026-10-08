@@ -45,11 +45,15 @@ first: it fetches the core and Dear ImGui.
   with a timeline of frames to zoom and pan.
 - **Develop with ca65.** A project is a small `.applem` file beside a
   Makefile. Build and Run (Command-B) builds it and starts what it made,
-  with its symbols in the debugger. `examples/profiler-demo` is one to try.
+  with its symbols in the debugger. `examples/hello-asm`, `examples/hello-c`
+  and `examples/profiler-demo` are ones to try.
 - **Applesoft BASIC** editing and running.
 
-`docs/NATIVE.md` covers the app in full; the core's `docs/design/` covers
-the machines.
+The [ApplEm User Guide](docs/guide/README.md) explains everything the app
+does, with tutorials for building and debugging your own programs. The app
+carries it too, as its Help Book: Help > ApplEm Help.
+`docs/NATIVE.md` covers how the app is built; the core's `docs/design/`
+covers the machines.
 
 ## Layout
 
@@ -61,8 +65,9 @@ native/
   resources/          Info.plist, the icon, the bundled disk library
   tests/              the app's tests
   third_party/imgui/  Dear ImGui, docking branch (submodule)
-examples/             programs to try, including ca65 projects
+examples/             programs to try: ca65 and cc65 projects, and BASIC
 scripts/              the release script and the icon generator
+docs/guide/           the user guide
 docs/NATIVE.md        the app's design
 VERSION               the version the release process bumps
 ```
