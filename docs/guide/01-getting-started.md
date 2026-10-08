@@ -16,10 +16,13 @@ To build ApplEm from its source instead, see the repository's
 
 ## The first launch
 
-ApplEm starts with an **Apple IIe Enhanced**, switched on, with the 5.25"
-Drives window open beside the main window. With no disk in its drives the //e shows `Apple //e` at the top of
-the screen and waits for a disk to start from. That is what a real //e does
-too.
+The first time you open ApplEm, you get a single window: an **Apple IIe
+Enhanced**, switched on. Every other window, such as the disk drives or the
+debugger, stays closed until you open it. After that, ApplEm remembers which
+windows you had open and where, and puts them back each time it starts.
+
+With no disk in its drives, the //e shows `Apple //e` at the top of the
+screen and waits for a disk to start from. That is what a real //e does too.
 
 To get to Applesoft BASIC's `]` prompt without a disk, press **⌃F12**
 (Control-F12), which is the Apple's Control-Reset. To start from a disk, see
