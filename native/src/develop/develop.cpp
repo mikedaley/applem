@@ -413,66 +413,126 @@ void Develop::draw(bool *open) {
   ImGui::End();
 }
 
-// No project: what one is, a sample to start from, and the way to open one.
+// No project: what one is, a sample to start from, and the way to open one,
+// measured first so the whole of it sits in the middle of the window.
 void Develop::drawEmpty() {
   ImDrawList *draw = ImGui::GetWindowDrawList();
   const ui::Palette &p = ui::palette();
-  const float width = ImGui::GetContentRegionAvail().x;
-  const ImVec2 at = ImGui::GetCursorScreenPos();
+  const ImVec2 origin = ImGui::GetCursorScreenPos();
+  const ImVec2 avail = ImGui::GetContentRegionAvail();
+  const float middle = origin.x + avail.x * 0.5f;
 
-  // A pair of braces in a disc of the accent colour: a project file.
-  const ImVec2 icon(at.x + width * 0.5f, at.y + 40);
-  draw->AddCircleFilled(icon, 30, withAlpha(accent(), 0.14f), 48);
-  draw->AddText(nullptr, 30.0f, ImVec2(icon.x - 15, icon.y - 17), accent(), "{ }");
-  ImGui::Dummy(ImVec2(width, 84));
-
-  auto centred = [&](const char *line, ImU32 colour, float scale) {
-    ImGui::PushFont(nullptr, ImGui::GetFontSize() * scale);
-    const float w = ImGui::CalcTextSize(line).x;
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0f, (width - w) * 0.5f));
-    ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(colour), "%s", line);
-    ImGui::PopFont();
-  };
-  centred("Build and run your own program", text(), 1.3f);
-  centred("Your editor, your Makefile and cl65; ApplEm runs what they make.", secondary(), 1.0f);
-  ImGui::Dummy(ImVec2(0, 10));
-
-  // The sample project file, in the output's dark well, coloured as JSON.
-  const float wellWidth = std::min(width, 440.0f);
-  const float line = ImGui::GetTextLineHeight() + 2;
+  const char *title = "Build and run your own program";
+  const char *subtitle = "Your editor, your Makefile and cl65. ApplEm runs what they make.";
+  const char *hint = "Save it beside your Makefile, then open it here.";
+  const char *button = "Open Project…";
   const char *keys[] = {"build", "output", "symbols", "machine"};
   const char *values[] = {"make", "build/game", "build/game.dbg", "apple2e"};
-  const float wellHeight = line * 6 + PAD * 2;
-  const ImVec2 w0(ImGui::GetCursorScreenPos().x + (width - wellWidth) * 0.5f, ImGui::GetCursorScreenPos().y);
-  draw->AddRectFilled(w0, ImVec2(w0.x + wellWidth, w0.y + wellHeight), WELL, ROUNDING);
-  ImGui::PushFont(ui::monoFont(), 0.0f);
-  float y = w0.y + PAD;
-  const float x = w0.x + PAD;
-  draw->AddText(ImVec2(x, y), WELL_DIM, "{");
-  for (int i = 0; i < 4; i++) {
-    y += line;
-    const std::string key = std::string("  \"") + keys[i] + "\":";
-    draw->AddText(ImVec2(x, y), WELL_BLUE, key.c_str());
-    const float vx = x + ImGui::CalcTextSize("  \"symbols\": ").x;
-    const std::string value = std::string("\"") + values[i] + "\"" + (i < 3 ? "," : "");
-    draw->AddText(ImVec2(vx, y), WELL_GREEN, value.c_str());
-  }
-  draw->AddText(ImVec2(x, y + line), WELL_DIM, "}");
-  ImGui::PopFont();
-  ImGui::Dummy(ImVec2(width, wellHeight + 6));
-  centred("Save it as game.applem beside your Makefile.", secondary(), ui::SMALL_TEXT);
-  ImGui::Dummy(ImVec2(0, 8));
+  constexpr int ENTRIES = 4;
 
-  const char *label = "Open Project…";
-  const float bw = ImGui::CalcTextSize(label).x + 40;
-  ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (width - bw) * 0.5f);
-  if (ui::Button(label, ImVec2(bw, 0), ui::ButtonKind::Primary)) chooseProject();
+  // Sizes, before anything is drawn.
+  const float body = ImGui::GetFontSize();
+  const float titleSize = body * 1.35f;
+  const float smallSize = body * ui::SMALL_TEXT;
+  ImFont *font = ImGui::GetFont();
+  ImFont *mono = ui::monoFont();
+  auto measure = [](ImFont *f, float size, const char *line) { return f->CalcTextSizeA(size, FLT_MAX, 0, line); };
+  const ImVec2 titleExtent = measure(font, titleSize, title);
+  const ImVec2 subtitleExtent = measure(font, body, subtitle);
+  const ImVec2 hintExtent = measure(font, smallSize, hint);
+
+  const float monoSize = body;
+  const float line = monoSize + 5;
+  const float keyColumn = measure(mono, monoSize, "  \"symbols\": ").x;
+  float codeWidth = 0;
+  for (int i = 0; i < ENTRIES; i++) {
+    const std::string value = std::string("\"") + values[i] + "\",";
+    codeWidth = std::max(codeWidth, keyColumn + measure(mono, monoSize, value.c_str()).x);
+  }
+  const float tabHeight = smallSize + 14;
+  const float cardWidth = std::min(avail.x, std::max(codeWidth + PAD * 3, 320.0f));
+  const float cardHeight = tabHeight + PAD + line * (ENTRIES + 2) + PAD - 5;
+
+  const float radius = 32;
+  const float buttonHeight = ImGui::GetFrameHeight() + 6;
+  const float buttonWidth = ImGui::CalcTextSize(button).x + 48;
+  const float total = radius * 2 + 22 + titleExtent.y + 6 + subtitleExtent.y + 26 + cardHeight + 14 +
+                      hintExtent.y + 22 + buttonHeight;
+  float y = origin.y + std::max(0.0f, (avail.y - total) * 0.45f);
+
+  // A pair of braces in a disc of the accent colour: a project file.
+  const ImVec2 disc(middle, y + radius);
+  draw->AddCircleFilled(disc, radius, withAlpha(accent(), 0.14f), 64);
+  draw->AddCircle(disc, radius, withAlpha(accent(), 0.25f), 64, 1.0f);
+  {
+    const float size = radius * 0.95f;
+    const ImVec2 extent = measure(mono, size, "{}");
+    draw->AddText(mono, size, ImVec2(std::floor(disc.x - extent.x * 0.5f), std::floor(disc.y - extent.y * 0.5f)),
+                  accent(), "{}");
+  }
+  y += radius * 2 + 22;
+
+  auto centred = [&](float size, const char *text, ImVec2 extent, ImU32 colour) {
+    draw->AddText(font, size, ImVec2(std::floor(middle - extent.x * 0.5f), y), colour, text);
+    y += extent.y;
+  };
+  centred(titleSize, title, titleExtent, text());
+  y += 6;
+  centred(body, subtitle, subtitleExtent, secondary());
+  y += 26;
+
+  // The sample project file, as an editor would show it: its name on a tab
+  // across the top, the JSON coloured in the output's dark well beneath.
+  const ImVec2 c0(std::floor(middle - cardWidth * 0.5f), y);
+  const ImVec2 c1(c0.x + cardWidth, c0.y + cardHeight);
+  draw->AddRectFilled(c0, c1, WELL, ROUNDING);
+  draw->AddRectFilled(c0, ImVec2(c1.x, c0.y + tabHeight), IM_COL32(255, 255, 255, 14), ROUNDING,
+                      ImDrawFlags_RoundCornersTop);
+  draw->AddLine(ImVec2(c0.x, c0.y + tabHeight), ImVec2(c1.x, c0.y + tabHeight), IM_COL32(255, 255, 255, 20));
+  draw->AddRect(c0, c1, IM_COL32(255, 255, 255, 24), ROUNDING);
+  {
+    // Three dots, as on a window, and the file's name in the middle.
+    const float dotY = c0.y + tabHeight * 0.5f;
+    for (int i = 0; i < 3; i++) draw->AddCircleFilled(ImVec2(c0.x + PAD + i * 13, dotY), 4, IM_COL32(255, 255, 255, 38));
+    const char *name = "game.applem";
+    const ImVec2 extent = measure(font, smallSize, name);
+    draw->AddText(font, smallSize, ImVec2(std::floor(middle - extent.x * 0.5f), std::floor(dotY - extent.y * 0.5f)),
+                  WELL_DIM, name);
+  }
+  {
+    const float x = std::floor(middle - codeWidth * 0.5f);
+    float row = c0.y + tabHeight + PAD;
+    draw->AddText(mono, monoSize, ImVec2(x, row), WELL_DIM, "{");
+    for (int i = 0; i < ENTRIES; i++) {
+      row += line;
+      const std::string key = std::string("  \"") + keys[i] + "\":";
+      draw->AddText(mono, monoSize, ImVec2(x, row), WELL_BLUE, key.c_str());
+      const std::string value = std::string("\"") + values[i] + "\"";
+      draw->AddText(mono, monoSize, ImVec2(x + keyColumn, row), WELL_GREEN, value.c_str());
+      if (i < ENTRIES - 1) {
+        const float after = measure(mono, monoSize, value.c_str()).x;
+        draw->AddText(mono, monoSize, ImVec2(x + keyColumn + after, row), WELL_DIM, ",");
+      }
+    }
+    draw->AddText(mono, monoSize, ImVec2(x, row + line), WELL_DIM, "}");
+  }
+  y = c1.y + 14;
+  centred(smallSize, hint, hintExtent, secondary());
+  y += 22;
+
+  ImGui::SetCursorScreenPos(ImVec2(std::floor(middle - buttonWidth * 0.5f), y));
+  if (ui::Button(button, ImVec2(buttonWidth, buttonHeight), ui::ButtonKind::Primary)) chooseProject();
   if (!status_.empty()) {
-    ImGui::Dummy(ImVec2(0, 6));
-    ImGui::PushTextWrapPos(0.0f);
+    ImGui::Dummy(ImVec2(0, 4));
+    const ImVec2 extent = ImGui::CalcTextSize(status_.c_str(), nullptr, false, avail.x);
+    ImGui::SetCursorScreenPos(ImVec2(std::floor(middle - std::min(extent.x, avail.x) * 0.5f), ImGui::GetCursorScreenPos().y));
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + avail.x);
     ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(problem_ ? p.red : secondary()), "%s", status_.c_str());
     ImGui::PopTextWrapPos();
   }
+  // The window's extent: all of it, so a short window scrolls to the button.
+  ImGui::SetCursorScreenPos(origin);
+  ImGui::Dummy(ImVec2(avail.x, std::max(total, ImGui::GetItemRectMax().y - origin.y)));
 }
 
 // The project: its monogram, its name and folder, and how it runs.
