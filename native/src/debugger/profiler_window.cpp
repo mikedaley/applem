@@ -33,6 +33,10 @@ constexpr const char *TITLE = "Profiler";
 constexpr double REFRESH_SECONDS = 0.25;
 constexpr float DETAIL_WIDTH = 340;
 constexpr float TIMELINE_HEIGHT = 92;
+// The fewest frames the timeline zooms in to, and how far a notch of the
+// wheel zooms it.
+constexpr double TIMELINE_MIN_FRAMES = 8;
+constexpr double TIMELINE_ZOOM_STEP = 1.2;
 constexpr size_t HOT_LINES = 400;
 constexpr int CODE_LINES = 160;
 
@@ -191,6 +195,7 @@ void ProfilerWindow::toggleRecording() {
     instructions_ = 0;
     openHotPath_ = true;
     flameRoot_ = 0;
+    timelineZoomed_ = false;
   }
   dirty_ = true;
 }
@@ -534,6 +539,7 @@ void ProfilerWindow::drawEmpty() {
 
 void ProfilerWindow::drawTimeline() {
   ImDrawList *draw = ImGui::GetWindowDrawList();
+  const ImGuiIO &io = ImGui::GetIO();
   const ImVec2 at = ImGui::GetCursorScreenPos();
   const float width = ImGui::GetContentRegionAvail().x;
   const ImVec2 a = at, b(at.x + width, at.y + TIMELINE_HEIGHT);
@@ -551,22 +557,67 @@ void ProfilerWindow::drawTimeline() {
     return;
   }
 
-  // The plot sits inside the rounded frame, a column a pixel (or wider when
-  // there are fewer frames than pixels).
+  // The plot sits inside the rounded frame.
   const float pad = 6;
   const ImVec2 pa(a.x + pad, a.y + pad), pb(b.x - pad, b.y - pad);
   const float plotW = pb.x - pa.x, plotH = pb.y - pa.y;
-  const int columns = std::max(1, static_cast<int>(std::min<float>(plotW, static_cast<float>(n))));
-  const float columnW = plotW / static_cast<float>(columns);
-  const double perColumn = static_cast<double>(n) / columns;
+  const double frameCount = static_cast<double>(n);
+
+  // The frames in view, as positions from the first: all of them, or the
+  // span zoomed in on, never fewer than a few and never past either end.
+  const double minSpan = std::min(frameCount, TIMELINE_MIN_FRAMES);
+  auto clampView = [&](double from, double to) {
+    const double span = std::clamp(to - from, minSpan, frameCount);
+    from = std::clamp(from, 0.0, frameCount - span);
+    timelineFrom_ = from;
+    timelineTo_ = from + span;
+    timelineZoomed_ = span < frameCount;
+  };
+  if (timelineZoomed_) clampView(timelineFrom_, timelineTo_);
+  double v0 = timelineZoomed_ ? timelineFrom_ : 0.0;
+  double v1 = timelineZoomed_ ? timelineTo_ : frameCount;
+  auto posAt = [&](float x) { return v0 + std::clamp((x - pa.x) / plotW, 0.0f, 1.0f) * (v1 - v0); };
+
+  // Scrolling zooms about the pointer, and a sideways swipe pans; the
+  // window under it does not scroll.
+  if (hovered) {
+    ImGui::SetItemKeyOwner(ImGuiKey_MouseWheelY);
+    ImGui::SetItemKeyOwner(ImGuiKey_MouseWheelX);
+  }
+  if (hovered && (io.MouseWheel != 0 || io.MouseWheelH != 0)) {
+    double from = v0, to = v1;
+    if (io.MouseWheel != 0) {
+      const double pivot = posAt(io.MousePos.x);
+      const double factor = std::pow(TIMELINE_ZOOM_STEP, -io.MouseWheel);
+      from = pivot - (pivot - from) * factor;
+      to = pivot + (to - pivot) * factor;
+      // Zoomed out past the ends, it shows them all: as wide as the
+      // recording, wherever the pivot left it.
+      if (to - from >= frameCount) from = 0, to = frameCount;
+    }
+    if (io.MouseWheelH != 0) {
+      const double shift = -io.MouseWheelH * (to - from) * 0.05;
+      from += shift;
+      to += shift;
+    }
+    clampView(from, to);
+    v0 = timelineZoomed_ ? timelineFrom_ : 0.0;
+    v1 = timelineZoomed_ ? timelineTo_ : frameCount;
+  }
+  const double span = v1 - v0;
+  auto xAt = [&](double pos) { return pa.x + static_cast<float>((pos - v0) / span) * plotW; };
+
+  // While zoomed, a scroll thumb along the bottom, in the frame's padding.
+  const float thumbY0 = b.y - pad + 1, thumbY1 = b.y - 2;
+  const float thumbX0 = pa.x + static_cast<float>(v0 / frameCount) * plotW;
+  const float thumbX1 = std::max(thumbX0 + 12, pa.x + static_cast<float>(v1 / frameCount) * plotW);
 
   draw->PushClipRect(pa, pb, true);
   std::vector<ImVec2> trace;
-  trace.reserve(static_cast<size_t>(columns) * 2);
   const bool tracing = hasSelection_ && selected_ != Profiler::TOP_LEVEL;
-  for (int c = 0; c < columns; c++) {
-    const size_t f0 = static_cast<size_t>(c * perColumn);
-    const size_t f1 = std::max(f0 + 1, std::min(n, static_cast<size_t>((c + 1) * perColumn)));
+  // One column for the frames under each pixel, or, zoomed in past a frame
+  // a pixel, one for each frame, as wide as it is.
+  auto column = [&](size_t f0, size_t f1, float x0, float x1) {
     std::array<double, ProfileModel::BANDS + 1> sum{};
     double total = 0, selected = 0;
     for (size_t f = f0; f < f1; f++) {
@@ -574,9 +625,7 @@ void ProfilerWindow::drawTimeline() {
       total += bands[f].total;
       selected += bands[f].selected;
     }
-    if (total <= 0) continue;
-    const float x0 = pa.x + c * columnW;
-    const float x1 = std::max(x0 + 1.0f, pa.x + (c + 1) * columnW - (columnW > 3 ? 1.0f : 0.0f));
+    if (total <= 0) return;
     float y = pb.y;
     // The bands stack from the bottom, the biggest first; everything else
     // goes on top, quietly.
@@ -592,6 +641,24 @@ void ProfilerWindow::drawTimeline() {
       const float ty = pb.y - static_cast<float>(selected / total) * plotH;
       trace.push_back(ImVec2(x0, ty));
       trace.push_back(ImVec2(x1, ty));
+    }
+  };
+  if (span >= plotW) {
+    const int columns = std::max(1, static_cast<int>(plotW));
+    const float columnW = plotW / static_cast<float>(columns);
+    const double perColumn = span / columns;
+    for (int c = 0; c < columns; c++) {
+      const size_t f0 = std::min(n - 1, static_cast<size_t>(v0 + c * perColumn));
+      const size_t f1 = std::max(f0 + 1, std::min(n, static_cast<size_t>(v0 + (c + 1) * perColumn)));
+      const float x0 = pa.x + c * columnW;
+      column(f0, f1, x0, std::max(x0 + 1.0f, x0 + columnW));
+    }
+  } else {
+    const float frameW = plotW / static_cast<float>(span);
+    const float gap = frameW > 3 ? 1.0f : 0.0f;
+    for (size_t f = static_cast<size_t>(v0); f < n && static_cast<double>(f) < v1; f++) {
+      const float x0 = xAt(static_cast<double>(f));
+      column(f, f + 1, x0, std::max(x0 + 1.0f, x0 + frameW - gap));
     }
   }
   if (trace.size() >= 2) {
@@ -610,21 +677,18 @@ void ProfilerWindow::drawTimeline() {
     draw->AddLine(ImVec2(pa.x, gy), ImVec2(pb.x, gy), ImGui::GetColorU32(ImGuiCol_WindowBg, q == 2 ? 0.55f : 0.30f));
   }
 
-  // Frame index under the pointer.
-  auto frameAt = [&](float x) {
-    const float t = std::clamp((x - pa.x) / plotW, 0.0f, 0.9999f);
-    return frames[static_cast<size_t>(t * static_cast<float>(n))].index;
-  };
+  // The frame under a point, and where a frame starts.
+  auto frameIndexAt = [&](float x) { return std::min(n - 1, static_cast<size_t>(posAt(x))); };
+  auto frameAt = [&](float x) { return frames[frameIndexAt(x)].index; };
   auto xOf = [&](uint64_t index) {
     const uint64_t first = frames.front().index;
-    const double pos = static_cast<double>(index - std::min(index, first)) / static_cast<double>(n);
-    return pa.x + static_cast<float>(pos) * plotW;
+    return xAt(static_cast<double>(index - std::min(index, first)));
   };
 
   // A range: dim what is outside it.
   std::optional<std::pair<uint64_t, uint64_t>> shown = model_.range();
   if (dragging_) {
-    const uint64_t to = frameAt(ImGui::GetIO().MousePos.x);
+    const uint64_t to = frameAt(io.MousePos.x);
     shown = std::make_pair(std::min(dragFrom_, to), std::max(dragFrom_, to));
   }
   if (shown) {
@@ -636,25 +700,52 @@ void ProfilerWindow::drawTimeline() {
   }
   draw->PopClipRect();
 
-  // Drag to choose frames; a click without a drag goes back to them all.
-  if (ImGui::IsItemActivated()) {
-    dragging_ = true;
-    dragFrom_ = frameAt(ImGui::GetIO().MousePos.x);
+  if (timelineZoomed_) {
+    draw->AddRectFilled(ImVec2(pa.x, thumbY0), ImVec2(pb.x, thumbY1), ImGui::GetColorU32(ImGuiCol_Text, 0.08f), 2.0f);
+    const bool onThumb = hovered && io.MousePos.y >= thumbY0 - 2 && io.MousePos.x >= thumbX0 && io.MousePos.x <= thumbX1;
+    const float lit = timelinePan_ == TimelinePan::Thumb ? 0.6f : onThumb ? 0.45f : 0.3f;
+    draw->AddRectFilled(ImVec2(thumbX0, thumbY0), ImVec2(thumbX1, thumbY1), ImGui::GetColorU32(ImGuiCol_Text, lit), 2.0f);
   }
+
+  // A drag chooses frames; a click without one goes back to them all, and a
+  // double click shows them all. An Option-drag, or a drag on the thumb,
+  // pans instead.
+  if (ImGui::IsItemActivated()) {
+    if (timelineZoomed_ && io.MousePos.y >= thumbY0 - 2) {
+      timelinePan_ = TimelinePan::Thumb;
+    } else if (timelineZoomed_ && io.KeyAlt) {
+      timelinePan_ = TimelinePan::Drag;
+    } else {
+      dragging_ = true;
+      dragFrom_ = frameAt(io.MousePos.x);
+    }
+  }
+  if (timelinePan_ != TimelinePan::None) {
+    ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+    if (!ImGui::IsItemActive()) {
+      timelinePan_ = TimelinePan::None;
+    } else if (io.MouseDelta.x != 0) {
+      // The thumb moves with the pointer over the whole recording; the
+      // frames move with it over the view.
+      const double perPixel = timelinePan_ == TimelinePan::Thumb ? frameCount / plotW : -span / plotW;
+      clampView(v0 + io.MouseDelta.x * perPixel, v1 + io.MouseDelta.x * perPixel);
+    }
+  }
+  if (hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) timelineZoomed_ = false;
   if (dragging_ && !ImGui::IsItemActive()) {
     dragging_ = false;
-    const uint64_t to = frameAt(ImGui::GetIO().MousePos.x);
-    const float moved = std::fabs(ImGui::GetIO().MouseDragMaxDistanceSqr[0]);
+    const uint64_t to = frameAt(io.MousePos.x);
+    const float moved = std::fabs(io.MouseDragMaxDistanceSqr[0]);
     if (moved < 16.0f) model_.setRange(std::nullopt);
     else model_.setRange(std::make_pair(std::min(dragFrom_, to), std::max(dragFrom_, to)));
     model_.rebuild();
   }
 
-  if (hovered && !dragging_) {
-    const float x = ImGui::GetIO().MousePos.x;
+  if (hovered && !dragging_ && timelinePan_ == TimelinePan::None && io.MousePos.y < thumbY0 - 2) {
+    const float x = io.MousePos.x;
     if (x >= pa.x && x <= pb.x) {
       draw->AddLine(ImVec2(x, pa.y), ImVec2(x, pb.y), ImGui::GetColorU32(ImGuiCol_Text, 0.6f), 1.0f);
-      const size_t f = static_cast<size_t>(std::clamp((x - pa.x) / plotW, 0.0f, 0.9999f) * static_cast<float>(n));
+      const size_t f = frameIndexAt(x);
       const ProfileModel::FrameBands &fb = bands[f];
       ImGui::BeginTooltip();
       ImGui::Text("Frame %llu", static_cast<unsigned long long>(frames[f].index));
@@ -684,6 +775,9 @@ void ProfilerWindow::drawTimeline() {
         ImGui::PopFont();
       }
       ImGui::TextDisabled("Drag to look at a range of frames");
+      ImGui::TextDisabled(timelineZoomed_ ? "Scroll to zoom, \xE2\x8C\xA5-drag or swipe sideways to pan, "
+                                            "double-click to see them all"
+                                          : "Scroll to zoom in");
       ImGui::EndTooltip();
     }
   }

@@ -29,7 +29,8 @@ class Emulation;
 // Across the top, the recording's controls and a timeline of every frame,
 // each a column split between the routines that took the most time in it,
 // with the selected routine's share, calls included, traced over it. A drag
-// across the timeline looks at those frames alone. Below that, four views of
+// across the timeline looks at those frames alone; scrolling zooms it about
+// the pointer, and a sideways swipe, an Option-drag or its scroll thumb pans. Below that, four views of
 // the same recording: the routines as a table, the call tree, a flame graph
 // and the hottest lines. Down the right, the selected routine: its numbers,
 // who calls it and what it calls, and its code with the time each line took.
@@ -128,6 +129,13 @@ private:
   // The timeline: a drag in progress, in frame indices.
   bool dragging_ = false;
   uint64_t dragFrom_ = 0;
+  // The frames it shows, as positions from the first recorded frame, while
+  // zoomed in; otherwise it shows them all, however many there are. A pan
+  // in progress, by an Option-drag or by the scroll thumb.
+  bool timelineZoomed_ = false;
+  double timelineFrom_ = 0, timelineTo_ = 0;
+  enum class TimelinePan { None, Drag, Thumb };
+  TimelinePan timelinePan_ = TimelinePan::None;
   // The call tree opens down the hottest path the first time it has data.
   bool openHotPath_ = true;
   // The flame graph's root, and the span of it on screen, eased toward.

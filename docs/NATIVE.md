@@ -751,7 +751,11 @@ allocated as a bank is used).
 The window reads it four times a second while recording. Across the top, a
 timeline of every frame split between the seven routines with the most self
 time, with the selected routine's share (calls included) traced over it; a
-drag across it looks at those frames alone. Then four views: Routines
+drag across it looks at those frames alone. Scrolling zooms it about the
+pointer, down to eight frames, each then its own column; a sideways swipe,
+an Option-drag or the scroll thumb along its bottom pans, and a double click
+shows every frame again. The view is kept in frame positions, so a
+recording growing under it does not move it. Then four views: Routines
 (self, total, calls, per call, per frame, sortable), the Call Tree (opened
 down the hot path), a Flame Graph (click to zoom, eased, Escape out) and Hot
 Lines; and down the right the selected routine's numbers, its callers and
