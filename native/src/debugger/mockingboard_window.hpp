@@ -72,6 +72,7 @@ private:
   MachinePoll takePoll_;
   bool fitted_ = false;
   bool enabled_ = false;
+  bool ym2149_ = false;  // the chips are YM2149Fs (AY8910::model)
   std::array<Psg, 2> psgs_;
   std::array<Via, 2> vias_;
 };

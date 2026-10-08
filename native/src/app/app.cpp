@@ -243,6 +243,7 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "MockingboardMutes=%d", &value) == 1) s.mockingboardMutes = value & 0x3F;
     else if (std::sscanf(line, "MockingboardPhaseLock=%d", &value) == 1) s.mockingboardPhaseLock = value;
     else if (std::sscanf(line, "MockingboardMono=%d", &value) == 1) s.mockingboardMono = value;
+    else if (std::sscanf(line, "MockingboardYM2149=%d", &value) == 1) s.mockingboardYM2149 = value;
     else if (std::sscanf(line, "ShowEqualizer=%d", &value) == 1) s.showEqualizer = value;
     else if (std::sscanf(line, "Equalizer=%d", &value) == 1) s.equalizer.enabled = value;
     else if (std::sscanf(line, "EqualizerPreamp=%f", &number) == 1) s.equalizer.preampDb = number;
@@ -305,6 +306,7 @@ void App::registerSettingsHandler() {
     out->appendf("MockingboardMutes=%d\n", s.mockingboardMutes);
     out->appendf("MockingboardPhaseLock=%d\n", s.mockingboardPhaseLock ? 1 : 0);
     out->appendf("MockingboardMono=%d\n", s.mockingboardMono ? 1 : 0);
+    out->appendf("MockingboardYM2149=%d\n", s.mockingboardYM2149 ? 1 : 0);
     out->appendf("ShowEqualizer=%d\n", s.showEqualizer ? 1 : 0);
     out->appendf("Equalizer=%d\n", s.equalizer.enabled ? 1 : 0);
     out->appendf("EqualizerPreamp=%.1f\n", s.equalizer.preampDb);
@@ -950,6 +952,21 @@ MenuItem App::machineMenu() {
              applyMockingboardSound();
              ImGui::MarkIniSettingsDirty();
            }, "", 0, settings_.mockingboardMono),
+      // The chips on the card: the original AY-3-8910s, or Yamaha's
+      // YM2149F, whose envelopes are smoother and fixed levels a little
+      // different.
+      submenu("Mockingboard Chip", {
+          item(a, "machine.mockingboardAY", "AY-3-8910", [this] {
+                 settings_.mockingboardYM2149 = false;
+                 applyMockingboardSound();
+                 ImGui::MarkIniSettingsDirty();
+               }, "", 0, !settings_.mockingboardYM2149),
+          item(a, "machine.mockingboardYM", "YM2149F", [this] {
+                 settings_.mockingboardYM2149 = true;
+                 applyMockingboardSound();
+                 ImGui::MarkIniSettingsDirty();
+               }, "", 0, settings_.mockingboardYM2149),
+      }),
       item(a, "machine.equalizer", "Equalizer", [this] {
              settings_.showEqualizer = !settings_.showEqualizer;
              ImGui::MarkIniSettingsDirty();
@@ -1570,9 +1587,11 @@ void App::drawJoystick() {
 void App::applyMockingboardSound() {
   const bool lock = settings_.mockingboardPhaseLock;
   const bool mono = settings_.mockingboardMono;
-  emulation_.withMachine([lock, mono](host::MachineHost &) {
+  const auto model = settings_.mockingboardYM2149 ? a2e::AY8910::Model::YM2149 : a2e::AY8910::Model::AY38910;
+  emulation_.withMachine([lock, mono, model](host::MachineHost &) {
     a2e::MockingboardCard::setPhaseLock(lock);
     a2e::MockingboardCard::setMono(mono);
+    a2e::AY8910::setModel(model);
   });
 }
 

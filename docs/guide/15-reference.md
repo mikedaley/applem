@@ -49,6 +49,7 @@
 | Capture Mouse / Release Mouse (⌃⌥) | | Machines with a mouse |
 | Sound › Mute, Volume › | | |
 | Sound › Mockingboard Phase Lock, Mockingboard Mono | | |
+| Sound › Mockingboard Chip › AY-3-8910, YM2149F | | The chips on the card |
 | Sound › Equalizer | | |
 
 ### View

@@ -64,12 +64,24 @@ unless you turn them off. Neither is saved in save states.
   card exactly as it was.
 - **Mockingboard Mono**: mixes both chips into both speakers.
 
+**Machine › Sound › Mockingboard Chip** chooses the sound chips on the card.
+It's also kept when you quit, and isn't saved in save states.
+
+- **AY-3-8910**, the chip the Mockingboard was made with. This is the
+  setting unless you change it.
+- **YM2149F**, Yamaha's version of the same chip, which fits the same
+  socket. It plays the same notes and effects, but its volume has 32 steps
+  where the AY-3-8910's has 16. Sounds that fade in and out, or use the
+  envelope as a buzzing bass, come out smoother. Its fixed volumes sit on a
+  slightly different curve, and volume 0 is very quiet rather than silent.
+
 ### The Mockingboard window
 
 **Debug › Mockingboard** (shown only when a Mockingboard is fitted) shows
 what the card is doing as it plays:
 
-- **PSG 1** and **PSG 2**, the two AY-3-8910 chips. For each of their
+- **PSG 1** and **PSG 2**, the two sound chips, labelled AY-3-8910 or
+  YM2149F to match **Mockingboard Chip**. For each of their
   channels **A**, **B** and **C** it shows:
   - the note and its frequency;
   - whether tone (**T**) and noise (**N**) are on;

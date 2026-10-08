@@ -66,6 +66,7 @@ struct Settings {
   bool showMockingboard = false;
   bool mockingboardPhaseLock = true; // MockingboardCard::setPhaseLock
   bool mockingboardMono = true;      // MockingboardCard::setMono
+  bool mockingboardYM2149 = false;   // AY8910::setModel: YM2149F chips, not AY-3-8910s
   bool showCpuDebugger = false;
   bool showMemoryViewer = false;
   bool showSoftSwitches = false;

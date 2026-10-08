@@ -195,6 +195,7 @@ void MockingboardWindow::take() {
     const MockingboardCard *mb = host.mockingboard();
     if (!mb) return;
     enabled_ = mb->isEnabled();
+    ym2149_ = AY8910::model() == AY8910::Model::YM2149;
     for (int i = 0; i < 2; i++) {
       const AY8910 &chip = i == 0 ? mb->getPSG1() : mb->getPSG2();
       Psg &psg = psgs_[i];
@@ -401,7 +402,8 @@ void MockingboardWindow::drawChip(int index) {
   std::snprintf(title, sizeof(title), "PSG %d", index + 1);
   draw->AddText(ImVec2(left, y), text(), title);
   const float tw = ImGui::CalcTextSize(title).x;
-  std::snprintf(title, sizeof(title), "AY-3-8910  ·  VIA %d at $C4%s", index + 1, index == 0 ? "00" : "80");
+  std::snprintf(title, sizeof(title), "%s  ·  VIA %d at $C4%s", ym2149_ ? "YM2149F" : "AY-3-8910", index + 1,
+                index == 0 ? "00" : "80");
   ImGui::PushFont(ui::monoFont(), ImGui::GetFontSize() * ui::SMALL_TEXT);
   draw->AddText(ImVec2(left + tw + 10, y + 2), secondary(), title);
   ImGui::PopFont();

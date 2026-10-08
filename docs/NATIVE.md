@@ -548,7 +548,10 @@ envelope's shape drawn from its four control bits, its ramp and the noise
 rate, and the 6522 in front of the chip: the bus function its port B is
 asking for, the write count and the last write, the ports, ACR, IFR and IER,
 and Timer 1 with its rate. It is offered whenever `MachineHost::mockingboard()`
-finds a card, on a IIgs as on a //e.
+finds a card, on a IIgs as on a //e. Each card's heading names the chip,
+AY-3-8910 or YM2149F, as Machine > Sound > Mockingboard Chip sets it: a host
+preference (`MockingboardYM2149` in `layout.ini`) that `applyMockingboardSound`
+hands to `AY8910::setModel` with Phase Lock and Mono.
 
 The card is read once a frame under one lock into a snapshot, and the
 traces are generated from copies of the chips taken in it, outside the
