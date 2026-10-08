@@ -48,6 +48,9 @@ first: it fetches the core and Dear ImGui.
   with its symbols in the debugger. `examples/hello-asm`, `examples/hello-c`
   and `examples/profiler-demo` are ones to try.
 - **Applesoft BASIC** editing and running.
+- **Carries on where you left off**: quit, and the machine is there as you
+  left it when ApplEm opens again.
+- **Help built in**: Help > ApplEm Help opens the user guide.
 
 The [ApplEm User Guide](docs/guide/README.md) explains everything the app
 does, with tutorials for building and debugging your own programs. The app
