@@ -1,3 +1,6 @@
+REM ***************************************************
+REM BASIC program created by https://thecodingtrain.com
+REM ***************************************************
 10 HGR : HGR2
 12 SZ = 150 : CX = 140 : CY = 96
 15 SC = 0
