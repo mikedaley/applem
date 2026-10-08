@@ -220,6 +220,10 @@
 	<string>en</string>
 	<key>CFBundleExecutable</key>
 	<string>${MACOSX_BUNDLE_EXECUTABLE_NAME}</string>
+	<key>CFBundleHelpBookFolder</key>
+	<string>ApplEm.help</string>
+	<key>CFBundleHelpBookName</key>
+	<string>uk.co.retrotech71.applem.native.help</string>
 	<key>CFBundleIconFile</key>
 	<string>${MACOSX_BUNDLE_ICON_FILE}</string>
 	<key>CFBundleIdentifier</key>

@@ -62,6 +62,10 @@ the window chrome. `make test` runs them.
   `ui::ClickToFocus` decides what a click on a window behind does.
 - **Hardware behaviour is settled by the hardware's documentation**, not by
   another emulator (see `core/CLAUDE.md`).
+- **`docs/guide` is the user guide and the app's Help Book.** A change to
+  what the app does updates the guide in the same change; the build turns it
+  into `ApplEm.help` (`native/help/make_help.py`, needs Python 3). Its
+  screenshots are taken from a copy run with `APPLEM_SETTINGS_DIR`.
 
 ## Release process
 

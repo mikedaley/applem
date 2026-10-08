@@ -7,6 +7,23 @@ C++ core and the host layer are the `core/` submodule
 ([applem-core](https://github.com/mikedaley/applem-core)), shared with the
 browser build ([web-a2e](https://github.com/mikedaley/web-a2e)).
 
+This file is the app's design. What the app does, for the people using it,
+is in the [user guide](guide/README.md): when a change alters something the
+guide describes, update the guide in the same change.
+
+**The guide is the app's Help Book.** `native/help/make_help.py` turns
+`docs/guide`'s Markdown into `ApplEm.help` at build time: an HTML page for
+each chapter, the pictures, `native/help/help.css` (light and dark follow
+the system), the book's Info.plist, and the two search indexes `hiutil`
+makes (Spotlight's, which the Help menu's search uses, and the older one).
+CMake makes it again whenever the guide, the script or the stylesheet
+changes and copies it into `Contents/Resources`; the app's Info.plist names
+it (`CFBundleHelpBookFolder`, `CFBundleHelpBookName`), and Help > ApplEm
+Help (Command-?) is `showHelp:`. The script reads only the Markdown the
+guide uses, and needs Python 3 (Xcode's command line tools have it). A link
+in the guide to another chapter stays in the book; one out of the guide (the
+examples, the README) goes to the repository on GitHub.
+
 ## Building
 
 ```bash
@@ -807,7 +824,9 @@ launch.
   the UI thread, with Homebrew's folders on PATH, so it finds what a terminal
   finds. Its errors, in cc65's `file(line): Error:` and the later
   `file:line:` form, are a list; a click opens the file in the app that edits
-  it. On success what was built is started.
+  it, at the line where that editor documents a way to be told it (a URL
+  scheme for VS Code, TextMate and BBEdit; the bundled tool for Sublime
+  Text, Zed and Xcode's xed). On success what was built is started.
 - **Watch for Changes** runs the output whenever a build anywhere writes it,
   once it has stopped changing: the editor's own build task, or make in a
   terminal.

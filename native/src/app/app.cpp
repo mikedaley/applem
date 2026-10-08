@@ -1151,9 +1151,11 @@ MenuItem App::windowMenu() {
 MenuItem App::helpMenu() {
   auto &a = menuActions_;
   return submenu(HELP_MENU, {
-      item(a, "help.wiki", "ApplEm Help", [this] {
-             if (platform_.openURL) platform_.openURL("https://github.com/mikedaley/web-a2e/wiki");
-           }),
+      // The guide, from the Help Book in the bundle (docs/guide, made by
+      // native/help/make_help.py); the Help menu's search finds it too.
+      item(a, "help.book", "ApplEm Help", [this] {
+             if (platform_.showHelp) platform_.showHelp();
+           }, "?", MOD_COMMAND),
   });
 }
 

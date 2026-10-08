@@ -95,6 +95,8 @@ struct Platform {
   std::function<void(const std::string &url)> openURL;
   // A file, in the app the system opens it with.
   std::function<void(const std::string &path)> openPath;
+  // The app's Help Book, in the system's help viewer.
+  std::function<void()> showHelp;
   // A source file opened at a line, in whatever edits it, where that editor
   // has a way to be told the line; otherwise just opened.
   std::function<void(const std::string &path, int line)> openPathAtLine;

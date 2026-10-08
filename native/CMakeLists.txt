@@ -136,6 +136,30 @@ if(EXISTS ${APP_ICON})
     set_source_files_properties(${APP_ICON} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 endif()
 
+# The Help Book: docs/guide, made into ApplEm.help (help/make_help.py) and
+# copied into the bundle's Resources, where Help > ApplEm Help and the Help
+# menu's search find it. Made again whenever the guide changes.
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set(GUIDE_DIR ${CMAKE_SOURCE_DIR}/docs/guide)
+file(GLOB GUIDE_SOURCES CONFIGURE_DEPENDS ${GUIDE_DIR}/*.md ${GUIDE_DIR}/images/*)
+set(HELP_BOOK ${CMAKE_CURRENT_BINARY_DIR}/ApplEm.help)
+set(HELP_STAMP ${CMAKE_CURRENT_BINARY_DIR}/help.stamp)
+add_custom_command(
+    OUTPUT ${HELP_STAMP}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/help/make_help.py
+            ${GUIDE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/help/help.css ${HELP_BOOK} ${APPLEM_VERSION}
+    COMMAND ${CMAKE_COMMAND} -E touch ${HELP_STAMP}
+    DEPENDS ${GUIDE_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/help/make_help.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/help/help.css
+    COMMENT "Making the Help Book from docs/guide")
+add_custom_target(applem_help DEPENDS ${HELP_STAMP})
+add_dependencies(ApplEmNative applem_help)
+add_custom_command(TARGET ApplEmNative POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E rm -rf $<TARGET_BUNDLE_CONTENT_DIR:ApplEmNative>/Resources/ApplEm.help
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${HELP_BOOK}
+            $<TARGET_BUNDLE_CONTENT_DIR:ApplEmNative>/Resources/ApplEm.help
+    COMMENT "Copying the Help Book into the app")
+
 target_include_directories(ApplEmNative PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 # The core's headers name parameters an interface's default ignores, which
 # -Wextra reports in every file that includes them.
