@@ -39,7 +39,8 @@ first: it fetches the core and Dear ImGui.
 - **Expansion slots** drawn as cards standing in their connectors; click a
   slot to choose its card.
 - **Sound**: the speaker, the Mockingboard and the IIgs's Ensoniq, mixed so
-  that nothing clips.
+  that nothing clips. The Mockingboard can carry its original AY-3-8910s or
+  Yamaha's YM2149Fs.
 - **Debugging**: CPU debugger, memory viewer, soft switches, breakpoints of
   every kind, and a profiler that records where a program spends its time,
   with a timeline of frames to zoom and pan.
