@@ -937,12 +937,15 @@ void EnsoniqWindow::draw(bool *open) {
   if (!open || !*open || !present_) return;
   take();
   ui::BeforeWindow("Ensoniq");
-  // The cards are drawn to a fixed width, so only the height is the user's:
-  // shorter than its contents, the window scrolls. The width leaves room for
-  // the scrollbar, so the cards never sit under it.
+  // The cards are drawn to a fixed width, so only the height is the user's.
+  // The chip and the sound RAM stay at the top, and the oscillators scroll
+  // under them in a region of their own, never shorter than a pair of them.
+  // The width leaves room for that region's scrollbar, so the cards never
+  // sit under it.
   const ImGuiStyle &style = ImGui::GetStyle();
   const float width = WIDTH + style.WindowPadding.x * 2 + style.ScrollbarSize;
-  ImGui::SetNextWindowSizeConstraints(ImVec2(width, showOscillators ? 240 : 0), ImVec2(width, FLT_MAX));
+  const float shortest = pinnedHeight_ > 0 ? pinnedHeight_ + ROW_HEIGHT * 2 + style.WindowPadding.y * 2 : 240;
+  ImGui::SetNextWindowSizeConstraints(ImVec2(width, showOscillators ? shortest : 0), ImVec2(width, FLT_MAX));
   ImGui::SetNextWindowSize(ImVec2(width, 720), ImGuiCond_FirstUseEver);
   // Without the list the window fits the chip and the sound RAM, and with it
   // back it returns to the height it had.
@@ -952,18 +955,24 @@ void EnsoniqWindow::draw(bool *open) {
     restoreHeight_ = 0;
   }
   wasListed_ = showOscillators;
-  const ImGuiWindowFlags flags = showOscillators ? 0 : ImGuiWindowFlags_AlwaysAutoResize;
+  const ImGuiWindowFlags flags = showOscillators ? ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse
+                                                 : ImGuiWindowFlags_AlwaysAutoResize;
   const bool listed = showOscillators;
   if (ui::BeginWindow("Ensoniq", open, flags)) {
     if (listed) listedHeight_ = ImGui::GetWindowHeight();
+    const float top = ImGui::GetCursorPosY();
     drawChip(WIDTH);
     ImGui::Dummy(ImVec2(0, 2));
     drawRam(WIDTH);
     if (listed && !showOscillators) restoreHeight_ = listedHeight_;
     if (listed && showOscillators) {
       ImGui::Dummy(ImVec2(0, 2));
-      if (selected_ >= 0 && selected_ < DOC_OSCILLATORS) drawOscillatorDetail(selected_, WIDTH);
-      else drawOscillators(WIDTH);
+      pinnedHeight_ = ImGui::GetCursorPosY() - top;
+      if (ImGui::BeginChild("##oscillators", ImVec2(0, 0), ImGuiChildFlags_None)) {
+        if (selected_ >= 0 && selected_ < DOC_OSCILLATORS) drawOscillatorDetail(selected_, WIDTH);
+        else drawOscillators(WIDTH);
+      }
+      ImGui::EndChild();
     }
   }
   ImGui::End();

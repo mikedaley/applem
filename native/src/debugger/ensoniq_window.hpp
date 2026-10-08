@@ -100,6 +100,8 @@ private:
   bool follow_ = false;
   // The window's height while it lists the oscillators, to go back to.
   float listedHeight_ = 0;
+  // How tall the chip and the sound RAM are, which stay put above the list.
+  float pinnedHeight_ = 0;
   float restoreHeight_ = 0;
   bool wasListed_ = true;
 };

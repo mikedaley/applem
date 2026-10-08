@@ -589,7 +589,10 @@ the playhead on it and a red line where a zero byte would stop it. The
 pitch is the scan rate times the frequency register over
 2^(17 + resolution), which is the table's repetition rate whatever its
 size, and so its pitch when it holds one cycle of a wave. Only the
-oscillators the chip is scanning are shown unless Show all 32 is on.
+oscillators the chip is scanning are shown unless Show all 32 is on. The
+chip and sound RAM cards stay at the top of the window; the oscillators,
+or the one picked out, scroll in a region of their own under them, so the
+sound RAM stays in view whichever oscillator is being looked at.
 
 A mute is `IIgsSound::setOscillatorMuted`: the oscillator still walks its
 table, halts, swaps and interrupts exactly as before and only its sample
