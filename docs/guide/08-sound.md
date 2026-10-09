@@ -53,8 +53,9 @@ The Mockingboard has two sound chips, each with three voices, and many games
 use it for music. The //e has one in slot 4 unless you change it (see
 [Expansion slots](06-expansion-slots.md)).
 
-Two settings in **Machine › Sound** change how it is played. Both are on
-unless you turn them off. Neither is saved in save states.
+Two settings in **Machine › Sound** change how it is played. Phase Lock is on
+and Mono is off until you change them. ApplEm remembers them when you quit,
+and neither is saved in save states.
 
 - **Mockingboard Phase Lock**: some songs play the same notes on both chips
   at once. On a real card the two chips drift slightly apart, which sounds
@@ -62,7 +63,8 @@ unless you turn them off. Neither is saved in save states.
   speakers close together. With Phase Lock on, while the two chips play the
   same thing, the left chip is played on both sides. Turn it off to hear the
   card exactly as it was.
-- **Mockingboard Mono**: mixes both chips into both speakers.
+- **Mockingboard Mono**: mixes both chips into both speakers. Off, the first
+  chip plays on the left and the second on the right, as on the card.
 
 **Machine › Sound › Mockingboard Chip** chooses the sound chips on the card.
 It's also kept when you quit, and isn't saved in save states.
