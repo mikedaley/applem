@@ -129,7 +129,8 @@ foreach(disk ${DISK_LIBRARY})
         HEADER_FILE_ONLY TRUE)
 endforeach()
 
-# The app's icon (scripts/make-app-icon.swift draws it).
+# The app's icon: resources/icon.iconset made into icon.icns with
+# `iconutil -c icns -o resources/icon.icns resources/icon.iconset`.
 set(APP_ICON ${CMAKE_CURRENT_SOURCE_DIR}/resources/icon.icns)
 if(EXISTS ${APP_ICON})
     target_sources(ApplEmNative PRIVATE ${APP_ICON})

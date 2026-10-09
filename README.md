@@ -70,7 +70,7 @@ native/
   tests/              the app's tests
   third_party/imgui/  Dear ImGui, docking branch (submodule)
 examples/             programs to try: ca65 and cc65 projects, and BASIC
-scripts/              the release script and the icon generator
+scripts/              the release script
 docs/guide/           the user guide
 docs/NATIVE.md        the app's design
 VERSION               the version the release process bumps
