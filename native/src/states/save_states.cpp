@@ -1,5 +1,5 @@
 /*
- * save_states.cpp - The Save States window: an autosave and five slots
+ * save_states.cpp - The Save States window: an autosave and ten slots
  *
  * Written by
  *  Mike Daley <michael_daley@icloud.com>
@@ -563,7 +563,7 @@ void SaveStates::loadFile(const std::string &path) {
   }
 }
 
-// The sixth place in the grid: a state from a file.
+// The last place in the grid: a state from a file.
 void SaveStates::drawFileCard(ImVec2 at, ImVec2 size) {
   ImDrawList *draw = ImGui::GetWindowDrawList();
   const ImVec2 end(at.x + size.x, at.y + size.y);
@@ -583,7 +583,7 @@ void SaveStates::drawFileCard(ImVec2 at, ImVec2 size) {
   draw->AddLine(ImVec2(doc.x + 22, doc.y + 10), ImVec2(doc.x + 32, doc.y + 10), ink, 2.0f);
   centredText(draw, ImVec2(middle.x, middle.y + 40), ink, "Load from File…");
   ImGui::PushFont(nullptr, ImGui::GetFontSize() * ui::SMALL_TEXT);
-  centredText(draw, ImVec2(middle.x, end.y - 22), secondary(), "An .a2state from either build");
+  centredText(draw, ImVec2(middle.x, end.y - 22), secondary(), "An .a2state file");
   ImGui::PopFont();
   if (clicked) {
     platform_.openFile("Load a save state", {"a2state"}, [this](const std::string &path) {
@@ -602,24 +602,39 @@ void SaveStates::draw(bool *open) {
 
     ui::BeforeWindow("Save States");
 
-    if (ui::BeginWindow("Save States", open, ImGuiWindowFlags_AlwaysAutoResize)) {
+    // Three cards wide, as tall as the user makes it: the slots scroll below
+    // the autosave, which stays in view.
+    const float width = CARD_WIDTH * 3 + COLUMN_GAP * 2;
+    const ImGuiStyle &style = ImGui::GetStyle();
+    const float windowWidth = width + style.ScrollbarSize + style.WindowPadding.x * 2;
+    ImGui::SetNextWindowSizeConstraints(ImVec2(windowWidth, 420), ImVec2(windowWidth, FLT_MAX));
+    ImGui::SetNextWindowSize(ImVec2(windowWidth, 760), ImGuiCond_FirstUseEver);
+
+    if (ui::BeginWindow("Save States", open, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
       dialogs_.note();
-      const float width = CARD_WIDTH * 3 + COLUMN_GAP * 2;
       drawAutosave(width);
       ImGui::Dummy(ImVec2(0, 2));
       ui::Switch("Carry on where you left off when ApplEm opens", &resumeOnLaunch);
       ImGui::Dummy(ImVec2(0, 6));
 
-      // Five slots and a way in from a file, three to a row.
-      const ImVec2 grid = ImGui::GetCursorScreenPos();
-      const ImVec2 cell(CARD_WIDTH, 10 + THUMB_HEIGHT * SCREEN_SCALE + 10 + ImGui::GetTextLineHeight() * 2 + 14);
-      for (int i = 0; i < StateStore::SLOTS + 1; i++) {
-        const ImVec2 at(grid.x + (i % 3) * (CARD_WIDTH + COLUMN_GAP), grid.y + (i / 3) * (cell.y + COLUMN_GAP));
-        if (i < StateStore::SLOTS) drawSlot(i + 1, at, cell);
-        else drawFileCard(at, cell);
+      // The slots and a way in from a file, three to a row, scrolling in the
+      // rest of the window; a line is kept under them for the notice.
+      const float noticeLine = ImGui::GetTextLineHeightWithSpacing();
+      if (ImGui::BeginChild("##slots", ImVec2(width + style.ScrollbarSize, -noticeLine), ImGuiChildFlags_None,
+                            ImGuiWindowFlags_NoBackground)) {
+        const ImVec2 grid = ImGui::GetCursorScreenPos();
+        const ImVec2 cell(CARD_WIDTH, 10 + THUMB_HEIGHT * SCREEN_SCALE + 10 + ImGui::GetTextLineHeight() * 2 + 14);
+        const int cards = StateStore::SLOTS + 1;
+        for (int i = 0; i < cards; i++) {
+          const ImVec2 at(grid.x + (i % 3) * (CARD_WIDTH + COLUMN_GAP), grid.y + (i / 3) * (cell.y + COLUMN_GAP));
+          if (i < StateStore::SLOTS) drawSlot(i + 1, at, cell);
+          else drawFileCard(at, cell);
+        }
+        const int rows = (cards + 2) / 3;
+        ImGui::SetCursorScreenPos(grid);
+        ImGui::Dummy(ImVec2(width, cell.y * rows + COLUMN_GAP * (rows - 1)));
       }
-      ImGui::SetCursorScreenPos(grid);
-      ImGui::Dummy(ImVec2(width, cell.y * 2 + COLUMN_GAP));
+      ImGui::EndChild();
       if (ImGui::GetTime() < noticeUntil_) {
         ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(GREEN_U32), "%s", notice_.c_str());
       }

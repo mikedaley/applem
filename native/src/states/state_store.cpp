@@ -1,5 +1,5 @@
 /*
- * state_store.cpp - Save states kept on disk: an autosave per machine, five slots
+ * state_store.cpp - Save states kept on disk: an autosave per machine, ten slots
  *
  * Written by
  *  Mike Daley <michael_daley@icloud.com>

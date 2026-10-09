@@ -47,9 +47,11 @@ just before you quit, switch machine or change the IIgs's memory.
   when ApplEm last quit, kept aside before this session's first autosave
   replaces it.
 
-## The five slots
+## The ten slots
 
-Below the autosave are five slots, shared by all the machines.
+Below the autosave are ten slots, shared by all the machines. They scroll:
+use the scroll wheel or trackpad over them, or make the window taller to see
+more at once.
 
 - **Click an empty slot** (**Save here**) to save the machine into it.
 - **Hover over a filled slot** for **Load**, **Save** (over this slot),
@@ -60,7 +62,7 @@ Each filled slot shows a picture of the screen, the machine that saved it,
 and when. The machine's name is shown in orange when loading the state would
 mean switching machine.
 
-The sixth card, **Load from File…**, opens a `.a2state` file. A state saved
+The last card, after slot 10, is **Load from File…**. It opens a `.a2state` file. A state saved
 by the browser version of ApplEm loads here too, and the other way round.
 You can also double-click a `.a2state` file in the Finder.
 

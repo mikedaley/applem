@@ -1,5 +1,5 @@
 /*
- * save_states.hpp - The Save States window: an autosave and five slots
+ * save_states.hpp - The Save States window: an autosave and ten slots
  *
  * Written by
  *  Mike Daley <michael_daley@icloud.com>
@@ -29,7 +29,7 @@ class Emulation;
 // The browser build's Save States window (save-states-window.js,
 // state-manager.js) and its rules:
 //
-// - Five slots shared by every machine, each naming the machine that filled
+// - Ten slots shared by every machine, each naming the machine that filled
 //   it, and an autosave per machine; the autosave is written every five
 //   seconds while the machine runs, when it is turned on (it starts off).
 // - A state restores only into the machine that wrote it, so loading one

@@ -1,5 +1,5 @@
 /*
- * state_store.hpp - Save states kept on disk: an autosave per machine, five slots
+ * state_store.hpp - Save states kept on disk: an autosave per machine, ten slots
  *
  * Written by
  *  Mike Daley <michael_daley@icloud.com>
@@ -41,7 +41,7 @@ struct StateRecord {
 
 // The browser's records (state-persistence.js), as files: each record is
 // <id>.a2state with <id>.meta beside it (machine and time) and <id>.thumb.
-// The five slots are shared by every machine and each says which machine
+// The ten slots are shared by every machine and each says which machine
 // filled it; the autosave is one per machine, because a state restores only
 // into the machine that wrote it.
 // Whether the machine a quit left (`record`) may be carried on from in
@@ -52,7 +52,7 @@ bool mayResume(const StateRecord &record, const std::string &machine, const std:
 
 class StateStore {
 public:
-  static constexpr int SLOTS = 5;
+  static constexpr int SLOTS = 10;
 
   explicit StateStore(std::string directory);
 
