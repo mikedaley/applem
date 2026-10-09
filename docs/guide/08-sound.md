@@ -117,8 +117,10 @@ sound memory. **Debug › Ensoniq** (IIgs only) shows it at work:
   - **SYNC**: pairs with its neighbour, to restart it or modulate it;
   - **SWAP**: stops at the end of its wave and starts its partner.
 - Click an oscillator to see it in full: its registers, its frequency and
-  resolution, and its wave with a playhead. **‹ All oscillators**, or esc,
-  goes back to the list.
+  resolution, and its wave with a playhead. Scroll over the wave to zoom and
+  drag to move along it. Turn on **Follow the playhead** to keep the playhead
+  in view while zoomed in: when it runs off the edge, the view jumps a
+  screen on. **‹ All oscillators**, or esc, goes back to the list.
 - Click an oscillator's speaker button to leave it out of the mix.
 
 The chip and sound memory stay in view while the oscillator list scrolls.
