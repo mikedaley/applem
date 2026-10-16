@@ -7,6 +7,7 @@
 | Item | Keys | |
 | --- | --- | --- |
 | About ApplEm | | The version, and when it was built |
+| Check for Updates… | | Looks for a new version now. See [Keeping ApplEm up to date](01-getting-started.md#keeping-applem-up-to-date) |
 | Settings… | ⌘, | Opens Display Settings |
 | Hide ApplEm / Hide Others / Show All | ⌘H / ⌥⌘H / | |
 | Quit ApplEm | ⌘Q | Writes disks back and saves the machine for next time. Works even while ⌘ is Open Apple |

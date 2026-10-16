@@ -62,6 +62,10 @@ the window chrome. `make test` runs them.
   `ui::ClickToFocus` decides what a click on a window behind does.
 - **Hardware behaviour is settled by the hardware's documentation**, not by
   another emulator (see `core/CLAUDE.md`).
+- **Updates are Sparkle's**, from the appcast beside the disk image on
+  retrotech71.co.uk, signed with the EdDSA key in the releaser's keychain
+  (`SUPublicEDKey` in `native/resources/Info.plist.in`). `VERSION` must go
+  up with every release; Sparkle compares it.
 - **`docs/guide` is the user guide and the app's Help Book.** A change to
   what the app does updates the guide in the same change; the build turns it
   into `ApplEm.help` (`native/help/make_help.py`, needs Python 3). Its
@@ -75,4 +79,8 @@ When the user says "release":
 2. Bump `VERSION`
 3. Update `README.md` for new features
 4. Update this file and `docs/NATIVE.md` for architectural changes
-5. `make release`
+5. `make release`, which also signs the disk image for Sparkle and writes
+   `build-macos-release/dist/appcast.xml`, then copies both into
+   `../retrotech71/downloads/`
+6. In the retrotech71 site, point `applem.html`'s download links at the new
+   disk image, then deploy the site: that is what publishes the update

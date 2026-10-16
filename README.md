@@ -52,6 +52,8 @@ first: it fetches the core and Dear ImGui.
 - **Carries on where you left off**: quit, and the machine is there as you
   left it when ApplEm opens again.
 - **Help built in**: Help > ApplEm Help opens the user guide.
+- **Updates itself** with Sparkle: ApplEm > Check for Updates…, or a daily
+  check once you allow it.
 
 The [ApplEm User Guide](docs/guide/README.md) explains everything the app
 does, with tutorials for building and debugging your own programs. The app

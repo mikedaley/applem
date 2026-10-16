@@ -8,6 +8,8 @@
 #include "app/native_menu.hpp"
 #include "app/build_stamp.hpp"
 
+#import <Sparkle/Sparkle.h>
+
 using a2e::native::MenuBar;
 using a2e::native::MenuItem;
 
@@ -138,6 +140,11 @@ NSEventModifierFlags modifierMask(unsigned modifiers) {
   menu.autoenablesItems = NO;
   NSMenuItem *about = [menu addItemWithTitle:@"About ApplEm" action:@selector(showAbout:) keyEquivalent:@""];
   about.target = self;
+  if (self.updater) {
+    NSMenuItem *check = [menu addItemWithTitle:@"Check for Updates…" action:@selector(checkForUpdates:)
+                                 keyEquivalent:@""];
+    check.target = self.updater;
+  }
   [menu addItem:[NSMenuItem separatorItem]];
   if (extra && !extra->children.empty()) {
     for (const MenuItem &child : extra->children) [menu addItem:[self itemFor:child]];

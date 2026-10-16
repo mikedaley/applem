@@ -246,5 +246,12 @@
 	<string>NSApplication</string>
 	<key>NSSupportsAutomaticGraphicsSwitching</key>
 	<true/>
+	<!-- Sparkle: where the appcast is, and the public half of the EdDSA key
+	     the release script signs each disk image with (the private half is
+	     in the releaser's login keychain). -->
+	<key>SUFeedURL</key>
+	<string>https://retrotech71.co.uk/downloads/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>FmrbbLX8mcSp0ftSxygD7hJbKf6iTBxoic9/oQgXaZ0=</string>
 </dict>
 </plist>

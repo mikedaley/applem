@@ -61,6 +61,30 @@ a notarytool credential profile for the Apple ID: `NOTARY_PROFILE` names the
 profile, a profile stored for the same Apple ID is used when there is no
 `applem-notary`, and `NOTARIZE=0` signs without notarising.
 
+**Updates are Sparkle's** (2.10.0, `native/CMakeLists.txt`). CMake fetches
+Sparkle's release into the build directory once, pinned by its SHA-256, and
+copies `Sparkle.framework` into `Contents/Frameworks` with `ditto` (which
+keeps its symlinks); the app finds it through an `@executable_path/../Frameworks`
+rpath. `AppDelegate` starts an `SPUStandardUpdaterController` at launch, with
+Sparkle's own windows and schedule (it asks about automatic checks on the
+second launch), and the application menu's Check for Updates… is sent to it
+(`NativeMenu.updater`). The Info.plist names the feed, `SUFeedURL`
+(`https://retrotech71.co.uk/downloads/appcast.xml`), and the public half of
+the EdDSA key, `SUPublicEDKey`; the private half is in the releaser's login
+keychain, put there by the build's `sparkle-*/bin/generate_keys` (`-x`
+exports a copy to keep). The app is not sandboxed, so the XPC services are
+unused, but they are kept and signed rather than stripped from Sparkle's
+signed bundle. The release script signs Sparkle's helpers from the inside
+out (Installer.xpc, Downloader.xpc keeping its entitlements, Autoupdate,
+Updater.app, the framework) before the app, and after stapling writes
+`dist/appcast.xml`: one item for this release, its enclosure signed by
+`sign_update`, its notes the HTML in `RELEASE_NOTES` or the commits since
+the last `Release` commit for another version. The disk image and the
+appcast are copied into the site's `downloads/` (`RETROTECH71_DIR`,
+`../retrotech71` by default); publishing them is deploying the site.
+`CFBundleVersion` is `VERSION`, which Sparkle compares, so a release's
+version must always go up.
+
 ## Layers
 
 ```

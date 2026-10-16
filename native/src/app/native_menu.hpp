@@ -11,6 +11,8 @@
 
 #include "app/menu_model.hpp"
 
+@class SPUStandardUpdaterController;
+
 // The application menu and the Window menu are the platform's, as on every
 // Mac app, with the items the model gives them; the rest come from the
 // model. The bar is
@@ -21,5 +23,8 @@
 // The window full screen is for. AppKit sends toggleFullScreen: to the key
 // window, and with a tool window key that did nothing at all.
 @property(nonatomic, weak) NSWindow *primaryWindow;
+// Sparkle's updater, which the application menu's Check for Updates… asks.
+// Without one there is no such item.
+@property(nonatomic, strong) SPUStandardUpdaterController *updater;
 - (void)update:(const a2e::native::MenuBar &)bar;
 @end

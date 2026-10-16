@@ -16,6 +16,7 @@
 #import <ImageIO/ImageIO.h>
 #import <Metal/Metal.h>
 #import <MetalKit/MetalKit.h>
+#import <Sparkle/Sparkle.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import <objc/runtime.h>
 
@@ -398,6 +399,7 @@ void watchMouse() {
 - (void)releaseKeys;
 - (BOOL)commandKeysToWindow;
 - (void)attachToolbarTo:(NSWindow *)window;
+- (void)attachUpdater:(SPUStandardUpdaterController *)updater;
 - (NSSize)contentSizeFor:(NSSize)proposed current:(NSSize)current;
 - (NSSize)contentSizeWithin:(NSSize)limit;
 - (void)beginLiveResize:(BOOL)widthLeads;
@@ -683,6 +685,10 @@ void watchMouse() {
   [_toolbar attachToWindow:window];
 }
 
+- (void)attachUpdater:(SPUStandardUpdaterController *)updater {
+  _menu.updater = updater;
+}
+
 - (BOOL)commandKeysToWindow {
   return _app && _app->commandKeysToWindow();
 }
@@ -750,6 +756,10 @@ void watchMouse() {
 
 @implementation AppDelegate {
   std::vector<std::string> _openedEarly;
+  // Sparkle: started here, it checks the appcast on its own schedule once the
+  // user has said it may (it asks on the second launch), and the menu's
+  // Check for Updates… asks it at once.
+  SPUStandardUpdaterController *_updater;
 }
 
 // Nothing is restored by AppKit itself (the app keeps its own settings), and
@@ -807,6 +817,8 @@ void watchMouse() {
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
 
   self.controller = [[AppViewController alloc] init];
+  _updater = [[SPUStandardUpdaterController alloc] initWithUpdaterDelegate:nil userDriverDelegate:nil];
+  [self.controller attachUpdater:_updater];
   self.window = [[NSWindow alloc]
       initWithContentRect:NSMakeRect(0, 0, 1280, 860)
                 styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |

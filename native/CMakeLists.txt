@@ -161,6 +161,42 @@ add_custom_command(TARGET ApplEmNative POST_BUILD
             $<TARGET_BUNDLE_CONTENT_DIR:ApplEmNative>/Resources/ApplEm.help
     COMMENT "Copying the Help Book into the app")
 
+# Sparkle, which updates the app from the appcast on retrotech71.co.uk. Its
+# release, pinned by hash, is fetched into the build once: the framework goes
+# into the bundle and its tools (bin/sign_update, generate_appcast) are what
+# scripts/build-native-mac.sh makes the appcast with.
+set(SPARKLE_VERSION 2.10.0)
+set(SPARKLE_SHA256 c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c)
+set(SPARKLE_DIR ${CMAKE_BINARY_DIR}/sparkle-${SPARKLE_VERSION})
+if(NOT EXISTS ${SPARKLE_DIR}/Sparkle.framework)
+    set(SPARKLE_ARCHIVE ${CMAKE_BINARY_DIR}/Sparkle-${SPARKLE_VERSION}.tar.xz)
+    file(DOWNLOAD
+        https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz
+        ${SPARKLE_ARCHIVE}
+        EXPECTED_HASH SHA256=${SPARKLE_SHA256}
+        STATUS SPARKLE_STATUS)
+    list(GET SPARKLE_STATUS 0 SPARKLE_CODE)
+    if(NOT SPARKLE_CODE EQUAL 0)
+        message(FATAL_ERROR "Could not download Sparkle ${SPARKLE_VERSION}: ${SPARKLE_STATUS}")
+    endif()
+    # tar rather than file(ARCHIVE_EXTRACT), which can flatten the
+    # framework's Versions/Current symlinks.
+    file(MAKE_DIRECTORY ${SPARKLE_DIR})
+    execute_process(COMMAND tar -xf ${SPARKLE_ARCHIVE} -C ${SPARKLE_DIR} RESULT_VARIABLE SPARKLE_UNPACKED)
+    if(NOT SPARKLE_UNPACKED EQUAL 0)
+        message(FATAL_ERROR "Could not unpack ${SPARKLE_ARCHIVE}")
+    endif()
+endif()
+target_compile_options(ApplEmNative PRIVATE -F${SPARKLE_DIR})
+target_link_options(ApplEmNative PRIVATE -F${SPARKLE_DIR})
+set_target_properties(ApplEmNative PROPERTIES BUILD_RPATH "@executable_path/../Frameworks")
+# ditto, which keeps the framework's symlinks as they are.
+add_custom_command(TARGET ApplEmNative POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E rm -rf $<TARGET_BUNDLE_CONTENT_DIR:ApplEmNative>/Frameworks/Sparkle.framework
+    COMMAND ditto ${SPARKLE_DIR}/Sparkle.framework
+            $<TARGET_BUNDLE_CONTENT_DIR:ApplEmNative>/Frameworks/Sparkle.framework
+    COMMENT "Copying Sparkle into the app")
+
 target_include_directories(ApplEmNative PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 # The core's headers name parameters an interface's default ignores, which
 # -Wextra reports in every file that includes them.
@@ -174,6 +210,7 @@ target_link_libraries(ApplEmNative PRIVATE
     "-framework UniformTypeIdentifiers"
     "-framework AudioToolbox"
     "-framework CoreAudio"
+    "-framework Sparkle"
 )
 
 # The keyboard mapping and the emulation thread's queues, without a window.

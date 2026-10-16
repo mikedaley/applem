@@ -11,6 +11,18 @@ ApplEm runs on macOS 15 or later. The released app is built for Mac computers wi
 The app is signed and notarised by Apple, so it opens without a security
 warning.
 
+## Keeping ApplEm up to date
+
+ApplEm updates itself. The second time you open it, it asks whether to
+check for updates automatically; say yes and it looks once a day. When a
+new version is out, a window shows what has changed and offers to install
+it. Tick **Automatically download and install updates in the future** there
+to have new versions installed when you quit, without asking.
+
+To look for a new version now, choose **ApplEm › Check for Updates…**.
+Updates come from retrotech71.co.uk and are checked against ApplEm's own
+signature before they are installed.
+
 To build ApplEm from its source instead, see the repository's
 [README](../../README.md).
 
