@@ -42,8 +42,9 @@ first: it fetches the core and Dear ImGui.
   that nothing clips. The Mockingboard can carry its original AY-3-8910s or
   Yamaha's YM2149Fs.
 - **Debugging**: CPU debugger, memory viewer, soft switches, breakpoints of
-  every kind, and a profiler that records where a program spends its time,
-  with a timeline of frames to zoom and pan.
+  every kind, views of the Mockingboard, the Ensoniq and the mouse, and a
+  profiler that records where a program spends its time, with a timeline of
+  frames to zoom and pan.
 - **Develop with ca65.** A project is a small `.applem` file beside a
   Makefile. Build and Run (Command-B) builds it and starts what it made,
   with its symbols in the debugger. `examples/hello-asm`, `examples/hello-c`
