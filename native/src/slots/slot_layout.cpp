@@ -9,6 +9,7 @@
 
 #include "machine/machine_profile.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -113,6 +114,12 @@ std::vector<std::string> slotOffers(const MachineProfile &machine, int slot) {
   if (machine.family == MachineFamily::AppleIIgs) return IIGS_CARDS;
   auto it = slotUI().find(slot);
   return it != slotUI().end() ? it->second.available : std::vector<std::string>{};
+}
+
+bool slotTakes(const MachineProfile &machine, int slot, const std::string &card) {
+  if (card == "empty") return true;
+  const std::vector<std::string> offers = slotOffers(machine, slot);
+  return std::find(offers.begin(), offers.end(), card) != offers.end();
 }
 
 std::string slotNote(const MachineProfile &machine, int slot) {

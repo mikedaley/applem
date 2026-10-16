@@ -387,6 +387,12 @@ TEST_CASE("Each slot offers what it conventionally takes", "[slots]") {
   REQUIRE(builtInDevice(gs, 5) == std::optional<std::string>("SmartPort"));
   REQUIRE_FALSE(builtInDevice(gs, 3)); // slot 3 has no switch
   REQUIRE_FALSE(builtInDevice(iie, 5));
+  // A saved layout is held to the offers: an old file's serial card is refused.
+  REQUIRE(slotTakes(iie, 4, "mouse"));
+  REQUIRE(slotTakes(iie, 2, "empty"));
+  REQUIRE_FALSE(slotTakes(iie, 2, "ssc"));
+  REQUIRE_FALSE(slotTakes(iie, 1, "parallel"));
+  REQUIRE_FALSE(slotTakes(gs, 4, "smartport"));
 }
 
 TEST_CASE("Slot lines are read back and nonsense is refused", "[slots]") {

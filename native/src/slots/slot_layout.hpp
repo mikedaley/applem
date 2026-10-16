@@ -46,6 +46,11 @@ std::string fixedCardLabel(const MachineProfile &machine, int slot);
 std::vector<std::string> slotOffers(const MachineProfile &machine, int slot);
 std::string slotNote(const MachineProfile &machine, int slot);
 
+// Whether a slot may hold this card now: "empty", or one it offers. A saved
+// layout is held to it, so a card withdrawn from the offers (the printer and
+// serial cards, until there is a printer) cannot come back from an old file.
+bool slotTakes(const MachineProfile &machine, int slot, const std::string &card);
+
 // A IIgs slot's built-in device, which the machine's $C02D switch chooses
 // between and the socket; nothing for slot 3, which has no switch.
 std::optional<std::string> builtInDevice(const MachineProfile &machine, int slot);

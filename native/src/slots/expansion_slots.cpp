@@ -45,7 +45,11 @@ void ExpansionSlots::readLine(SlotLayout *layout, const char *line) {
     if (slot >= 1 && slot <= 7) sockets_[section_][slot] = socket != 0;
     return;
   }
-  if (parseSlotLine(line, slot, card)) (*layout)[slot] = card;
+  if (!parseSlotLine(line, slot, card)) return;
+  // A card the slot no longer takes leaves it empty, as the user had it
+  // filled rather than unconfigured.
+  const MachineProfile *machine = findMachineProfile(section_.c_str());
+  (*layout)[slot] = machine && slotTakes(*machine, slot, card) ? card : "empty";
 }
 
 void ExpansionSlots::writeAll(ImGuiTextBuffer *out, const char *typeName) const {
