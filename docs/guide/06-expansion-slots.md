@@ -34,7 +34,7 @@ removed, such as the //e's built-in 80-column card in slot 3.
 | **Disk II** | The 5.25" floppy controller, with two drives |
 | **Mockingboard** | A sound card with two AY-3-8910 sound chips: six voices of music and effects. See [Sound](08-sound.md) |
 | **Thunderclock** | A clock card, giving ProDOS the date and time |
-| **Mouse Card** | Apple's mouse interface. See [The mouse](03-keyboard-mouse-joystick.md#the-mouse) |
+| **Mouse Card** | Apple's mouse interface, in slot 2, 4 or 7. See [The mouse](03-keyboard-mouse-joystick.md#the-mouse) |
 | **SmartPort** | A hard drive interface for two drive images. See [SmartPort hard drives](05-disks-and-drives.md#smartport-hard-drives) |
 | **Z-80 SoftCard** | Microsoft's Z-80 card, for running CP/M |
 
@@ -46,12 +46,12 @@ On the **//e** and **II Plus**:
 | --- | --- | --- | --- | --- |
 | 0 | 16K RAM | (II Plus only) the language card, fixed | | Language Card |
 | 1 | Printer | Z-80 SoftCard | Empty | Empty |
-| 2 | Modem / Serial | SmartPort, Z-80 SoftCard | Empty | Empty |
+| 2 | Modem / Serial | Mouse Card, SmartPort, Z-80 SoftCard | Empty | Empty |
 | 3 | 80-Column / Serial | //e: the built-in 80-column card, fixed. II Plus: SmartPort, Z-80 SoftCard | 80-Column (Built-in) | Empty |
 | 4 | Mouse / Sound | Mockingboard, Mouse Card, SmartPort, Z-80 SoftCard | Mockingboard | Empty |
 | 5 | 3.5" Drives / Clock | Thunderclock, SmartPort, Z-80 SoftCard | Thunderclock | Empty |
 | 6 | 5.25" Drives | Disk II | Disk II | Disk II |
-| 7 | Hard Disk / Clock | Thunderclock, SmartPort, Z-80 SoftCard | SmartPort | Empty |
+| 7 | Hard Disk / Clock | Mouse Card, Thunderclock, SmartPort, Z-80 SoftCard | SmartPort | Empty |
 
 Under the slots of a //e or II Plus is a **No-Slot Clock** switch. It fits a
 clock chip under the ROM, as the real add-on did, so ProDOS can read the date

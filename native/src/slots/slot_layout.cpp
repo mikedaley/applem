@@ -25,17 +25,19 @@ struct SlotUI {
 // slot-configuration-window.js's SLOT_UI, without the Parallel Card and the
 // Super Serial Card: the native app has no printer or serial line for them
 // to reach yet, and a card that drops every byte it is sent would only look
-// like a broken printer. They come back with a printer window.
+// like a broken printer. They come back with a printer window. The Mouse
+// Card goes in 2 and 7 as well as 4, the slots its firmware is written for
+// (mouse_card.hpp).
 const std::map<int, SlotUI> &slotUI() {
   static const std::map<int, SlotUI> table = {
       {0, {{}, "16K RAM"}},
       {1, {{"softcard"}, "Printer"}},
-      {2, {{"smartport", "softcard"}, "Modem / Serial"}},
+      {2, {{"mouse", "smartport", "softcard"}, "Modem / Serial"}},
       {3, {{"smartport", "softcard"}, "80-Column / Serial"}},
       {4, {{"mockingboard", "mouse", "smartport", "softcard"}, "Mouse / Sound"}},
       {5, {{"thunderclock", "smartport", "softcard"}, "3.5\" Drives / Clock"}},
       {6, {{"disk2"}, "5.25\" Drives"}},
-      {7, {{"thunderclock", "smartport", "softcard"}, "Hard Disk / Clock"}},
+      {7, {{"mouse", "thunderclock", "smartport", "softcard"}, "Hard Disk / Clock"}},
   };
   return table;
 }

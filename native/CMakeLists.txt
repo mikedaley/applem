@@ -67,6 +67,7 @@ set(NATIVE_SOURCES
     src/debugger/rule_builder.cpp
     src/app/menu_model.cpp
     src/debugger/mockingboard_window.cpp
+    src/debugger/mouse_window.cpp
     src/app/native_menu.mm
     src/app/native_toolbar.mm
     src/display/no_signal_frame.cpp

@@ -75,6 +75,7 @@
 | Start Profiling / Stop Profiling | ⌥⇧⌘R | |
 | Mockingboard | | When a Mockingboard is fitted |
 | Ensoniq | | IIgs |
+| Mouse | | When a Mouse Card is fitted, and on a //c. See [The Mouse window](03-keyboard-mouse-joystick.md#the-mouse-window) |
 | Continue / Pause | F5, or ⌃⌘Y | |
 | Step Over | F10, or F6 | |
 | Step Into | F11, or F7 | |

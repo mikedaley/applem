@@ -22,6 +22,7 @@
 #include "debugger/memory_viewer.hpp"
 #include "debugger/mockingboard_window.hpp"
 #include "debugger/ensoniq_window.hpp"
+#include "debugger/mouse_window.hpp"
 #include "debugger/soft_switch_window.hpp"
 #include "debugger/console_window.hpp"
 #include "debugger/profiler_window.hpp"
@@ -78,6 +79,7 @@ struct Settings {
   bool devWatch = false;
   int mockingboardMutes = 0; // a bit a channel, PSG 1's A B C then PSG 2's
   bool showEnsoniq = false;
+  bool showMouse = false;
   bool showBasic = false;
   uint32_t ensoniqMutes = 0; // a bit an oscillator
   bool ensoniqOscillators = true; // the oscillators listed in its window
@@ -210,6 +212,7 @@ private:
   // emulation thread's side of the lock.
   void applyMockingboardSound();
   void drawEnsoniq();
+  void drawMouse();
   void drawEqualizer();
   void drawSwitchConfirmation();
   void drawBatteryResetConfirmation();
@@ -253,6 +256,7 @@ private:
   Joystick joystick_{emulation_};
   MockingboardWindow mockingboard_{emulation_};
   EnsoniqWindow ensoniq_{emulation_};
+  MouseWindow mouse_{emulation_};
   BasicWindow basic_{emulation_, platform_};
   EqualizerWindow equalizer_{emulation_};
   // Every breakpoint, whichever window set it, applied to the core each

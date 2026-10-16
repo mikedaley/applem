@@ -384,6 +384,10 @@ TEST_CASE("Each slot offers what it conventionally takes", "[slots]") {
   // SmartPort on a IIgs, which has one built in.
   REQUIRE(slotOffers(gs, 4) == std::vector<std::string>{"mockingboard", "mouse", "thunderclock"});
   REQUIRE(slotOffers(iie, 1) == std::vector<std::string>{"softcard"});
+  // The Mouse Card in each of the slots its firmware works from.
+  REQUIRE(slotTakes(iie, 2, "mouse"));
+  REQUIRE(slotTakes(iie, 7, "mouse"));
+  REQUIRE_FALSE(slotTakes(iie, 5, "mouse"));
   REQUIRE(builtInDevice(gs, 5) == std::optional<std::string>("SmartPort"));
   REQUIRE_FALSE(builtInDevice(gs, 3)); // slot 3 has no switch
   REQUIRE_FALSE(builtInDevice(iie, 5));

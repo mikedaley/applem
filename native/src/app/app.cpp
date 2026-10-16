@@ -228,6 +228,7 @@ void App::registerSettingsHandler() {
     else if (std::sscanf(line, "ShowJoystick=%d", &value) == 1) s.showJoystick = value;
     else if (std::sscanf(line, "ShowMockingboard=%d", &value) == 1) s.showMockingboard = value;
     else if (std::sscanf(line, "ShowEnsoniq=%d", &value) == 1) s.showEnsoniq = value;
+    else if (std::sscanf(line, "ShowMouse=%d", &value) == 1) s.showMouse = value;
     else if (std::sscanf(line, "ShowBasic=%d", &value) == 1) s.showBasic = value;
     else if (unsigned mutes = 0; std::sscanf(line, "EnsoniqMutes=%u", &mutes) == 1) s.ensoniqMutes = mutes;
     else if (std::sscanf(line, "EnsoniqOscillators=%d", &value) == 1) s.ensoniqOscillators = value;
@@ -291,6 +292,7 @@ void App::registerSettingsHandler() {
     out->appendf("ShowJoystick=%d\n", s.showJoystick ? 1 : 0);
     out->appendf("ShowMockingboard=%d\n", s.showMockingboard ? 1 : 0);
     out->appendf("ShowEnsoniq=%d\n", s.showEnsoniq ? 1 : 0);
+    out->appendf("ShowMouse=%d\n", s.showMouse ? 1 : 0);
     out->appendf("ShowBasic=%d\n", s.showBasic ? 1 : 0);
     out->appendf("EnsoniqMutes=%u\n", static_cast<unsigned>(s.ensoniqMutes));
     out->appendf("EnsoniqOscillators=%d\n", s.ensoniqOscillators ? 1 : 0);
@@ -571,6 +573,7 @@ void App::frame() {
   disk35_->update();
   mockingboard_.update();
   ensoniq_.update();
+  mouse_.update();
   basic_.update(settings_.showBasic);
   develop_->update(ImGui::GetTime());
   if (develop_->wantsWindow()) settings_.showBuild = true;
@@ -1060,6 +1063,13 @@ std::optional<MenuItem> App::debugMenu() {
                            ImGui::MarkIniSettingsDirty();
                          }, "", 0, settings_.showEnsoniq));
   }
+  // A Mouse Card in a slot or socket, or a //c's own mouse.
+  if (mouse_.available()) {
+    items.push_back(item(a, "debug.mouse", "Mouse", [this] {
+                           settings_.showMouse = !settings_.showMouse;
+                           ImGui::MarkIniSettingsDirty();
+                         }, "", 0, settings_.showMouse));
+  }
   // The browser's keys, which are Visual Studio's, and Xcode's beside them
   // as hidden items: macOS takes F11 for Show Desktop, so on most Macs Step
   // Into's F11 never arrives and F7 does.
@@ -1193,6 +1203,7 @@ bool *App::focusedToolWindow() {
       {"Equalizer", &settings_.showEqualizer},
       {"Mockingboard", &settings_.showMockingboard},
       {"Ensoniq", &settings_.showEnsoniq},
+      {"Mouse", &settings_.showMouse},
       {"Applesoft BASIC", &settings_.showBasic},
       {"CPU Debugger", &settings_.showCpuDebugger},
       {"Memory Viewer", &settings_.showMemoryViewer},
@@ -1625,10 +1636,16 @@ void App::drawEnsoniq() {
   }
 }
 
+void App::drawMouse() {
+  firstPosition(460, 90);
+  mouse_.draw(&settings_.showMouse);
+}
+
 void App::drawDiskDrives() {
   drawJoystick();
   drawMockingboard();
   drawEnsoniq();
+  drawMouse();
   firstPosition(120, 50);
   // Kept open across a IIgs, which has no Applesoft window, for the next
   // machine that does.

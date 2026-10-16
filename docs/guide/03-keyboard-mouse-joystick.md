@@ -82,6 +82,35 @@ On those machines:
 
 Only the left button and movement reach the machine.
 
+### The Mouse window
+
+**Debug › Mouse** shows what the machine's mouse is doing. It's offered when
+a Mouse Card is fitted (in a //e's or II Plus's slot, or a IIgs's socket) and
+on a //c.
+
+![The Mouse window](images/mouse.png)
+
+For a **Mouse Card** it shows:
+
+- where the card has the mouse, as **X** and **Y** and as a dot in a picture
+  of the **clamp** window a program has set, and whether the button is down;
+- the **mode** the program set (mouse **ON**, and interrupts on movement,
+  the button or the screen's vertical blank) and which interrupts are
+  pending, with **IRQ** lit while the card is interrupting the processor;
+- the card's 6821 PIA registers, with their bits, and the last command the
+  mouse firmware sent the card.
+
+On a **//c** the mouse is part of the machine rather than a card, and the
+window shows the button (and Shift, which the //c wires to the same line),
+which interrupts the firmware allows and which are pending, and how much
+movement is still waiting to reach the machine.
+
+Underneath, **Screen Holes** shows the position, status and mode the mouse
+firmware keeps in memory, which is what a program reads.
+
+A IIgs's own mouse is not shown. On a IIgs, a Mouse Card is idle until its
+slot is set to **Your Card** in [Expansion slots](06-expansion-slots.md).
+
 ## Joysticks and paddles
 
 Open the joystick with **Window › Joystick** (⌘4), or the **Joystick**

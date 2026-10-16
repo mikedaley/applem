@@ -577,6 +577,24 @@ AY-3-8910 or YM2149F, as Machine > Sound > Mockingboard Chip sets it: a host
 preference (`MockingboardYM2149` in `layout.ini`) that `applyMockingboardSound`
 hands to `AY8910::setModel` with Phase Lock and Mono.
 
+Debug > Mouse (`mouse_window.*`) is the browser's Mouse Card window, drawn
+as the Mockingboard's is. It is offered when the machine has a mouse that
+slot firmware drives: a `MouseCard` from `Emulator::getMouseCard()`, or in
+any of a IIgs's sockets (`IIgsMemory::slotCard`, a `dynamic_cast` a frame),
+and a //c's `MouseIOU`. For a card it shows the position inside the clamp
+window (drawn), the button and its change flags, the mode bits, the pending
+interrupts, the PIA's eight registers with their bits and the last command
+the firmware sent the card's microcontroller; for the IOU, the button and
+Shift, the interrupts allowed and pending, and the travel banked to
+deliver. Both are followed by the slot's screen holes ($0478+n X low,
+$04F8+n Y low, $0578+n X high, $05F8+n Y high, $0778+n status, $07F8+n
+mode, from the AppleMouse II manual and the //c Technical Reference), read
+from main RAM (`MemorySpace::Kind::MainRAM`) whatever the banking, or bank
+$00 on a IIgs. A IIgs's own ADB mouse has no slot firmware and is not
+shown; a card in a socket whose slot is set to the built-in mouse is
+labelled idle. The Mouse Card is offered in slots 2, 4 and 7, the slots
+`mouse_card.hpp` gives its firmware.
+
 The card is read once a frame under one lock into a snapshot, and the
 traces are generated from copies of the chips taken in it, outside the
 lock: drawing neither holds up the emulation thread nor disturbs the chip
