@@ -30,5 +30,21 @@
     "type": "hard-drive",
     "size": "32 MB",
     "description": "ProDOS 2.4.3 hard drive volume + games"
+  },
+  {
+    "id": "blaze",
+    "name": "Blaze",
+    "file": "Blaze.dsk",
+    "type": "floppy",
+    "size": "140 KB",
+    "description": "Blaze editor, bootable ProDOS disk"
+  },
+  {
+    "id": "blaze-hd",
+    "name": "Blaze HD",
+    "file": "Blaze 800K.po",
+    "type": "hard-drive",
+    "size": "800 KB",
+    "description": "Blaze editor, bootable 800K ProDOS volume"
   }
 ]
