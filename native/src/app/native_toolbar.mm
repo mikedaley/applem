@@ -27,6 +27,7 @@ const Button BUTTONS[] = {
     {@"joystick", @"Joystick", @"gamecontroller", @"window.joystick", @"Joystick"},
     {@"display", @"Display", @"tv", @"window.display", @"Display Settings"},
     {@"states", @"States", @"clock.arrow.circlepath", @"window.states", @"Save States"},
+    {@"debugger", @"Debugger", @"ladybug", @"debug.cpu", @"CPU Debugger"},
 };
 
 NSString *const MACHINE = @"machine";
@@ -102,7 +103,8 @@ NSString *const MACHINE = @"machine";
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar {
   return @[ @"power", @"reset", @"reboot", NSToolbarFlexibleSpaceItemIdentifier, MACHINE,
-            NSToolbarFlexibleSpaceItemIdentifier, @"drives", @"harddrives", @"slots", @"joystick", @"display", @"states" ];
+            NSToolbarFlexibleSpaceItemIdentifier, @"drives", @"harddrives", @"debugger", @"slots", @"joystick", @"display",
+            @"states" ];
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar {

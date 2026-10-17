@@ -54,6 +54,7 @@ The main window has three parts:
   | **Machine** pop-up | Chooses another of the four machines |
   | **Disks** | Shows the disk drives |
   | **SmartPort** | Shows the hard drives |
+  | **Debugger** | Shows the CPU debugger |
   | **Slots** | Shows the expansion slots |
   | **Joystick** | Shows the joystick |
   | **Display** | Shows the display settings |
