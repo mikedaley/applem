@@ -15,7 +15,7 @@ QWERTZ or Dvorak keyboard types the characters printed on its keys.
 | Mac key | Apple II |
 | --- | --- |
 | Return, or Enter on the keypad | Return |
-| **delete** | **The left arrow** ($08), which is how Apple II programs erase the character before the cursor |
+| **delete** | **The left arrow** ($08), which is how Apple II programs erase the character before the cursor - or, with **Machine › Keyboard › Delete Key as DELETE**, the Apple's DELETE key ($7F), for programs where the left arrow only moves |
 | forward delete (fn-delete) | The Apple's DELETE key ($7F) |
 | esc | Escape |
 | tab | Tab |

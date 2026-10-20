@@ -47,7 +47,8 @@ public:
   }
   // A save state refitted the cards. They are what the user asked for by
   // loading it, so they are remembered as this machine's layout too, or the
-  // next start would put the old layout back.
+  // next start would put the old layout back. A card no slot offers any
+  // more is taken out of the machine first.
   void adoptMachineLayout();
   // Put the remembered layout (or the defaults) into the machine.
   void apply();

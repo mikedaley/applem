@@ -253,6 +253,7 @@ void App::registerSettingsHandler() {
     }
     else if (std::sscanf(line, "GamePort=%d", &value) == 1) s.gamePort = value == 1 ? 1 : 0;
     else if (std::sscanf(line, "CursorKeys=%d", &value) == 1) s.cursorKeys = value;
+    else if (std::sscanf(line, "BackspaceIsDelete=%d", &value) == 1) s.backspaceIsDelete = value;
     else if (std::sscanf(line, "Gamepads=%d", &value) == 1) s.gamepads = value;
     // A stored 0 is a deadzone of 0, which the browser read back as 0.1.
     else if (std::sscanf(line, "Deadzone=%f", &number) == 1) s.deadzone = std::clamp(number, 0.0f, MAX_DEADZONE);
@@ -315,6 +316,7 @@ void App::registerSettingsHandler() {
     for (int i = 0; i < Equalizer::BANDS; i++) out->appendf("EqualizerBand.%d=%.1f\n", i, s.equalizer.gainDb[i]);
     out->appendf("GamePort=%d\n", s.gamePort);
     out->appendf("CursorKeys=%d\n", s.cursorKeys ? 1 : 0);
+    out->appendf("BackspaceIsDelete=%d\n", s.backspaceIsDelete ? 1 : 0);
     out->appendf("Gamepads=%d\n", s.gamepads ? 1 : 0);
     out->appendf("Deadzone=%.2f\n", s.deadzone);
     out->appendf("NoSlotClock=%d\n", app->slots_.noSlotClock ? 1 : 0);
@@ -910,6 +912,13 @@ MenuItem App::machineMenu() {
       item(a, "machine.cursorkeys", "Cursor Keys as Joystick", [this] {
              joystick_.cursorKeys = !joystick_.cursorKeys;
            }, "", 0, joystick_.cursorKeys),
+      // A key held as it changes is let go first, so it comes up as the
+      // code it went down as.
+      item(a, "machine.backspacedelete", "Delete Key as DELETE", [this] {
+             releaseKeys();
+             settings_.backspaceIsDelete = !settings_.backspaceIsDelete;
+             ImGui::MarkIniSettingsDirty();
+           }, "", 0, settings_.backspaceIsDelete),
   };
   // The //e's generator alone holds a second set.
   if (profile_ && profile_->caps.hasUkCharSet) {
@@ -2306,7 +2315,7 @@ void App::sendPendingKeys(bool capsLock) {
 // layout types them. Used for a key's release as well as its press, so the
 // core's tracking of held keys always hears the same code twice.
 std::optional<HostKey> App::hostKeyFor(ImGuiKey key, bool swap) const {
-  std::optional<HostKey> hostKey = browserKeyFor(key, swap);
+  std::optional<HostKey> hostKey = browserKeyFor(key, swap, settings_.backspaceIsDelete);
   if (hostKey && followsLayout(key) && platform_.layoutCharacter) {
     if (const auto code = browserKeyForCharacter(platform_.layoutCharacter(key))) hostKey->keyCode = *code;
   }

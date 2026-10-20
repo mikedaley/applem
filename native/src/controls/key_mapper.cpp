@@ -9,7 +9,7 @@
 
 namespace a2e::native {
 
-std::optional<HostKey> browserKeyFor(ImGuiKey key, bool macSwap) {
+std::optional<HostKey> browserKeyFor(ImGuiKey key, bool macSwap, bool backspaceIsDelete) {
   if (key >= ImGuiKey_A && key <= ImGuiKey_Z) return HostKey{65 + (key - ImGuiKey_A)};
   if (key >= ImGuiKey_0 && key <= ImGuiKey_9) return HostKey{48 + (key - ImGuiKey_0)};
   if (key >= ImGuiKey_F1 && key <= ImGuiKey_F12) return HostKey{112 + (key - ImGuiKey_F1)};
@@ -33,7 +33,7 @@ std::optional<HostKey> browserKeyFor(ImGuiKey key, bool macSwap) {
   case ImGuiKey_LeftAlt: return HostKey{KEY_ALT, LOCATION_LEFT};
   case ImGuiKey_RightAlt: return HostKey{KEY_ALT, LOCATION_RIGHT};
 
-  case ImGuiKey_Backspace: return HostKey{8};
+  case ImGuiKey_Backspace: return HostKey{backspaceIsDelete ? 46 : 8};
   case ImGuiKey_Tab: return HostKey{9};
   case ImGuiKey_Enter: return HostKey{13};
   case ImGuiKey_KeypadEnter: return HostKey{13, LOCATION_NUMPAD};

@@ -46,6 +46,7 @@
 | Reset Battery RAM… | | IIgs |
 | Keyboard › Command as Open Apple | | Per machine |
 | Keyboard › Cursor Keys as Joystick | | |
+| Keyboard › Delete Key as DELETE | | The Mac's delete sends $7F, not the left arrow |
 | Keyboard › UK Character Set | | //e |
 | Capture Mouse / Release Mouse (⌃⌥) | | Machines with a mouse |
 | Sound › Mute, Volume › | | |

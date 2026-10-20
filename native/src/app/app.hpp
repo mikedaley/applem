@@ -87,6 +87,7 @@ struct Settings {
   Equalizer::Settings equalizer; // the tone controls over the output
   int gamePort = 0; // 0 the Apple joystick, 1 the Joyport
   bool cursorKeys = false;
+  bool backspaceIsDelete = false; // the Mac's delete key as the Apple's DELETE, not the left arrow
   bool gamepads = true;
   float deadzone = DEFAULT_DEADZONE;
   int appearance = 0; // 0 the system's, 1 light, 2 dark

@@ -98,6 +98,14 @@ void ExpansionSlots::refreshFromMachine() {
 
 void ExpansionSlots::adoptMachineLayout() {
   if (!machine_) return;
+  // A state saved before a card was withdrawn from the offers (the printer
+  // and serial cards) fits it again; it comes out, as from a saved layout.
+  emulation_.withMachine([&](host::MachineHost &host) {
+    for (int slot = machine_->firstSlot; slot <= machine_->lastSlot; slot++) {
+      if (isFixedSlot(*machine_, slot)) continue;
+      if (!slotTakes(*machine_, slot, host.slotCard(slot))) host.setSlotCard(slot, "empty");
+    }
+  });
   refreshFromMachine();
   saved_[machine_->key] = working_;
   ImGui::MarkIniSettingsDirty();

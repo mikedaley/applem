@@ -15,6 +15,7 @@
 #include "../src/app/frame_queue.hpp"
 #include "../src/controls/game_port.hpp"
 #include "../src/controls/key_mapper.hpp"
+#include "core/input/keyboard.hpp"
 #include "host/machine_host.hpp"
 
 #include <string>
@@ -113,6 +114,27 @@ TEST_CASE("Mac modifier keys map to the browser's", "[native][keyboard]") {
   REQUIRE(browserKeyFor(ImGuiKey_RightAlt, true)->location == LOCATION_RIGHT);
   REQUIRE(browserKeyFor(ImGuiKey_Keypad5, true)->keyCode == 101);
   REQUIRE_FALSE(browserKeyFor(ImGuiKey_MouseLeft, true));
+}
+
+TEST_CASE("The delete key is the left arrow, or DELETE with the setting",
+          "[native][keyboard]") {
+  // Backspace and forward delete, as the core takes them: 8 is the left
+  // arrow ($08), 46 the Apple's DELETE ($7F).
+  REQUIRE(browserKeyFor(ImGuiKey_Backspace, true)->keyCode == 8);
+  REQUIRE(browserKeyFor(ImGuiKey_Backspace, true, true)->keyCode == 46);
+  REQUIRE(browserKeyFor(ImGuiKey_Delete, true, true)->keyCode == 46);
+  REQUIRE(browserKeyFor(ImGuiKey_LeftArrow, true, true)->keyCode == 37);
+
+  // And what the core's keyboard makes of each: DELETE, and the left arrow.
+  Keyboard keyboard;
+  for (const auto &[setting, apple] : {std::pair{true, 0x7F}, std::pair{false, 0x08}}) {
+    const auto down = coreKeyEvent(*browserKeyFor(ImGuiKey_Backspace, true, setting),
+                                   HeldModifiers{}, false, false);
+    REQUIRE(down);
+    REQUIRE(keyboard.handleKeyDown(down->keyCode, down->shift, down->ctrl, down->alt,
+                                   down->meta, false, down->location) == apple);
+    keyboard.handleKeyUp(down->keyCode, false, false, false, false, down->location);
+  }
 }
 
 TEST_CASE("Which host key is Open Apple follows the setting",

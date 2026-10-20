@@ -928,8 +928,8 @@ The app is meant to feel like a Mac app rather than an ImGui tool:
     into takes those keys itself, so the items would act on nothing.
   - **Machine**: power, reset, which machine, its speed, standard and (on a
     IIgs) memory, then Keyboard (Command as Open Apple, Cursor Keys as
-    Joystick, the //e's UK Character Set) and Sound (Mute, Volume,
-    Equalizer).
+    Joystick, Delete Key as DELETE, the //e's UK Character Set) and Sound
+    (Mute, Volume, Equalizer).
   - **View**: how the picture and the window look: Status Bar, Appearance,
     Full Page, Full Screen.
   - **Debug**: the debug windows, then the run controls on the

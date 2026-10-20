@@ -62,7 +62,12 @@ struct CoreKeyEvent {
 // `macSwap` is ImGui's ConfigMacOSXBehaviors: with it set, ImGui reports the
 // physical ⌘ key as ImGuiKey_LeftCtrl/RightCtrl and Control as
 // ImGuiKey_LeftSuper/RightSuper, and this undoes that.
-std::optional<HostKey> browserKeyFor(ImGuiKey key, bool macSwap);
+//
+// `backspaceIsDelete` sends the Mac's delete key as forward delete, which the
+// core makes the Apple's DELETE ($7F), rather than as Backspace, which it
+// makes the left arrow ($08) - for programs that erase with DELETE and move
+// with the arrow, where the left arrow would only move.
+std::optional<HostKey> browserKeyFor(ImGuiKey key, bool macSwap, bool backspaceIsDelete = false);
 
 // The keys whose meaning follows the user's keyboard layout: the letters and
 // the punctuation keys. ImGui names keys by where they are on a US keyboard,
